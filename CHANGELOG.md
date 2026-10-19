@@ -4,6 +4,12 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M0-03 `@privpay/common`: klien HTTP antar-layanan dan cache token
+
+- Ditambah: `createHttpClient` (timeout `AbortSignal.timeout`, retry hanya untuk operasi idempoten pada kegagalan jaringan, timeout, 502/503/504 dengan backoff eksponensial dan jitter 0,5x..1,5x, 4xx dan 500 tidak diulang, redirect tidak diikuti, `X-Request-Id` diteruskan atau dibangkitkan, URL hanya dari konfigurasi dan path dibatasi pola, respons dibatasi 1 MiB), `createTokenCache` (cache sampai `exp` dikurangi 30 detik, satu fetch bersama untuk pemanggil paralel, kegagalan tidak di-cache dan tidak mengutip token), dan `Delay` (`RealDelay`, `FakeDelay`).
+- 34 tes baru (115 seluruhnya). Satu-satunya waktu nyata di tes adalah timeout 30 ms pada tiga tes dengan `fetch` palsu dan satu `RealDelay` 5 ms. Mutasi manual yang membuat tes gagal: retry pada permintaan non-idempoten, redirect diikuti, URL absolut diterima, tanpa single-flight, 4xx diulang.
+- Tanpa dependensi baru (memakai `fetch` bawaan Node 24). Spec `platform-dan-ci.md` bagian 3 disesuaikan (pemanggil memberi nama layanan dan path).
+
 ### M0-02 `@privpay/common`: config, Clock, error, logger
 
 - Ditambah: `packages/common` (`@privpay/common`) dengan modul `config` (`loadConfig`, `readSecret`, `readKey`: rahasia hanya dari berkas lewat `NAME_FILE`, nilai mentah di env ditolak, pesan error hanya memuat nama variabel), `clock` (`SystemClock`, `FakeClock`), `errors` (delapan kode klien, tabel reason ADR-0008, `toWireError`/`toClientError`), dan `logger` (pino; hanya field `LogFields`, field lain dibuang dan namanya dicatat di `dropped_fields`, nilai field diperiksa polanya, nama peristiwa divalidasi).
