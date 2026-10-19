@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Pool, PoolClient } from 'pg';
 
@@ -11,6 +11,7 @@ export type MigrationFailure =
   | 'root_missing'
   | 'mode'
   | 'file_name'
+  | 'unreadable'
   | 'numbering'
   | 'empty'
   | 'checksum_changed'
@@ -20,7 +21,8 @@ export type MigrationFailure =
   | 'failed';
 
 /**
- * Messages carry file names and versions only, never SQL text: a migration may contain seed values.
+ * Messages carry file names and versions only, never SQL text: a migration may contain seed values. `cause` can hold
+ * the raw database error, whose detail may quote a row, so it is for the developer's debugger and must not be logged.
  */
 export class MigrationError extends Error {
   constructor(
@@ -30,6 +32,13 @@ export class MigrationError extends Error {
   ) {
     super(`migration ${reason}: ${detail}`, options);
     this.name = 'MigrationError';
+  }
+}
+
+/** The connection could not roll back: it must be discarded, not returned to the pool. */
+class UnusableConnection extends MigrationError {
+  constructor(detail: string, cause: unknown) {
+    super('failed', detail, { cause });
   }
 }
 
@@ -47,11 +56,17 @@ const FILE_NAME = /^(\d{4})_([a-z][a-z0-9_]{0,59})\.sql$/;
 const IGNORED = new Set(['.gitkeep']);
 
 function listFolder(root: string, folder: string): string[] {
+  const path = join(root, folder);
   try {
-    return readdirSync(join(root, folder)).sort();
+    // lstat: a link could lead outside the tree the repository controls.
+    if (lstatSync(path).isSymbolicLink()) {
+      throw new MigrationError('file_name', `${folder} is a link`);
+    }
+    return readdirSync(path).sort();
   } catch (error) {
+    if (error instanceof MigrationError) throw error;
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
-    throw error;
+    throw new MigrationError('unreadable', `${folder} cannot be read`, { cause: error });
   }
 }
 
@@ -79,7 +94,7 @@ export function readMigrations(root: string, mode: PrivacyMode): Migration[] {
       if (IGNORED.has(file)) continue;
       const match = FILE_NAME.exec(file);
       const path = join(root, folder, file);
-      if (match === null || !statSync(path).isFile()) {
+      if (match === null || !lstatSync(path).isFile()) {
         throw new MigrationError('file_name', `${folder}/${file} is not NNNN_name.sql`);
       }
       const sql = readFileSync(path, 'utf8');
@@ -131,15 +146,12 @@ async function verifyHistory(
   rows.forEach((row, index) => {
     const file = migrations[index];
     if (file === undefined) {
-      throw new MigrationError(
-        'applied_missing',
-        `applied migration ${String(row.version)}_${row.name} has no file`,
-      );
+      throw new MigrationError('applied_missing', `applied migration ${label(row)} has no file`);
     }
     if (row.version !== file.version || row.name !== file.name) {
       throw new MigrationError(
         'applied_mismatch',
-        `applied ${String(row.version)}_${row.name} does not match file ${label(file)}`,
+        `applied ${label(row)} does not match file ${label(file)}`,
       );
     }
     if (row.checksum !== file.checksum) {
@@ -167,12 +179,9 @@ async function applyOne(client: PoolClient, migration: Migration): Promise<void>
       await client.query('ROLLBACK');
     } catch (rollbackError) {
       // A connection that cannot roll back is unusable; the caller destroys it.
-      throw new MigrationError(
-        'failed',
+      throw new UnusableConnection(
         `${label(migration)} failed and could not be rolled back`,
-        {
-          cause: new AggregateError([error, rollbackError]),
-        },
+        new AggregateError([error, rollbackError]),
       );
     }
     // The cause keeps the database error for debugging; the message stays free of SQL text.
@@ -213,7 +222,7 @@ export async function migrate(
     }
     return { applied };
   } catch (error) {
-    broken = error instanceof MigrationError && error.cause instanceof AggregateError;
+    broken = error instanceof UnusableConnection;
     throw error;
   } finally {
     if (!broken) {

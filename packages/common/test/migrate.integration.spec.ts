@@ -1,11 +1,12 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Pool, PoolClient } from 'pg';
 import { loadConfig } from '../src/config';
 import { pgConfigSchema } from '../src/db';
-import { MIGRATION_LOCK_KEY, MigrationError, migrate, type MigrationFailure } from '../src/migrate';
+import { MIGRATION_LOCK_KEY, MigrationError, migrate } from '../src/migrate';
 import { createTestDb, type TestDb } from '../src/testing';
+import { failureReasonOf as reasonOf, putMigration } from './migration-fixtures';
 
 // Needs PostgreSQL and the roles from scripts/db/bootstrap.ps1 (same settings as db.integration.spec.ts).
 const config = loadConfig(pgConfigSchema, process.env);
@@ -17,17 +18,7 @@ let db: TestDb;
 let suffixCounter = 0;
 
 const put = (folder: string, file: string, sql: string): void => {
-  mkdirSync(join(root, folder), { recursive: true });
-  writeFileSync(join(root, folder, file), sql);
-};
-const reasonOf = async (work: Promise<unknown>): Promise<MigrationFailure | 'no error'> => {
-  try {
-    await work;
-  } catch (error) {
-    if (error instanceof MigrationError) return error.reason;
-    throw error;
-  }
-  return 'no error';
+  putMigration(root, folder, file, sql);
 };
 const tables = async (pool: Queryable): Promise<string[]> => {
   const { rows } = await pool.query<{ tablename: string }>(
@@ -64,13 +55,14 @@ describe('M0-04 migrate applies the files in order and records them', () => {
     const result = await migrate(db.owner, { root, mode: 'proposed' });
     expect(result.applied).toEqual(['0001_create_a', '0002_create_b', '0003_create_c']);
     expect(await tables(db.owner)).toEqual(['a', 'b', 'c', 'schema_migrations']);
-    const { rows } = await db.owner.query<{ checksum: string; applied_at: Date }>(
-      'SELECT checksum, applied_at FROM schema_migrations ORDER BY version',
+    // The time is the database's own now(), so it is compared in SQL instead of against the test machine's clock.
+    const { rows } = await db.owner.query<{ checksum: string; recent: boolean }>(
+      "SELECT checksum, applied_at BETWEEN now() - interval '1 minute' AND now() AS recent FROM schema_migrations ORDER BY version",
     );
     expect(rows).toHaveLength(3);
     for (const row of rows) {
       expect(row.checksum).toMatch(/^[0-9a-f]{64}$/);
-      expect(Math.abs(Date.now() - row.applied_at.getTime())).toBeLessThan(60_000);
+      expect(row.recent).toBe(true);
     }
   });
 
@@ -179,13 +171,23 @@ describe('M0-04 each migration is one transaction', () => {
     try {
       await holder.query('SELECT pg_advisory_lock($1::bigint)', [MIGRATION_LOCK_KEY]);
       const waiting = migrate(db.owner, { root, mode: 'proposed' });
-      // Poll the lock table instead of sleeping: the runner is blocked once its request shows up ungranted.
-      for (;;) {
+      const state = { finished: false };
+      void waiting.then(
+        () => (state.finished = true),
+        () => (state.finished = true),
+      );
+      // Poll the lock table of this database instead of sleeping: the runner is blocked once its request shows up
+      // ungranted. The bound turns a runner that failed early, or never blocks, into a failure instead of a hang.
+      let blocked = false;
+      for (let attempt = 0; attempt < 5000 && !blocked && !state.finished; attempt += 1) {
         const { rows } = await holder.query<{ n: string }>(
-          "SELECT count(*) AS n FROM pg_locks WHERE locktype = 'advisory' AND NOT granted",
+          `SELECT count(*) AS n FROM pg_locks
+            WHERE locktype = 'advisory' AND NOT granted
+              AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
         );
-        if (rows[0]?.n === '1') break;
+        blocked = rows[0]?.n === '1';
       }
+      expect(blocked).toBe(true);
       expect(await tables(holder)).toEqual([]);
       await holder.query('SELECT pg_advisory_unlock($1::bigint)', [MIGRATION_LOCK_KEY]);
       expect((await waiting).applied).toEqual(['0001_create_a', '0002_create_b']);
@@ -214,11 +216,14 @@ describe('M0-04 only the schema owner may run the migrations', () => {
     expect(await tables(db.owner)).toEqual([]);
   });
 
-  it('M0-04 the pool is left usable and no advisory lock is kept after a failure', async () => {
+  it('M0-04 after a failed run the pool still works and no advisory lock is kept', async () => {
     put('common', '0001_create_a.sql', 'THIS IS NOT SQL;\n');
     await reasonOf(migrate(db.owner, { root, mode: 'proposed' }));
+    // Only this database: the lock space is per database, and other databases may be in use.
     const { rows } = await db.owner.query<{ n: string }>(
-      "SELECT count(*) AS n FROM pg_locks WHERE locktype = 'advisory'",
+      `SELECT count(*) AS n FROM pg_locks
+        WHERE locktype = 'advisory'
+          AND database = (SELECT oid FROM pg_database WHERE datname = current_database())`,
     );
     expect(rows[0]?.n).toBe('0');
   });

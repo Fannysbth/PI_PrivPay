@@ -1,23 +1,15 @@
 import { createHash } from 'node:crypto';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MigrationError, readMigrations } from '../src/migrate';
+import { readMigrations } from '../src/migrate';
+import { failureReason as reason, putMigration } from './migration-fixtures';
 
 // Fixture trees only; the SQL is never run here (migrate.integration.spec.ts runs it against PostgreSQL).
 describe('M0-04 readMigrations lists the common folder, then the folder of the mode (ADR-0006)', () => {
   let root: string;
   const put = (folder: string, file: string, sql = 'SELECT 1;\n'): void => {
-    mkdirSync(join(root, folder), { recursive: true });
-    writeFileSync(join(root, folder, file), sql);
-  };
-  const reason = (fn: () => unknown): string | undefined => {
-    try {
-      fn();
-    } catch (error) {
-      return error instanceof MigrationError ? error.reason : 'not-a-migration-error';
-    }
-    return undefined;
+    putMigration(root, folder, file, sql);
   };
 
   beforeEach(() => {
@@ -125,7 +117,27 @@ describe('M0-04 readMigrations lists the common folder, then the folder of the m
     } catch (error) {
       message = error instanceof Error ? error.message : '';
     }
-    expect(message).not.toBe('');
+    expect(message).toContain('0003_c.sql');
     expect(message).not.toContain('FAKE-CANARY');
+  });
+
+  it('M0-04 reports a migration folder that cannot be read as a MigrationError, not a raw fs error', () => {
+    put('common', '0001_a.sql');
+    // A file where the mode folder should be: readdir fails with ENOTDIR.
+    writeFileSync(join(root, 'proposed'), 'not a folder');
+    expect(reason(() => readMigrations(root, 'proposed'))).toBe('unreadable');
+  });
+
+  it('M0-04 does not follow a link that leads out of the migrations tree', () => {
+    const outside = mkdtempSync(join(tmpdir(), 'privpay-mig-out-'));
+    try {
+      mkdirSync(join(outside, 'common'));
+      writeFileSync(join(outside, 'common', '0001_a.sql'), 'SELECT 1;\n');
+      // A junction needs no privilege on Windows; on POSIX the type argument is ignored and it is a plain symlink.
+      symlinkSync(join(outside, 'common'), join(root, 'common'), 'junction');
+      expect(reason(() => readMigrations(root, 'proposed'))).toBe('file_name');
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
