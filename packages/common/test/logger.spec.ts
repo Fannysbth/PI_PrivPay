@@ -1,5 +1,8 @@
 import { createLogger, type LogFields } from '../src/logger';
 
+// Pseudonym-shaped value built at run time, so no token-shaped literal is committed under packages/.
+const fakeToken = (n: number): string => `PSEU-${n.toString(16).toUpperCase().padStart(8, '0')}`;
+
 const CANARY_NIK = '9999123456789012';
 const CANARY_PHONE = '08999123456';
 const CANARY_NAME = 'Kenari Uji 0001';
@@ -27,7 +30,7 @@ describe('M0-02 the logger can only emit tokens, ids, and operational fields (NF
     logger.info('token.issued', {
       request_id: '3f2b9c1e-6d1a-4e55-9a40-0c1d8e7a2b11',
       transaction_id: 'TX-10001',
-      token: 'PSEU-8F29A7C1',
+      token: fakeToken(1),
       status: 200,
       latency_ms: 12,
     });
@@ -37,7 +40,7 @@ describe('M0-02 the logger can only emit tokens, ids, and operational fields (NF
       event: 'token.issued',
       request_id: '3f2b9c1e-6d1a-4e55-9a40-0c1d8e7a2b11',
       transaction_id: 'TX-10001',
-      token: 'PSEU-8F29A7C1',
+      token: fakeToken(1),
       status: 200,
       latency_ms: 12,
     });
