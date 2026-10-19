@@ -89,3 +89,12 @@ Nilai bawaan dipakai spec sampai diputuskan. "Dampak" menunjukkan spec yang beru
 | K-24 | format nilai kenari dan lokasi `tests/pii-scan` untuk proxy pengamat | PP 6 | DITERIMA (bawaan, Gerbang 3) |
 | K-25 | pemenang idempotensi yang masih `PENDING`: penantian hingga `HTTP_TIMEOUT_MS` lewat `Delay`, lalu 200 atau 409 | TX 5 | DITERIMA (bawaan, Gerbang 3) |
 | K-26 | env baru `RETENTION_JOB_RUN_UTC` (`01:00`) untuk job retensi harian | PV 7.11 | DITERIMA (bawaan, Gerbang 3) (E-28) |
+
+## G. Keputusan implementasi M0 yang diambil sementara (menunggu Fanny)
+
+| ID | Keputusan (nilai sementara) | Dampak | Status |
+| --- | --- | --- | --- |
+| N-01 | NestJS seri 11 (11.2.7, CommonJS), bukan 12 (ESM-only): toolchain uji (Jest + ts-jest, CJS) tidak memuat paket ESM-only; pindah ke ESM mengubah seluruh repo. Ditinjau ulang bila repo berpindah ke ESM | `packages/common/package.json`, M0-06 | DIAMBIL SEMENTARA, menunggu Fanny |
+| N-02 | Rute tak dikenal, metode salah, badan JSON rusak, dan badan terlalu besar dijawab `VALIDATION_ERROR` 422 (delapan kode ADR-0008 tidak punya NOT_FOUND); 401, 403, 429, 503 dari kerangka dipetakan ke kode yang sama | `nest/service-app.ts` | DIAMBIL SEMENTARA, menunggu Fanny |
+| N-03 | Gateway menjawab dengan `toClientError` (tanpa `reason`), layanan lain dengan `toWireError` (ADR-0008 butir 4) | `nest/service-app.ts` | DIAMBIL SEMENTARA, menunggu Fanny |
+| N-04 | Cara menjalankan layanan sebagai proses (build `tsc` ke `dist` atau runner TypeScript) belum diputuskan: `main.ts` ada dan `runService` diuji, tetapi belum ada skrip `start`. Diperlukan sebelum e2e lokal (M6-01); usul: keputusan di awal M1 | M0-06, M1 | TERBUKA |

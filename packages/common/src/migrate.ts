@@ -2,10 +2,7 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Pool, PoolClient } from 'pg';
-
-/** ADR-0003: only two conditions exist. */
-export const PRIVACY_MODES = ['baseline', 'proposed'] as const;
-export type PrivacyMode = (typeof PRIVACY_MODES)[number];
+import { PRIVACY_MODES, type PrivacyMode } from './mode';
 
 export type MigrationFailure =
   | 'root_missing'

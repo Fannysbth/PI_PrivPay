@@ -35,6 +35,10 @@ export default tseslint.config(
       'no-empty': ['error', { allowEmptyCatch: false }],
       '@typescript-eslint/no-explicit-any': 'error',
       '@typescript-eslint/no-floating-promises': 'error',
+      // Nest modules are empty classes that only carry decorator metadata.
+      '@typescript-eslint/no-extraneous-class': ['error', { allowWithDecorator: true }],
+      // Express recognises an error handler by its four parameters, so a leading underscore marks an unused one.
+      '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
       // Skipping or focusing tests to get a green run is forbidden (CLAUDE.md, qa-checklist Q-05).
       'no-restricted-properties': [
         'error',

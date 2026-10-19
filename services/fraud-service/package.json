@@ -1,0 +1,9 @@
+{
+  "name": "@privpay/fraud-service",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PrivPay fraud-service (skeleton: the shared service bootstrap only)",
+  "dependencies": {
+    "@privpay/common": "workspace:*"
+  }
+}

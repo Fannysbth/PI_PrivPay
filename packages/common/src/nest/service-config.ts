@@ -1,0 +1,29 @@
+import { z } from 'zod';
+import { PRIVACY_MODES } from '../mode';
+
+/** The services that run in the local phase (platform spec 8). `auth` is the dev IdP and has its own entry. */
+export const SERVICE_IDS = [
+  'gateway',
+  'privacy-service',
+  'transaction-service',
+  'fraud-service',
+  'notification-service',
+  'reconciliation-service',
+  'bank-simulator',
+  'sms-simulator',
+] as const;
+export type ServiceId = (typeof SERVICE_IDS)[number];
+
+/**
+ * What every service reads from the environment. The bind address can only be a loopback address in the local phase
+ * (AZ-43); the Docker phase widens it through its own decision, not by a flag here. UTC is mandatory (NFR-20).
+ */
+export const serviceConfigSchema = z.object({
+  PRIVACY_MODE: z.enum(PRIVACY_MODES),
+  PORT: z.coerce.number().int().min(0).max(65535),
+  BIND_HOST: z.enum(['127.0.0.1', '::1']).default('127.0.0.1'),
+  TZ: z.literal('UTC').default('UTC'),
+  LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
+  SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+});
+export type ServiceConfig = z.output<typeof serviceConfigSchema>;
