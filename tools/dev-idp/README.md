@@ -37,5 +37,10 @@ Tokens are RS256 with `iss=privpay-dev-idp`, `azp` = the client, `aud` per servi
 platform spec 7 item 6), `roles` (people: exactly one), and `customer_id` only for `customer-app`. The seed accounts
 (`users.dev.json`) are fictitious: 3 customers (`CUST-000101..103`), 2 admins, 2 auditors, 1 fraud analyst, 1 bank.
 
+`dev_login` takes a username and nothing else, so any process on this machine can obtain a token for any seed user. That
+is the point of a local fake and the reason for the guards above; it is also why the dev IdP must never be reachable from
+another host. `make-secrets` asks for owner-only file mode, which Windows ignores: keep `secrets/` in a folder only your
+account can read.
+
 The mapping of these claims to Keycloak (protocol mappers, user attributes, clients, audiences) is a debt of the Docker
 phase (DK-04).

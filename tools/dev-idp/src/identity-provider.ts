@@ -1,5 +1,12 @@
 import { createHash, generateKeyPairSync, randomUUID, type KeyObject } from 'node:crypto';
-import { DomainError, safeEqual, signJwt, verifyJwt, type Clock } from '@privpay/common';
+import {
+  DomainError,
+  safeEqual,
+  signJwt,
+  verifyJwt,
+  type Clock,
+  type JwtFailure,
+} from '@privpay/common';
 import {
   DEFAULT_REGISTRY,
   DEV_IDP_AUDIENCE,
@@ -56,6 +63,8 @@ const BEARER = /^Bearer ([A-Za-z0-9._-]+)$/;
 const CUSTOMER_CLIENT: HumanClient = 'customer-app';
 const GATEWAY: ServiceClient = 'api-gateway';
 
+const isServiceClient = (value: string): value is ServiceClient =>
+  (SERVICE_CLIENTS as readonly string[]).includes(value);
 const digest = (value: string): Buffer => createHash('sha256').update(value, 'utf8').digest();
 const pad = (n: number): string => String(n).padStart(6, '0');
 const hasOwn = (object: object, key: string): boolean => Object.hasOwn(object, key);
@@ -148,12 +157,13 @@ export class IdentityProvider {
         clock: this.clock,
         issuer: ISSUER,
         audience: DEV_IDP_AUDIENCE,
+        maxLifetimeSeconds: MAX_TTL_SECONDS,
         resolveKey: (kid) => (kid === this.kid ? this.publicKey : undefined),
       });
     } catch (error) {
       // A token that is genuine but made for another audience belongs to a caller who is known and not allowed (403);
       // verifyJwt checks the audience last, so this is only reached by a token that passed everything else.
-      if (error instanceof DomainError && error.cause === 'audience') {
+      if (error instanceof DomainError && error.cause === ('audience' satisfies JwtFailure)) {
         throw new DomainError('FORBIDDEN_ROLE', 'audience');
       }
       throw error;
@@ -201,15 +211,14 @@ export class IdentityProvider {
   private serviceToken(
     request: Extract<TokenRequest, { grant_type: 'client_credentials' }>,
   ): TokenResponse {
-    const known = (SERVICE_CLIENTS as readonly string[]).includes(request.client_id);
-    const expected = known
-      ? digest(this.serviceSecrets[request.client_id as ServiceClient])
-      : this.decoy;
+    const client = isServiceClient(request.client_id) ? request.client_id : undefined;
+    const expected = client === undefined ? this.decoy : digest(this.serviceSecrets[client]);
     // Digests have one length, so the comparison always runs in full and the secret's length is not revealed.
     const matches = safeEqual(digest(request.client_secret), expected);
-    if (!known || !matches) throw new DomainError('UNAUTHENTICATED', 'bad_credentials');
+    if (client === undefined || !matches)
+      throw new DomainError('UNAUTHENTICATED', 'bad_credentials');
 
-    const allowed = this.registry.serviceAudiences[request.client_id as ServiceClient];
+    const allowed = this.registry.serviceAudiences[client];
     const audience = [...new Set(request.audience)];
     if (audience.length === 0 || !audience.every((target) => allowed.includes(target))) {
       throw new DomainError('FORBIDDEN_ROLE', 'audience');

@@ -18,7 +18,8 @@ export const devIdpConfigSchema = z.object({
   DEV_IDP_ENABLED: z.literal('true'),
   NODE_ENV: z
     .string()
-    .refine((value) => value !== 'production')
+    // Case and spaces are ignored: 'Production' is production.
+    .refine((value) => value.trim().toLowerCase() !== 'production')
     .optional(),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(1).max(300).default(300),
   DEV_IDP_SECRETS_DIR: z.string().min(1).default('./secrets'),

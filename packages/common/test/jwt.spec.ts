@@ -151,6 +151,16 @@ describe('M1-01 signJwt and verifyJwt: RS256 only, every claim checked (NFR-21, 
     expect(failure(valid.replace(/\./, '. .'), options(clock))).toBe('malformed');
   });
 
+  it('M1-01 a verifier may cap the lifetime (exp - iat), so a far-future exp is refused (NFR-21)', () => {
+    const capped = options(clock, { maxLifetimeSeconds: 300 });
+    expect(failure(sign(claims({ exp: NOW + 300 })), capped)).toBe('accepted');
+    expect(failure(sign(claims({ exp: NOW + 301 })), capped)).toBe('claims');
+    expect(failure(sign(claims({ exp: NOW + 86_400 })), capped)).toBe('claims');
+    expect(failure(sign(claims({ iat: undefined })), capped)).toBe('claims');
+    // Without the option nothing changes, so existing callers keep their behaviour.
+    expect(failure(sign(claims({ exp: NOW + 86_400 })), options(clock))).toBe('accepted');
+  });
+
   it('M1-01 a token from the future (iat) beyond the clock is rejected', () => {
     expect(failure(sign(claims({ iat: NOW + 3600 })), options(clock))).toBe('not_yet_valid');
   });

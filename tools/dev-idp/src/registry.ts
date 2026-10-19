@@ -35,7 +35,7 @@ export const SERVICE_AUDIENCES: Readonly<Record<ServiceClient, readonly string[]
   ],
   transaction: ['privacy-service', 'fraud-service', 'notification-service'],
   fraud: ['privacy-service'],
-  notification: ['privacy-service'],
+  notification: ['privacy-service', 'sms-simulator'],
   reconciliation: ['privacy-service', 'transaction-service'],
 };
 

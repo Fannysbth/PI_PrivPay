@@ -26,7 +26,9 @@ describe('M1-01 the dev IdP refuses to start outside the local phase (ADR-0004, 
   });
 
   it('M1-01 refuses NODE_ENV=production even when it is enabled', () => {
-    expect(problem({ ...enabled, NODE_ENV: 'production' })).toContain('NODE_ENV (invalid)');
+    for (const value of ['production', 'Production', 'PRODUCTION', ' production ']) {
+      expect(problem({ ...enabled, NODE_ENV: value })).toContain('NODE_ENV (invalid)');
+    }
     expect(problem({ ...enabled, NODE_ENV: 'development' })).toBe('accepted');
     expect(problem({ ...enabled, NODE_ENV: 'test' })).toBe('accepted');
   });

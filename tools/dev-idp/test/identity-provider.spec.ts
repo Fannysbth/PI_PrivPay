@@ -145,7 +145,7 @@ describe('M1-01 client_credentials issues a service token (ADR-0007, NFR-21)', (
     ).toBe('UNAUTHENTICATED');
   });
 
-  it('M1-01 the client secret is compared with timingSafeEqual, also when the client is unknown', () => {
+  it('M1-01 the client secret check calls timingSafeEqual once, also when the client is unknown', () => {
     const idp = make();
     const spy = jest.spyOn(nodeCrypto, 'timingSafeEqual');
     reasonOf(() => idp.token(service('fraud', ['privacy-service'], 'fake-secret-fraux')));
@@ -171,6 +171,14 @@ describe('M1-01 client_credentials issues a service token (ADR-0007, NFR-21)', (
       'FORBIDDEN_ROLE',
     );
     expect(reasonOf(() => idp.token(service('fraud', [])))).toBe('FORBIDDEN_ROLE');
+  });
+
+  it('M1-01 the notification service may ask for a token for the sms simulator (AZ-41)', () => {
+    const idp = make();
+    expect(
+      reasonOf(() => idp.token(service('notification', ['privacy-service', 'sms-simulator']))),
+    ).toBe('no error');
+    expect(reasonOf(() => idp.token(service('fraud', ['sms-simulator'])))).toBe('FORBIDDEN_ROLE');
   });
 
   it('M1-01 only the gateway may ask for a token for the dev IdP itself', () => {

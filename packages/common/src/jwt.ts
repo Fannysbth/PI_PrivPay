@@ -22,13 +22,30 @@ export interface VerifyOptions {
   readonly audience: string;
   /** The public key for a key id, or undefined when the id is not one of the issuer's keys. */
   readonly resolveKey: (kid: string | undefined) => KeyObject | undefined;
+  /**
+   * When set, the token must carry an integer `iat` and live at most this many seconds (`exp - iat`). A receiving
+   * service sets 300, so a token minted with a far-future `exp` is refused even if its signature is good (NFR-21).
+   */
+  readonly maxLifetimeSeconds?: number;
 }
+
+/** The `cause` of the UNAUTHENTICATED error: which check failed, never what the token held. */
+export type JwtFailure =
+  | 'malformed'
+  | 'alg'
+  | 'kid'
+  | 'signature'
+  | 'issuer'
+  | 'claims'
+  | 'not_yet_valid'
+  | 'expired'
+  | 'audience';
 
 // A token is a few hundred bytes; a longer string is not one, and is not worth parsing.
 const MAX_LENGTH = 8192;
 const SEGMENT = /^[A-Za-z0-9_-]*$/;
 
-const reject = (category: string): never => {
+const reject = (category: JwtFailure): never => {
   // The category says which check failed, never what the token held: it may reach a log through `cause`.
   throw new DomainError('UNAUTHENTICATED', category);
 };
@@ -64,11 +81,12 @@ export function verifyJwt(token: string, options: VerifyOptions): Record<string,
   const key = typeof kid === 'string' ? options.resolveKey(kid) : undefined;
   if (key === undefined) return reject('kid');
 
-  const payload = decodeObject(payloadSegment);
+  // The signature is checked before the payload is parsed: nothing the signer did not write gets interpreted.
   const signature = Buffer.from(signatureSegment, 'base64url');
   const signed = Buffer.from(`${headerSegment}.${payloadSegment}`);
   if (signature.length === 0 || !verify('RSA-SHA256', signed, key, signature))
     return reject('signature');
+  const payload = decodeObject(payloadSegment);
 
   if (payload['iss'] !== options.issuer) return reject('issuer');
   const exp = payload['exp'];
@@ -78,6 +96,16 @@ export function verifyJwt(token: string, options: VerifyOptions): Record<string,
     const value = payload[claim];
     if (value !== undefined && (typeof value !== 'number' || value > now))
       return reject('not_yet_valid');
+  }
+  if (options.maxLifetimeSeconds !== undefined) {
+    const issuedAt = payload['iat'];
+    if (
+      typeof issuedAt !== 'number' ||
+      !Number.isInteger(issuedAt) ||
+      exp - issuedAt > options.maxLifetimeSeconds
+    ) {
+      return reject('claims');
+    }
   }
   if (exp <= now) return reject('expired');
   const audience = payload['aud'];
