@@ -34,7 +34,7 @@ Peran `fraud_analyst`. Body `{decision: "APPROVE"|"REJECT", reason_code: "CONFIR
 
 ### 3.4 Endpoint untuk Reconciliation **[Δ PRD, K-18]**
 
-PRD 9 (D1, E1) mengandaikan Reconciliation membaca transaksi, tetapi PRD 10 tidak mendaftarkan endpoint-nya. Diusulkan (menunggu persetujuan, errata E-23/E-24):
+PRD 9 (D1, E1) mengandaikan Reconciliation membaca transaksi, tetapi PRD 10 tidak mendaftarkan endpoint-nya. Disetujui Fanny (Gerbang 3, errata E-23/E-24):
 
 - `GET /transaction/completed?date=YYYY-MM-DD&limit&cursor`: `{items:[{transaction_id, amount, completed_at}], next_cursor}`; hanya `COMPLETED` (HELD dan FAILED tidak ikut); tanggal menurut `completed_at` UTC; tanpa token dan tanpa identitas; pemanggil `RECONCILIATION`.
 - `GET /transaction/{transaction_id}`: `{transaction_id, amount, status, created_at, completed_at}`; pemanggil `RECONCILIATION`; tidak ada: 404 `TRANSACTION_NOT_FOUND` (K-02).
@@ -98,6 +98,6 @@ Tidak ada kolom, log, atau muatan keluar berisi identitas (proposed); log hanya 
 
 Model saldo/ledger, verifikasi kepemilikan rekening, pengiriman ulang notifikasi otomatis, pembatalan pelanggan (`CANCELLED` hanya dikenal di Privacy), teks bebas pada review.
 
-## 10. Keputusan spec yang menunggu konfirmasi
+## 10. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-18 endpoint 3.4 (PRD 10 tidak mendaftarkannya). K-19 `TX_SWEEP_INTERVAL_SECONDS` (env baru, bawaan 30). K-25 penantian pemenang yang masih `PENDING` hingga `HTTP_TIMEOUT_MS` lewat `Delay` sebelum menjawab 200 atau 409 (ADR-0009 hanya menyebut respons akhirnya). Selain itu K-02 dan K-16 pada spec lain berlaku di sini.

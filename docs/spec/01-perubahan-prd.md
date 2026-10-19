@@ -24,11 +24,11 @@ PRD lengkap (`docs/reference/`) tidak diubah dan sedang diperbarui Fanny terpisa
 | 16 | 5, 17, 19 (M0, M1) | Docker Compose, Kong, Keycloak sejak awal | fase lokal tanpa Docker: `gateway-adapter`, `dev-idp`, PostgreSQL 18 lokal; Docker, Kong, Keycloak, TLS, NFR-19, M7 ditunda | ADR-0004, E-15 | `platform-dan-ci.md` 12, 14 |
 | 17 | 20 no. 2, 12 | rantai hash opsional | hanya dirancang; kolom nullable tidak diisi | D-19, Q-12 | `privacy-service.md` 9.3 |
 
-## B. Diusulkan dalam spec dan menunggu persetujuan Fanny
+## B. Diusulkan dalam spec dan disetujui Fanny (Gerbang 3)
 
 PRD 10 menyatakan daftar endpoint adalah sumber tunggal dan endpoint di luar daftar dilarang (API9). Alur PRD sendiri membutuhkan beberapa endpoint yang tidak terdaftar:
 
-| # | Usulan | Alasan | Spec | Errata |
+| # | Endpoint atau perubahan | Alasan | Spec | Errata |
 | --- | --- | --- | --- | --- |
 | 18 | `GET /transaction/completed?date=` (RECONCILIATION) | alur D1 mengambil transaksi `COMPLETED` per tanggal | `transaction.md` 3.4 | E-23 |
 | 19 | `GET /transaction/{transaction_id}` (RECONCILIATION) | alur E1 mengembalikan nominal dan status | `transaction.md` 3.4 | E-24 |

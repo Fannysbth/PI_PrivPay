@@ -1,0 +1,9 @@
+{
+  "name": "@privpay/bank-simulator",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PrivPay bank-simulator (skeleton: the shared service bootstrap only)",
+  "dependencies": {
+    "@privpay/common": "workspace:*"
+  }
+}

@@ -1,0 +1,9 @@
+packages:
+  - "packages/*"
+  - "services/*"
+  - "tools/*"
+# Dependency install scripts are denied; these two were reviewed and are not needed
+# (prebuilt binaries ship as optional packages).
+allowBuilds:
+  "@parcel/watcher": false
+  unrs-resolver: false

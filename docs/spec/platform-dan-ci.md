@@ -1,6 +1,6 @@
 # Spesifikasi: platform dan CI
 
-Sumber: PRD 10, 14, 17; ADR-0002, 0004, 0006, 0007, 0008; CLAUDE.md; SECURITY.md. Bagian yang berbeda dari teks PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`. Butir bertanda **[K-nn]** adalah keputusan spec yang menunggu konfirmasi (daftar di `OPEN_QUESTIONS.md` bagian F).
+Sumber: PRD 10, 14, 17; ADR-0002, 0004, 0006, 0007, 0008; CLAUDE.md; SECURITY.md. Bagian yang berbeda dari teks PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`. Butir bertanda **[K-nn]** adalah keputusan spec yang diterima Fanny (bawaan, Gerbang 3) (daftar di `OPEN_QUESTIONS.md` bagian F).
 
 ## 1. Tanggung jawab
 
@@ -25,11 +25,12 @@ Prinsip desain (skill `codebase-design`): modul dalam dengan interface kecil, se
 
 | Modul | Interface (yang harus diketahui pemanggil) | Catatan |
 | --- | --- | --- |
-| `config` | `loadConfig(zodSchema, env)` mengembalikan objek bertipe; gagal cepat dengan daftar nama variabel bermasalah, tanpa nilai | Tolak field tak dikenal pada kelompok variabel layanan; rahasia lewat `readSecret(env, 'NAME')` yang membaca berkas dari `NAME_FILE` |
-| `clock` | `interface Clock { now(): Date }`, `SystemClock`, `FakeClock(advance(seconds))` | Selalu UTC (NFR-20); tes tidak memakai `sleep` nyata |
-| `errors` | `DomainError(code, reason, httpStatus, message)`, daftar `Reason`, `toClientError(err)` | Bagian 4 |
-| `logger` | `createLogger({service})`; `logger.info(event, fields)` | pino dengan `redact`; lihat bagian 5; `console.*` dilarang (ESLint + pre-commit) |
-| `http` | `HttpClient.request({method, url, headers, body, idempotent})` | Bagian 6 |
+| `config` | `loadConfig(zodObject, env, {strictPrefixes?})` mengembalikan objek bertipe; gagal cepat dengan daftar nama variabel bermasalah (`missing`, `empty`, `invalid`, `unknown`), tanpa nilai; tidak pernah gagal-terbuka (kegagalan tingkat skema dilaporkan sebagai `(config)`) | Variabel tak dikenal ditolak untuk prefiks yang dinyatakan ketat oleh layanan (`strictPrefixes`, opt-in agar variabel lingkungan lain tidak ditolak); rahasia lewat `readSecret(env, 'NAME')` dan `readKey(env, 'NAME', bytes)` yang membaca berkas dari `NAME_FILE` (maks 4 KiB), menolak `NAME` mentah di env |
+| `clock` | `interface Clock { now(): Date }`, `SystemClock`, `FakeClock(start)` dengan `advance(seconds)` dan `set(instant)` | Selalu UTC (NFR-20); instant berbentuk teks wajib memuat `Z` atau offset; tes tidak memakai `sleep` nyata; pemeriksaan `TZ=UTC` proses ada di M0-06 |
+| `errors` | `DomainError(reason)`; `REASONS` (status antar-layanan dan kode klien per reason); `toWireError(err, requestId)` dan `toClientError(err, requestId)` | Bagian 4. Kode, status, dan pesan diturunkan dari tabel `REASONS` sehingga pemanggil tidak dapat menyetel status atau pesan sendiri; `requestId` yang bukan UUID diganti `[INVALID]`; reason tak dikenal menjadi 500 |
+| `logger` | `createLogger({service, level?, destination?})`; `logger.info(event, fields)` | pino; hanya field `LogFields` (daftar putih); lihat bagian 5; `console.*` dilarang (ESLint + pre-commit) |
+| `nest` (`@privpay/common/nest`) | `createServiceApp({service, modules?}, env, {clock?, delay?, logDestination?, closeables?})` mengembalikan `{app, httpServer, listen(), close()}`; `runService({service, modules?})` untuk `main.ts`; `serviceConfigSchema`; `SERVICE_IDS` | Bagian 8, 9. `BIND_HOST` hanya loopback (AZ-43), `TZ` hanya UTC (NFR-20); `/health` dan `/metrics` bagian 8; error seragam (gateway tanpa `reason`); `close()` menunggu permintaan berjalan sampai `SHUTDOWN_TIMEOUT_MS`, lalu menutup `closeables` |
+| `http` | `createHttpClient({baseUrls, timeoutMs, maxRetries, serviceToken?, ...}).request({service, method, path, body?, idempotent, requestId?, authorization?, actorToken?})`; `httpConfigSchema` (`HTTP_TIMEOUT_MS` 3000, `HTTP_MAX_RETRY` 0..2, bawaan 2); `createTokenCache({fetchToken, clock})`; `Delay` (`RealDelay`, `FakeDelay`) | Bagian 6. Pemanggil menyebut nama layanan dan path, bukan URL (URL hanya dari konfigurasi, API7); tidak ada header bebas (hanya `Authorization`, `X-Actor-Token`, `X-Request-Id`, `Content-Type` yang diatur klien dan divalidasi polanya); setelah percobaan habis, 502/503/504, kegagalan jaringan, dan timeout menjadi `DomainError('SERVICE_UNAVAILABLE')` dengan `cause` berupa kategori (`timeout`, `network`, `unavailable`, `too_large`, `parse`); request yang salah dibentuk menjadi `INTERNAL_ERROR` sebelum apa pun dikirim |
 | `auth` | `verifyServiceToken(authorization)` mengembalikan `{requestingService}`; `verifyActorToken(token)` mengembalikan `{actorId, role}`; `authenticate(headers)` | ADR-0007; bagian 7 |
 | `safeEqual` | `safeEqual(a, b)` pembungkus `timingSafeEqual` dengan pemeriksaan panjang (hasil `false` bila panjang beda) | Wajib untuk setiap perbandingan nilai rahasia |
 | `schemas` | zod schema bersama: `Pseudonym`, `TransactionId`, `Purpose`, `ServiceId`, `SubjectType`, kontrak antar-layanan | Perubahan skema memecahkan tes kontrak (qa-checklist D) |
@@ -72,8 +73,8 @@ Aturan: kegagalan yang tidak dikenal menjadi 500 `INTERNAL_ERROR`; detail hanya 
 
 ## 5. Logging
 
-- pino, level dari env `LOG_LEVEL`. Hanya field berikut yang boleh dicatat: `request_id`, `transaction_id`, token (`PSEU-...`), `service`, `route`, `status`, `latency_ms`, nama kejadian. Fungsi `logger` menerima objek bertipe `LogFields` (bukan `Record<string, unknown>`); field di luar daftar tidak dapat dikompilasi.
-- `redact` pino untuk `authorization`, `x-actor-token`, `*.password`, `*.secret`, `*.token` yang bukan pseudonim, `phone`, `nik`, `nama`, `email`, `rekening`, `customer_id`, `subject_id`. Redaksi adalah lapis kedua; lapis pertama adalah tipe `LogFields`.
+- pino, level dari env `LOG_LEVEL`. Hanya field berikut yang boleh dicatat: `request_id`, `transaction_id`, token (`PSEU-...`), `route`, `status`, `latency_ms`, `reason`, nama kejadian; `service` ditetapkan saat logger dibuat dan tidak dapat ditimpa. Fungsi `logger` menerima objek bertipe `LogFields` (bukan `Record<string, unknown>`); field di luar daftar tidak dapat dikompilasi dan, bila lolos lewat cast, dibuang saat berjalan (nama kunci yang mirip data dicatat sebagai `[invalid_key]`). Nilai tiap field diperiksa polanya (UUID, `TX-` + angka, `PSEU-` + 8 heks, templat rute tanpa deretan angka panjang, status 100..599, latensi ≤ 1 jam, `reason` dari `REASONS`); yang tidak cocok menjadi `[INVALID]`. Nama kejadian harus berpola `^[a-z][a-z0-9_.-]{0,63}$`.
+- Tidak ada lapis `redact` pino: daftar putih membuang semua kunci lain sehingga `redact` tidak akan pernah terpicu dan tidak dapat diuji. Lapis kedua adalah validasi pola nilai (di atas). **[Δ spec: PRD NFR-15 tidak menyebut `redact`; ADR-0002 menyebutnya sebagai alat, dan dibuang karena tidak berfungsi pada rancangan daftar putih.]**
 - Body permintaan tidak pernah dicatat, juga bukan pada tingkat `debug` (NFR-15).
 - Pesan error untuk validasi env tidak memuat nilai (E-09).
 
@@ -148,7 +149,7 @@ Penerbit JWT tiruan khusus dev. Menolak start bila `NODE_ENV=production` atau `D
 | SAST dan lain-lain | CodeQL, Semgrep, Trivy, hadolint, dependency-review | CI (Trivy image dan hadolint aktif bila ada Dockerfile) |
 | e2e compose | Newman + `pii-scan` pada kedua mode | **ditunda** sampai Docker (DK-01) |
 
-Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (CLAUDE.md). Pin versi image dan Action (SHA) dikerjakan di M0-07 (TODO di `ci.yml`).
+Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (CLAUDE.md). Semua Action dipin ke SHA commit dan semua image ke digest (M0-07); `tests/repo/ci-workflow.spec.ts` menjaganya. Job `integration` membangkitkan kata sandi admin PostgreSQL 16 per run dan menjalankan `scripts/ci/bootstrap-twice.sh` (bootstrap dua kali, snapshot katalog identik).
 
 ## 15. Kriteria penerimaan
 
@@ -170,6 +171,6 @@ Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (CLAUDE.md). Pin vers
 
 Keycloak, Kong, Docker Compose, TLS antar-layanan, tiga jaringan Docker, Prometheus/Grafana dan pengukuran sumber daya (semua fase Docker, DK-xx), rotasi kunci otomatis, UI.
 
-## 17. Keputusan spec yang menunggu konfirmasi
+## 17. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-01 reason `DISCLOSURE_NOT_PENDING` 409 untuk approve/reject pada status selain PENDING (PRD diam). K-02 reason `TRANSACTION_NOT_FOUND` 404 untuk audit-request pada `transaction_id` tak dikenal. K-03 pembatasan `aud` token aktor (butir 7.6).

@@ -33,7 +33,7 @@ Di luar cakupan: keamanan fisik/VPS, DDoS volumetrik, serangan terhadap Keycloak
 
 ## 4. Validasi input dan batas kepercayaan
 
-- Semua input batas divalidasi dengan skema, menolak field tak dikenal, membatasi panjang, tipe, dan rentang (nominal bilangan bulat rupiah non-negatif, `purpose` dari enum, `Idempotency-Key` UUID).
+- Semua input batas divalidasi dengan skema, menolak field tak dikenal, membatasi panjang, tipe, dan rentang (nominal bilangan bulat rupiah ≥ 1 (K-16), `purpose` dari enum, `Idempotency-Key` UUID).
 - `requesting_service` dan peran hanya dari JWT yang divalidasi. `target_service` divalidasi terhadap Tabel 1.
 - SQL hanya berparameter. Tidak ada SQL dinamis dari input.
 - Ukuran body dibatasi; header tak dikenal tidak dipercaya.

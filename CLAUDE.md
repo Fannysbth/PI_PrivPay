@@ -38,6 +38,8 @@ pnpm pii-scan                     # pemindai nilai kenari (payload, DB, log)
 
 gitleaks di Windows: `winget install Gitleaks.Gitleaks`. Bila shell belum memuat `%LOCALAPPDATA%\Microsoft\WinGet\Links` di PATH, panggil dengan path lengkap `"$LOCALAPPDATA/Microsoft/WinGet/Links/gitleaks.exe"`. Allowlist PSEU-token dan UUID contoh hanya berlaku di `docs/` dan `tests/`, tidak di `services/` atau `packages/`.
 
+Status perintah (diperbarui per tiket): **sudah ada**: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm test`, `gitleaks` (M0-01), dan `pnpm test:integration` (M0-05; butuh `scripts/db/bootstrap.ps1` sudah dijalankan dan `.env.test` atau `PG_HOST`/`PG_PORT`/`PG_SECRETS_DIR`, lihat `scripts/db/README.md`). **Belum ada:** `pnpm test:security` (M3-06), `pnpm audit` selain `--prod` bersih (lihat CHANGELOG), `pnpm newman` (M6-01), `pnpm pii-scan` (M2-10), `docker compose` (DK-01). Gunakan `corepack pnpm <perintah>` bila `pnpm` tidak ada di PATH.
+
 Gerbang lokal sebelum menyatakan tiket selesai: lint, typecheck, test, test:integration, audit, dan pemindaian secret (`gitleaks detect`). Tampilkan keluarannya.
 
 ## Struktur repo
@@ -45,6 +47,7 @@ Gerbang lokal sebelum menyatakan tiket selesai: lint, typecheck, test, test:inte
 ```
 services/{gateway,auth,privacy-service,transaction-service,fraud-service,
           notification-service,reconciliation-service,bank-simulator,sms-simulator}
+tools/dev-idp           # penerbit JWT tiruan fase lokal (ADR-0004); diganti Keycloak di fase Docker
 packages/common        # tipe, error, logger berredaksi, klien HTTP (timeout/retry), zod schema bersama
 tests/{functional,security,pii-scan,performance}
 deploy/                # compose, konfigurasi Kong/Keycloak/Prometheus

@@ -111,6 +111,6 @@ NIK/nama/email tidak pernah sampai ke layanan hilir pada mode proposed (diuji de
 
 Plugin Lua dan konfigurasi Kong, TLS klien→Gateway dan Gateway→Privacy (utang NFR-06, DK-03), Keycloak, UI, pembatas laju terdistribusi.
 
-## 13. Keputusan spec yang menunggu konfirmasi
+## 13. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-14 rute `POST /register` (PRD 10 tidak menamai rute A1) dan pembatasan laju per alamat sumber. K-15 rute `POST /reconciliation/disclosure` (lihat `reconciliation.md`). K-16 `amount` ≥ 1 (SECURITY.md menyebut non-negatif) dan pola `geohash`/`merchant_id`. K-17 skema `transaction_id` tanpa basis data.

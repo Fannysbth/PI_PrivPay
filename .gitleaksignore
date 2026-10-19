@@ -1,3 +1,8 @@
 # Historical finding, false positive: the public example Idempotency-Key UUID in a throwaway prototype test.
 # The file was deleted from the tree (commit c87bda7) but stays in history; history is not rewritten.
 a88793174983000da292ff6c15663e6cb7124262:prototypes/idempotency-check/idempotency.test.mjs:generic-api-key:67
+
+# Historical findings, false positives: a fictitious pseudonym (PSEU- + 8 hex) used as a log-field fixture in a unit
+# test. Replaced by a run-time built value in the next commit; the commit itself stays in history.
+6c6edadec7bc2212206e104a75883e7b12e5ddb6:packages/common/test/logger.spec.ts:generic-api-key:30
+6c6edadec7bc2212206e104a75883e7b12e5ddb6:packages/common/test/logger.spec.ts:generic-api-key:40

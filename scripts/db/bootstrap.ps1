@@ -5,12 +5,16 @@
   generates passwords for the privpay_* roles into secrets/ when missing, then runs bootstrap.sql through psql.
   Only privpay_* objects are created or altered. Safe to re-run.
 #>
+param(
+  # Defaults to the repo's local .env. A different file lets the script be tested against a throwaway server.
+  [string]$EnvFile = ''
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
-$envFile = Join-Path $root '.env'
-if (-not (Test-Path $envFile)) { throw ".env not found at repo root. Copy .env.example to .env and fill PG_ADMIN_USER / PG_ADMIN_PASSWORD." }
+$envFile = if ($EnvFile) { $EnvFile } else { Join-Path $root '.env' }
+if (-not (Test-Path $envFile)) { throw "$envFile not found. Copy .env.example to .env and fill PG_ADMIN_USER / PG_ADMIN_PASSWORD." }
 
 # Parse only PG_* keys; ignore everything else so unrelated values are never touched.
 $cfg = @{}
@@ -51,6 +55,14 @@ $names = @{
   PRIVPAY_PW_APP           = 'privpay_app_password'
   PRIVPAY_PW_AUDITOR       = 'privpay_auditor_password'
   PRIVPAY_PW_TEST_ADMIN    = 'privpay_test_admin_password'
+  PRIVPAY_PW_TRANSACTION_OWNER    = 'privpay_transaction_owner_password'
+  PRIVPAY_PW_TRANSACTION_APP      = 'privpay_transaction_app_password'
+  PRIVPAY_PW_FRAUD_OWNER          = 'privpay_fraud_owner_password'
+  PRIVPAY_PW_FRAUD_APP            = 'privpay_fraud_app_password'
+  PRIVPAY_PW_NOTIFICATION_OWNER   = 'privpay_notification_owner_password'
+  PRIVPAY_PW_NOTIFICATION_APP     = 'privpay_notification_app_password'
+  PRIVPAY_PW_RECONCILIATION_OWNER = 'privpay_reconciliation_owner_password'
+  PRIVPAY_PW_RECONCILIATION_APP   = 'privpay_reconciliation_app_password'
 }
 
 $touched = @('PGHOST', 'PGPORT', 'PGUSER', 'PGPASSWORD') + @($names.Keys)

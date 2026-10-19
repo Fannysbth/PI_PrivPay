@@ -1,0 +1,9 @@
+{
+  "name": "@privpay/privacy-service",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PrivPay privacy-service (skeleton: the shared service bootstrap only)",
+  "dependencies": {
+    "@privpay/common": "workspace:*"
+  }
+}

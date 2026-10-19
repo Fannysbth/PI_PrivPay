@@ -199,5 +199,9 @@ Skenario dan harapan per lapis (layanan dan Gateway): `pengujian-dan-pengukuran.
 
 - **Tidak ada FR atau NFR tanpa tes atau pengukuran terencana.**
 - **Bukti ditunda (bukan tanpa tes):** NFR-01, NFR-02, NFR-03 (M7-01), NFR-06 (DK-03), NFR-19 (DK-06), bagian `docker history` dari NFR-22 dan TK-18 (DK-01). Tidak boleh dinyatakan lulus sebelum diuji (ADR-0004).
-- **Bukti bersyarat:** FR-09/FR-22 mengandalkan rute yang menunggu persetujuan (E-23..E-27, `01-perubahan-prd.md` bagian B).
+- **Bukti bersyarat:** FR-09/FR-22 mengandalkan rute tambahan yang disetujui Fanny (E-23..E-27, `01-perubahan-prd.md` bagian B).
 - **Kriteria penerimaan wajib hasil Fase 2** (bukan catatan): TF-15 khusus (M2-05), `timingSafeEqual` (M1-02), `ON CONFLICT` paralel `POST /transaction` (M4-01), dua pool audit (M2-04).
+
+## 7. Otorisasi per endpoint (AZ)
+
+Setiap endpoint di `endpoints.md` punya tes otorisasi negatif `AZ-nn` (N1 tanpa kredensial, N2 pemanggil atau peran salah, N3 field tak dikenal, N4 `requesting_service` palsu). Pemetaan: AZ-01..AZ-17 (Gateway) → M2-11, M3-02, M3-03, M3-04, M4-03, M4-06, M4-07, M4-08; AZ-18..AZ-25 (Privacy) → M2-05..M2-08, M3-01, M3-05; AZ-26..AZ-30 (Transaction) → M4-01, M4-03, M4-06, M4-07; AZ-31..AZ-37 → M4-04..M4-07; AZ-38..AZ-43 → M0-06, M1-01, M4-05, M4-06. Kebutuhan yang dibuktikan: FR-01, FR-07, FR-09, FR-13, FR-26, FR-42, FR-43, NFR-10, D-16.
