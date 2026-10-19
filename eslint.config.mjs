@@ -62,7 +62,7 @@ export default tseslint.config(
   },
   {
     // Jest's config is CommonJS and uses module.exports.
-    files: ['jest.config*.cjs'],
+    files: ['jest*.cjs'],
     languageOptions: {
       sourceType: 'commonjs',
       globals: { module: 'writable', require: 'readonly' },

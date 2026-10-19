@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M0-05 bootstrap DB multi-layanan dan harness tes
+
+- Diubah: `scripts/db/bootstrap.sql` dan `bootstrap.ps1` kini membuat satu database dan pasangan peran pemilik/runtime untuk tiap layanan (privacy, transaction, fraud, notification, reconciliation; privacy tetap `privpay_app` dan `privpay_auditor`), hanya peran milik layanan yang boleh terhubung ke databasenya, dan keanggotaan sementara admin pada semua peran pemilik dicabut di akhir. `ALTER ROLE` hanya menyinkronkan kata sandi (admin non-superuser tidak boleh menyatakan ulang atribut SUPERUSER). Parameter `-EnvFile` memungkinkan skrip dicoba di server sementara. Penjelasan di `scripts/db/README.md`.
+- Ditambah: `@privpay/common` modul `db` (`SERVICE_DBS`, `pgConfigSchema` untuk `PG_HOST`/`PG_PORT`/`PG_SECRETS_DIR`, `createPool`, `readRolePassword`, `withTransaction`; semua nama harus berawalan `privpay_`) dan `@privpay/common/testing` (`createTestDb`, `createAdminPool`, `testDatabaseName`): membuat ulang `privpay_<layanan>_test_<akhiran>` oleh `privpay_test_admin`, menerapkan skema sebagai pemilik, dan mengembalikan pool untuk peran runtime asli.
+- `pnpm test:integration` (Jest terpisah, satu worker, pengaturan dari `.env.test` atau env; tanpa kata sandi). 26 tes unit dan 23 tes integrasi baru.
+- Bukti: bootstrap dan 23 tes integrasi dijalankan terhadap klaster PostgreSQL 18 sementara dengan admin non-superuser (bukan server Fanny, bukan `.env` Fanny), dua kali berturut-turut (idempoten). Mutasi `GRANT CONNECT ... TO PUBLIC` membuat dua tes isolasi gagal. **Belum dijalankan di server Fanny**: Fanny perlu menjalankan ulang `scripts/db/bootstrap.ps1` lalu `pnpm test:integration`.
+- Dependensi baru: `pg@8.23.1` (MIT) di `@privpay/common` (driver PostgreSQL, ADR-0002, sebelumnya hanya di prototipe) dan `@types/pg` (dev, MIT). `pnpm audit --prod --audit-level high`: tidak ada kerentanan.
+
 ### M0-03 `@privpay/common`: klien HTTP antar-layanan dan cache token
 
 - Ditambah: `createHttpClient` (timeout `AbortSignal.timeout`, retry hanya untuk operasi idempoten pada kegagalan jaringan, timeout, 502/503/504 dengan backoff eksponensial dan jitter 0,5x..1,5x, 4xx dan 500 tidak diulang, redirect tidak diikuti, `X-Request-Id` diteruskan atau dibangkitkan, URL hanya dari konfigurasi dan path dibatasi pola, respons dibatasi 1 MiB), `createTokenCache` (cache sampai `exp` dikurangi 30 detik, satu fetch bersama untuk pemanggil paralel, kegagalan tidak di-cache dan tidak mengutip token), dan `Delay` (`RealDelay`, `FakeDelay`).

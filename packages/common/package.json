@@ -4,10 +4,15 @@
   "private": true,
   "description": "Shared building blocks for every PrivPay service: config, clock, errors, logger, HTTP client",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./testing": "./src/testing/index.ts"
   },
   "dependencies": {
+    "pg": "^8.23.1",
     "pino": "^10.4.0",
     "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
   }
 }
