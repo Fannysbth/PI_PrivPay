@@ -15,7 +15,7 @@ import { ErrorMasker } from './error-masker';
 import { Gateway } from './gateway';
 import { JwksKeys } from './jwks';
 import { RateLimiter } from './rate-limiter';
-import { RouteTable, type Upstream } from './routes';
+import { RouteTable, type Route, type Upstream } from './routes';
 
 const GATEWAY = Symbol('GATEWAY');
 const CLIENT_ID = 'api-gateway';
@@ -76,7 +76,7 @@ class GatewayModule {}
  * real one. Configuration problems are ConfigErrors, so the process stops before it listens.
  */
 export function gatewayModules(
-  overrides: { fetch?: typeof fetch } = {},
+  overrides: { fetch?: typeof fetch; routes?: readonly Route[] } = {},
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
     const config = loadGatewayConfig(env);
@@ -121,7 +121,7 @@ export function gatewayModules(
     const gateway = new Gateway({
       clock,
       issuer: config.IDP_ISSUER,
-      table: new RouteTable(),
+      table: new RouteTable(overrides.routes),
       limiter: new RateLimiter({
         clock,
         limitPerMinute: config.RATE_LIMIT_PER_MINUTE,
@@ -130,6 +130,7 @@ export function gatewayModules(
       keys: new JwksKeys({
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
+        maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
         source: {
           fetch: async () => {
             const answer = await http.request({

@@ -10,8 +10,10 @@ export interface JwksSource {
 export interface JwksKeysOptions {
   readonly source: JwksSource;
   readonly clock: Clock;
-  /** Minimum time between two refreshes caused by a key id nobody knows. */
+  /** Minimum time between two reloads caused by a key id nobody knows. */
   readonly cooldownSeconds: number;
+  /** Keys older than this are reloaded even for a known key id, so a key the issuer withdrew stops being trusted. */
+  readonly maxAgeSeconds: number;
 }
 
 // Strict on purpose: a key with a private member, another type or another algorithm is not something to import.
@@ -29,13 +31,16 @@ const unavailable = (category: string): DomainError =>
   new DomainError('SERVICE_UNAVAILABLE', category);
 
 /**
- * The issuer's public keys by key id (FR-01). A token naming a key id that is not known makes the keys reload, but not
- * more than once per cooldown, so a flood of random key ids cannot turn into a flood of requests to the IdP. A JWKS
- * with anything wrong in it replaces nothing; the keys already held stay valid.
+ * The issuer's public keys by key id (FR-01). Three things make the keys load again: they were never loaded, a token
+ * names a key id nobody knows (at most once per cooldown, so a flood of random ids cannot become a flood of requests
+ * to the IdP), and they have grown older than the maximum age (so a withdrawn key does not stay trusted for as long
+ * as the process lives). Keys that are too old and cannot be renewed are dropped: the gateway fails closed. A JWKS with
+ * anything wrong in it replaces nothing.
  */
 export class JwksKeys {
   private keys = new Map<string, KeyObject>();
   private loaded = false;
+  private loadedAt = 0;
   private inFlight: Promise<void> | undefined;
   private lastMissRefresh: number | undefined;
   private lastFailure: number | undefined;
@@ -46,27 +51,29 @@ export class JwksKeys {
     return kid === undefined ? undefined : this.keys.get(kid);
   }
 
-  /** Makes sure `resolveKey(kid)` has had its chance: loads the keys first and refreshes for an unknown id. */
+  /** Makes sure `resolveKey(kid)` has had its chance: loads, reloads for an unknown id, and renews old keys. */
   async ensure(kid: string | undefined): Promise<void> {
     if (this.inFlight !== undefined) return this.inFlight;
-    if (this.loaded && (kid === undefined || this.keys.has(kid))) return;
 
     const now = this.options.clock.now().getTime();
+    const stale = this.loaded && now - this.loadedAt >= this.options.maxAgeSeconds * 1000;
+    if (this.loaded && !stale && (kid === undefined || this.keys.has(kid))) return;
+
     const cooldownMs = this.options.cooldownSeconds * 1000;
     if (this.lastFailure !== undefined && now - this.lastFailure < cooldownMs) {
       throw unavailable('cooldown');
     }
-    if (this.loaded) {
+    if (this.loaded && !stale) {
       if (this.lastMissRefresh !== undefined && now - this.lastMissRefresh < cooldownMs) return;
       this.lastMissRefresh = now;
     }
-    this.inFlight = this.refresh().finally(() => {
+    this.inFlight = this.refresh(stale).finally(() => {
       this.inFlight = undefined;
     });
     return this.inFlight;
   }
 
-  private async refresh(): Promise<void> {
+  private async refresh(wasStale: boolean): Promise<void> {
     try {
       let body: unknown;
       try {
@@ -90,9 +97,15 @@ export class JwksKeys {
       }
       this.keys = next;
       this.loaded = true;
+      this.loadedAt = this.options.clock.now().getTime();
       this.lastFailure = undefined;
     } catch (error) {
       this.lastFailure = this.options.clock.now().getTime();
+      if (wasStale) {
+        // Past the maximum age and not renewable: trust nothing until the IdP answers again.
+        this.keys = new Map();
+        this.loaded = false;
+      }
       throw error;
     }
   }

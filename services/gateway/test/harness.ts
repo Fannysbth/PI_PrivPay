@@ -1,11 +1,12 @@
 import 'reflect-metadata';
-import { generateKeyPairSync } from 'node:crypto';
+import { createHmac, generateKeyPairSync } from 'node:crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FakeClock, ROLE_SERVICES, safeEqual, signJwt, type HumanRole } from '@privpay/common';
 import { createServiceApp, type ServiceApp } from '@privpay/common/nest';
 import { gatewayModules } from '../src/gateway.module';
+import type { Route } from '../src/routes';
 
 // Everything here is made up for the test run: keys, secrets, tokens, hosts.
 const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -145,6 +146,8 @@ export function tokens(clock: FakeClock): {
   bank: () => string;
   service: (client: string, aud: string[]) => string;
   foreign: (role: HumanRole) => string;
+  algNone: (role: HumanRole) => string;
+  hs256: (role: HumanRole) => string;
 } {
   return {
     person: (role, extra = {}) =>
@@ -175,6 +178,41 @@ export function tokens(clock: FakeClock): {
         clock,
       ),
     service: (client, aud) => mint({ sub: client, azp: client, aud }, clock),
+    // The classic confusions: no signature at all, and a MAC made with the public key as the secret.
+    algNone: (role) => {
+      const iat = Math.floor(clock.now().getTime() / 1000);
+      const segment = (value: unknown): string =>
+        Buffer.from(JSON.stringify(value)).toString('base64url');
+      const claims = {
+        iss: ISSUER,
+        sub: `usr-${role}`,
+        azp: 'admin-console',
+        aud: ROLE_SERVICES[role],
+        roles: [role],
+        iat,
+        exp: iat + 300,
+      };
+      return `${segment({ alg: 'none', typ: 'JWT', kid: KID })}.${segment(claims)}.`;
+    },
+    hs256: (role) => {
+      const iat = Math.floor(clock.now().getTime() / 1000);
+      const segment = (value: unknown): string =>
+        Buffer.from(JSON.stringify(value)).toString('base64url');
+      const head = segment({ alg: 'HS256', typ: 'JWT', kid: KID });
+      const body = segment({
+        iss: ISSUER,
+        sub: `usr-${role}`,
+        azp: 'admin-console',
+        aud: ROLE_SERVICES[role],
+        roles: [role],
+        iat,
+        exp: iat + 300,
+      });
+      const mac = createHmac('sha256', pair.publicKey.export({ type: 'spki', format: 'pem' }))
+        .update(`${head}.${body}`)
+        .digest('base64url');
+      return `${head}.${body}.${mac}`;
+    },
     foreign: (role) =>
       mint(
         { sub: `usr-${role}`, azp: 'admin-console', aud: ROLE_SERVICES[role], roles: [role] },
@@ -194,7 +232,10 @@ export interface Harness {
 }
 
 /** The gateway app wired to the fake network, a fake clock and a throwaway secrets file. */
-export async function startGateway(env: Record<string, string> = {}): Promise<Harness> {
+export async function startGateway(
+  env: Record<string, string> = {},
+  options: { routes?: readonly Route[] } = {},
+): Promise<Harness> {
   const clock = new FakeClock(START);
   const network = new FakeNetwork(clock);
   const dir = mkdtempSync(join(tmpdir(), 'privpay-gateway-'));
@@ -202,7 +243,13 @@ export async function startGateway(env: Record<string, string> = {}): Promise<Ha
   writeFileSync(secretFile, `${GATEWAY_SECRET}\n`);
   const logLines: string[] = [];
   const app = await createServiceApp(
-    { service: 'gateway', modules: gatewayModules({ fetch: network.fetch }) },
+    {
+      service: 'gateway',
+      modules: gatewayModules({
+        fetch: network.fetch,
+        ...(options.routes === undefined ? {} : { routes: options.routes }),
+      }),
+    },
     {
       PRIVACY_MODE: 'proposed',
       PORT: '0',

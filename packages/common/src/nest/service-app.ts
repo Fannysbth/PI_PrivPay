@@ -17,6 +17,7 @@ import {
   type ModuleMetadata,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { ErrorRequestHandler, NextFunction, Request, Response } from 'express';
 import { SystemClock, type Clock } from '../clock';
 import { loadConfig } from '../config';
@@ -65,6 +66,7 @@ export interface ServiceApp {
   close(): Promise<void>;
 }
 
+const JSON_BODY_LIMIT = '100kb';
 const SERVICE_INFO = Symbol('SERVICE_INFO');
 const CLOCK = Symbol('CLOCK');
 const METRICS = Symbol('METRICS');
@@ -158,7 +160,15 @@ export async function createServiceApp(
       { provide: METRICS, useValue: metrics },
     ],
   };
-  const app = await NestFactory.create(root, { logger: false, abortOnError: false });
+  // JSON is the only body format of the platform: Nest's default would also read form-encoded bodies (with qs
+  // nesting) into objects. The limit bounds what is read before a caller is proven (the gateway checks the declared
+  // size of each route after that).
+  const app = await NestFactory.create<NestExpressApplication>(root, {
+    logger: false,
+    abortOnError: false,
+    bodyParser: false,
+  });
+  app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
 
   // Request id and timing come first so that even errors raised by the body parser carry them.
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -204,7 +214,7 @@ export async function createServiceApp(
     respond(error, res, external);
   });
 
-  const server = app.getHttpServer() as Server;
+  const server: Server = app.getHttpServer();
   let shutdown: Promise<void> | undefined;
   let listening: Promise<{ host: string; port: number }> | undefined;
 

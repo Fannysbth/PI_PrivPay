@@ -22,6 +22,8 @@ export const gatewayConfigSchema = z.object({
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(100),
   /** Minimum seconds between two reloads of the issuer's keys caused by an unknown key id. */
   JWKS_REFRESH_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(30),
+  /** Keys older than this are reloaded, so a key the IdP withdrew stops being trusted (FR-01). */
+  JWKS_MAX_AGE_SECONDS: z.coerce.number().int().min(30).default(300),
 });
 export type GatewayConfig = z.output<typeof gatewayConfigSchema>;
 

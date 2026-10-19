@@ -1,5 +1,7 @@
 import { ROLE_SERVICES, type HumanRole } from '@privpay/common';
+import { request as httpRequest } from 'node:http';
 import request from 'supertest';
+import { z } from 'zod';
 import { ROUTES, type Route } from '../src/routes';
 import { HOSTS, startGateway, type Harness } from './harness';
 
@@ -231,31 +233,44 @@ describe.each(ROUTES)('M1-03 $id $method $pattern', (route) => {
   });
 });
 
-describe('M1-03 only what the route table lists exists', () => {
-  it('M1-03 unknown paths and the wrong method are the uniform 422, with or without a token, and nothing goes downstream', async () => {
+describe('M1-03 only what the route table lists exists, and nobody learns which routes do without proving who they are', () => {
+  const unknown = [
+    ['GET', '/'],
+    ['GET', '/register'],
+    ['POST', '/register'],
+    ['POST', '/transaction'],
+    ['POST', '/notification/register'],
+    ['POST', '/settlement/report'],
+    ['GET', '/admin/users'],
+    ['DELETE', '/audit-log'],
+    ['GET', '/transaction/../audit-log'],
+    ['GET', '//audit-log'],
+  ] as const;
+  const send = (method: string, path: string): request.Test => {
+    const base = request(gateway.app.httpServer);
+    return method === 'GET'
+      ? base.get(path)
+      : method === 'POST'
+        ? base.post(path)
+        : base.delete(path);
+  };
+
+  it('M1-03 a caller who proved who they are is told 422 for a route that does not exist, and nothing goes downstream', async () => {
     const token = gateway.tokens.person('admin');
-    for (const [method, path] of [
-      ['GET', '/'],
-      ['GET', '/register'],
-      ['POST', '/register'],
-      ['POST', '/transaction'],
-      ['POST', '/notification/register'],
-      ['POST', '/settlement/report'],
-      ['GET', '/admin/users'],
-      ['DELETE', '/audit-log'],
-      ['GET', '/transaction/../audit-log'],
-      ['GET', '//audit-log'],
-    ] as const) {
-      for (const authorization of [undefined, `Bearer ${token}`]) {
-        const call = request(gateway.app.httpServer)[
-          method === 'GET' ? 'get' : method === 'POST' ? 'post' : 'delete'
-        ](path);
-        const response = await (authorization === undefined
-          ? call
-          : call.set('authorization', authorization));
-        expect(response.status).toBe(422);
-        expect(response.body).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
-      }
+    for (const [method, path] of unknown) {
+      const response = await send(method, path).set('authorization', `Bearer ${token}`);
+      expect(response.status).toBe(422);
+      expect(response.body).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    }
+    expect(upstreamCalls()).toBe(0);
+  });
+
+  it('M1-03 spec 3 without a token every path is 401, existing or not, so the answer does not reveal the routes', async () => {
+    const known = ['/transaction/held', `/pseudonym/${PSEUDONYM}/revoke`, '/audit-log/summary'];
+    for (const [method, path] of unknown) expect((await send(method, path)).status).toBe(401);
+    for (const path of known) {
+      expect((await send('GET', path)).status).toBe(401);
+      expect((await send('POST', path)).status).toBe(401);
     }
     expect(upstreamCalls()).toBe(0);
   });
@@ -527,5 +542,194 @@ describe('M1-03 the gateway logs a route and a status, never a token or a body (
     }
     expect(metrics).toContain('route="/audit-log/timeline/{pseudonym}"');
     expect(ROLE_SERVICES.auditor).toContain('privacy-service');
+  });
+});
+
+describe('M1-03 TK-19 only RS256 tokens of the issuer are accepted, and the scheme is read as RFC 7235 says', () => {
+  const revoke = (): request.Test =>
+    request(gateway.app.httpServer).post(`/pseudonym/${PSEUDONYM}/revoke`).send({});
+
+  it('M1-03 TK-19 alg none and HS256 signed with the public key are 401, and nothing goes downstream', async () => {
+    for (const token of [gateway.tokens.algNone('admin'), gateway.tokens.hs256('admin')]) {
+      const response = await revoke().set('authorization', `Bearer ${token}`);
+      expect(response.status).toBe(401);
+      expect(response.body).toMatchObject({ error: { code: 'UNAUTHENTICATED' } });
+    }
+    expect(upstreamCalls()).toBe(0);
+  });
+
+  it('M1-03 Bearer, bearer and BEARER are all accepted; Basic, a bare token and a doubled scheme are 401', async () => {
+    const token = gateway.tokens.person('admin');
+    for (const scheme of ['Bearer', 'bearer', 'BEARER'])
+      await revoke().set('authorization', `${scheme} ${token}`).expect(200);
+    for (const header of [
+      `Basic ${token}`,
+      token,
+      `Bearer Bearer ${token}`,
+      `Bearer  ${token}`,
+      'Bearer',
+    ]) {
+      expect((await revoke().set('authorization', header)).status).toBe(401);
+    }
+  });
+
+  it('M1-03 a token made for another service (aud) is 403 and does not use up the rate limit', async () => {
+    await gateway.close();
+    gateway = await startGateway({ RATE_LIMIT_PER_MINUTE: '2' });
+    const wrongAudience = gateway.tokens.person('admin', { aud: ['privacy-service'] });
+    for (let i = 0; i < 5; i += 1)
+      expect((await revoke().set('authorization', `Bearer ${wrongAudience}`)).status).toBe(403);
+    const good = gateway.tokens.person('admin');
+    await revoke().set('authorization', `Bearer ${good}`).expect(200);
+    await revoke().set('authorization', `Bearer ${good}`).expect(200);
+    await revoke().set('authorization', `Bearer ${good}`).expect(429);
+  });
+
+  it('M1-03 a call without any Authorization header is 401 even when the IdP is down, and does not touch the IdP', async () => {
+    gateway.network.jwksFailing = true;
+    await request(gateway.app.httpServer).get('/transaction/held').expect(401);
+    await request(gateway.app.httpServer).get('/nowhere').expect(401);
+    expect(gateway.network.jwksFetches).toBe(0);
+  });
+});
+
+describe('M1-03 what is on the wire is checked after the caller (content type, size) and the gateway reads JSON only', () => {
+  const review = (token: string): request.Test =>
+    request(gateway.app.httpServer)
+      .post('/transaction/TX-1760860800000001/review')
+      .set('authorization', `Bearer ${token}`);
+
+  it('M1-03 a form-encoded or plain-text body is not read as JSON: 422, and nothing goes downstream', async () => {
+    const token = gateway.tokens.person('fraud_analyst');
+    await review(token).type('form').send('decision=APPROVE&reason_code=OTHER').expect(422);
+    await review(token)
+      .type('text/plain')
+      .send('{"decision":"APPROVE","reason_code":"OTHER"}')
+      .expect(422);
+    expect(upstreamCalls()).toBe(0);
+  });
+
+  it('M1-03 a body far over the limit is 422, and nothing goes downstream', async () => {
+    const token = gateway.tokens.person('fraud_analyst');
+    const response = await review(token).send({
+      decision: 'APPROVE',
+      reason_code: 'OTHER',
+      padding: 'x'.repeat(300_000),
+    });
+    expect(response.status).toBe(422);
+    expect(upstreamCalls()).toBe(0);
+  });
+
+  it('M1-03 the limit of a route is checked on what was received, not on what validated', async () => {
+    const echo = {
+      id: 'T-ECHO',
+      method: 'POST',
+      pattern: '/echo',
+      params: {},
+      who: ['admin'],
+      upstream: 'privacy-service',
+      upstreamPath: '/echo',
+      auth: 'human-token',
+      body: z.record(z.string(), z.string()),
+      query: null,
+      maxBodyBytes: 100,
+    } satisfies Route;
+    await gateway.close();
+    gateway = await startGateway({}, { routes: [echo] });
+    const token = gateway.tokens.person('admin');
+    const post = (body: object): request.Test =>
+      request(gateway.app.httpServer)
+        .post('/echo')
+        .set('authorization', `Bearer ${token}`)
+        .send(body);
+    await post({ note: 'short' }).expect(200);
+    expect((await post({ note: 'x'.repeat(150) })).status).toBe(422);
+    // Small once parsed, large on the wire: only the declared length shows it.
+    const padded = await request(gateway.app.httpServer)
+      .post('/echo')
+      .set('authorization', `Bearer ${token}`)
+      .type('json')
+      .send(`{"note":"short"}${' '.repeat(200)}`);
+    expect(padded.status).toBe(422);
+    expect(gateway.network.to(HOSTS['privacy-service'])).toHaveLength(1);
+  });
+});
+
+describe('M1-03 raw paths, odd methods and query strings that try to slip past the route table', () => {
+  const raw = async (method: string, path: string, token?: string): Promise<number> => {
+    const { port } = await gateway.app.listen();
+    return new Promise((resolve, reject) => {
+      const req = httpRequest(
+        {
+          host: '127.0.0.1',
+          port,
+          method,
+          path,
+          headers: token === undefined ? {} : { authorization: `Bearer ${token}` },
+        },
+        (res) => {
+          res.resume();
+          resolve(res.statusCode ?? 0);
+        },
+      );
+      req.on('error', reject);
+      req.end();
+    });
+  };
+
+  it.each([
+    '/transaction/%2e%2e/held',
+    '/transaction/held;x=1',
+    '/transaction%2Fheld',
+    '/transaction/held/',
+    '/Transaction/Held',
+    '/transaction/held%00',
+    '//transaction/held',
+    '/transaction/./held',
+    '/audit-log/../audit-log',
+  ])('M1-03 %s is not a route: 401 without a token, 422 with one', async (path) => {
+    expect(await raw('GET', path)).toBe(401);
+    expect(await raw('GET', path, gateway.tokens.person('fraud_analyst'))).toBe(422);
+    expect(upstreamCalls()).toBe(0);
+  });
+
+  it('M1-03 HEAD and OPTIONS are not routes either: nothing is answered for a browser, and nothing goes downstream', async () => {
+    const token = gateway.tokens.person('auditor');
+    for (const method of ['HEAD', 'OPTIONS']) {
+      expect(await raw(method, '/audit-log', token)).toBe(422);
+      expect(await raw(method, '/audit-log')).toBe(401);
+    }
+    expect(upstreamCalls()).toBe(0);
+  });
+
+  it.each([
+    '?limit=1&limit=2',
+    '?limit[a]=1',
+    '?__proto__=x',
+    '?constructor=x',
+    '?limit=0',
+    '?limit=201',
+    '?limit=-1',
+    '?limit=1e2',
+    '?limit=%00',
+    '?cursor=a%2Fb',
+  ])('M1-03 the query %s is refused (422), nothing goes downstream', async (query) => {
+    const token = gateway.tokens.person('fraud_analyst');
+    const response = await request(gateway.app.httpServer)
+      .get(`/transaction/held${query}`)
+      .set('authorization', `Bearer ${token}`);
+    expect(response.status).toBe(422);
+    expect(upstreamCalls()).toBe(0);
+  });
+
+  it('M1-03 a good query is forwarded as given, encoded, and in the order sent', async () => {
+    const token = gateway.tokens.person('fraud_analyst');
+    await request(gateway.app.httpServer)
+      .get('/transaction/held?cursor=abc_DEF-1=&limit=5')
+      .set('authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(gateway.network.to(HOSTS['transaction-service'])[0]?.query).toBe(
+      '?cursor=abc_DEF-1%3D&limit=5',
+    );
   });
 });
