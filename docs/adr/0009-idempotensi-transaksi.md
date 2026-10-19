@@ -16,6 +16,10 @@
 3. Sama persis: `200` dengan isi yang sama, tanpa transaksi baru. Berbeda: `409 IDEMPOTENCY_CONFLICT`. Replay setelah token berganti (di luar jendela TTL) juga `409`; ini gagal aman dan tidak pernah membuat transaksi ganda.
 4. Paralel: `INSERT ... ON CONFLICT DO NOTHING RETURNING`. Yang kalah membaca baris pemenang dan menunggu singkat (maksimum `HTTP_TIMEOUT_MS`) sampai statusnya terminal, lalu mengembalikan `200`. Bila belum terminal, kembalikan `409 IDEMPOTENCY_CONFLICT` yang aman diulang.
 
+## Bukti prototipe Fase 2 (sekali pakai, `node --test`, 9 tes lulus)
+
+Tanpa sidik jari rahasia, TF-08 tetap dapat menguji "isi beda menghasilkan 409": kunci sama dengan `amount`, `merchant_id`, `geohash`, rekening sumber berbeda, atau pelanggan berbeda semuanya `409 IDEMPOTENCY_CONFLICT` tanpa mengembalikan data transaksi pertama. Isi sama menghasilkan `200` dengan `transaction_id` asli dan satu baris. Replay setelah re-issue di tengah proses dalam jendela TTL tetap `200` (re-issue memakai ulang token aktif). Replay di luar jendela tanpa re-issue `409` dan tidak membuat transaksi ganda. Tidak ada rekening mentah atau `customer_id` yang tersimpan. Tes mutasi (perbandingan selalu "sama") membuat tes 409 gagal. Perilaku paralel (`ON CONFLICT`) belum diuji di prototipe ini dan menjadi tes integrasi M4.
+
 ## Konsekuensi
 
 - Keterbatasan (dicatat): jendela idempotensi efektif sama dengan TTL P1; klien yang mengulang setelah itu menerima 409 meski isinya identik.

@@ -20,6 +20,12 @@
 7. **Token:** access token ≤ 300 detik; `aud` per layanan tujuan; token service di-cache sampai `exp` dikurangi 30 detik (NFR-21).
 8. **Akun seed fiktif:** 3 nasabah (PRD 16), 2 admin (empat mata), 2 auditor (TK-28), 1 fraud analyst, 1 bank. Setiap manusia memegang tepat satu peran; `SELF_APPROVAL` tetap ditegakkan di kode dan `chk_four_eyes`, bukan oleh pemisahan peran.
 
+## Tambahan (disetujui Fanny, 2026-10-19) dan bukti Fase 2
+
+- **Aturan tambahan:** bila `Authorization` sudah berupa token manusia (`ADMIN_CONSOLE`), `X-Actor-Token` ditolak (tidak ada identitas ganda). Dicatat juga di spec.
+- **Risiko sisa (threat-model T-15):** layanan hilir yang diretas dapat memakai ulang token aktor manusia yang masih berlaku (≤ 5 menit) untuk operasi yang dibolehkan layanannya. Usulan mitigasi untuk spec (Fase 3, bukan Fase 2): batasi `aud` token aktor ke layanan tujuan.
+- **Bukti prototipe (sekali pakai, `node --test`, 10 tes lulus):** `requesting_service` hanya dari `azp` token layanan (token aktor yang mengaku `azp` layanan atau `requesting_service` ditolak; `requesting_service` di body diabaikan); token layanan atau token nasabah sebagai token aktor ditolak; token manusia sebagai `Authorization` menghasilkan `ADMIN_CONSOLE` dan tidak dapat memanggil operasi khusus layanan (`POLICY_NOT_ALLOWED`); token kedaluwarsa, `aud` salah, penanda tangan lain, `alg=none`, dan `HS256` ditolak untuk kedua token; peran harus tepat satu. Tes mutasi (kode diubah agar token aktor menentukan layanan) membuat tes yang relevan gagal.
+
 ## Konsekuensi
 
 - Positif: aktor dan peran terverifikasi kriptografis; invarian 1, 6, dan D-16 terjaga.

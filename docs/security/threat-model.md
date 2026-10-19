@@ -66,3 +66,5 @@ Target: bukan sertifikasi. Tingkat acuan L2 untuk bab V4, V6, V7, V8; sisanya "s
 | T-12 | Rahasia di image/riwayat git | gitleaks, `docker history`, secret runtime | TK-18 |
 | T-13 | Idempotency-Key dipakai ulang dengan isi berbeda | 409 IDEMPOTENCY_CONFLICT | TF-08 |
 | T-14 | Hasil pembukaan identitas disimpan layanan pemanggil | Tidak disimpan di reconciliation-db; pindai kenari | TK-21 + pemindai |
+| T-15 | Layanan hilir yang diretas memakai ulang token aktor manusia (≤ 5 menit) untuk operasi yang dibolehkan layanannya (ADR-0007) | Masa berlaku pendek; usulan spec: batasi `aud` token aktor ke layanan tujuan; audit mencatat `actor_id` dan layanan | Tes `aud` salah ditolak; risiko sisa diakui |
+| T-16 | Penulis DB memindahkan ciphertext antar baris sejenis (AAD = `subject_type` tidak mengikat baris) | AAD memuat `id` baris + jenis subjek atau nama kolom (ADR-0011, Accepted); hak akses DB meminimalkan penulis | Tes swap antar baris dan kolom (lulus di prototipe), diulang di tiket M2 |

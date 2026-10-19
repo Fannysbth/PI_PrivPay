@@ -13,7 +13,7 @@ Bila bertabrakan, yang lebih atas menang. Jangan mengarang kebutuhan. Ambiguitas
 
 ## Stack (dari PRD; butir bertanda "usulan" menunggu konfirmasi, lihat ADR-0002)
 
-- TypeScript (strict) + NestJS untuk semua layanan. Node 24 (`.nvmrc`), pnpm workspaces via corepack (ADR-0002 Accepted). PostgreSQL 16 lokal di port 5433.
+- TypeScript (strict) + NestJS untuk semua layanan. Node 24 (`.nvmrc`), pnpm workspaces via corepack (ADR-0002 Accepted). PostgreSQL target 16; fase lokal memakai 18 di localhost:5432 (deviasi, ADR-0004); versi/host/port dari env, objek berawalan `privpay_`.
 - PostgreSQL 16, satu instans per layanan, tanpa foreign key lintas basis data. Driver `pg` + migrasi SQL maju-saja, tanpa ORM (usulan).
 - Kong (plugin kustom `privacy-tokenizer`, Lua), Keycloak, Docker Compose, Prometheus + Grafana. Fase lokal tanpa Docker (ADR-0004): `gateway-adapter` NestJS menggantikan Kong sementara, PostgreSQL 16 lokal; Docker dan Kong menyusul setelah M4 stabil.
 - Mode hanya `baseline` dan `proposed` (ADR-0003).
@@ -23,11 +23,11 @@ Bila bertabrakan, yang lebih atas menang. Jangan mengarang kebutuhan. Ambiguitas
 ## Perintah (diisi/diperbarui di milestone M0; jangan mengarang yang belum ada)
 
 ```
-pnpm install --frozen-lockfile   # instal
+pnpm install --frozen-lockfile   # instal. `corepack enable` butuh admin (EPERM di mesin ini): pakai `corepack pnpm <perintah>`
 pnpm lint                         # ESLint + Prettier --check
 pnpm typecheck                    # tsc --noEmit di semua paket
 pnpm test                         # unit
-pnpm test:integration             # butuh PostgreSQL 16 lokal; DB tes dibuat ulang bersih tiap run (ADR-0004)
+pnpm test:integration             # butuh PostgreSQL lokal (`scripts/db/bootstrap.ps1` sekali); DB tes dibuat ulang bersih tiap run (ADR-0004)
 pnpm test:security                # kasus TK-xx
 pnpm audit --prod --audit-level high
 docker compose up -d --build      # seluruh sistem (NFR-19); DITUNDA sampai M4 stabil (ADR-0004), belum ada

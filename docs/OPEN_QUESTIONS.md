@@ -44,3 +44,15 @@ PRD 20, nomor 1..7: modul Audit di dalam Privacy Service, rantai hash, pemisahan
 ## D. Referensi yang belum diverifikasi (bukan urusan kode, jangan dikutip sebagai fakta di README)
 
 Pasal 4 UU PDP, EDPB Guidelines 01/2025 par. 22, Flegel 2005, Petersen PET-CON 2018.
+
+## E. Butir wajib untuk spec dan tiket Fase 3 (hasil Fase 2, belum teruji atau menunggu rincian)
+
+| ID | Butir | Sumber | Status |
+| --- | --- | --- | --- |
+| S-01 | Perbandingan nilai rahasia dengan `timingSafeEqual`: tes dan tinjauan kode; belum diuji di prototipe | CLAUDE.md, T-10, ADR-0011 | BELUM TERUJI |
+| S-02 | `ON CONFLICT` paralel pada `POST /transaction` (dua permintaan identik bersamaan, penantian pemenang, batas `HTTP_TIMEOUT_MS`) sebagai tes integrasi M4 | ADR-0009, NFR-23 | BELUM TERUJI |
+| S-03 | Batasi `aud` token aktor ke layanan tujuan | ADR-0007, T-15 | USULAN |
+| S-04 | `X-Actor-Token` ditolak bila `Authorization` sudah token manusia (`ADMIN_CONSOLE`) | ADR-0007 | DISETUJUI, tulis di spec |
+| S-05 | `POST /identity` idempoten; perilaku `revoke_subject` untuk subjek tanpa token dan tanpa brankas | ADR-0005 | RINCIAN SPEC |
+| S-06 | TF-15 [strategi C] tidak cukup sebagai penjaga konkurensi; jalankan berulang di M2 | ADR-0010 | RINCIAN TIKET |
+| S-07 | Penulisan audit lewat koneksi `privpay_app` tanpa `RETURNING`; pembacaan lewat `privpay_auditor` (dua pool); belum diuji | ADR-0010 | BELUM TERUJI |
