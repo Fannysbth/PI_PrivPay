@@ -10,7 +10,9 @@ SELECT 'role', rolname, rolsuper, rolcreaterole, rolcreatedb, rolcanlogin, rolre
   FROM pg_roles WHERE rolname LIKE 'privpay\_%' ORDER BY rolname;
 
 SELECT 'database', datname, pg_get_userbyid(datdba), coalesce(datacl::text, '-')
-  FROM pg_database WHERE datname LIKE 'privpay\_%' ORDER BY datname;
+  FROM pg_database
+ WHERE datname LIKE 'privpay\_%' AND datname NOT LIKE 'privpay\_%\_test\_%'  -- test databases come from the harness, not the bootstrap
+ ORDER BY datname;
 
 SELECT 'membership', o.rolname, m.rolname, am.admin_option, am.set_option, am.inherit_option
   FROM pg_auth_members am

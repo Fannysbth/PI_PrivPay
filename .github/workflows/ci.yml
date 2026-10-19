@@ -14,7 +14,8 @@ permissions:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push replaces a running check on a branch, but never cancels the run of main.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   secrets:
@@ -80,13 +81,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: start PostgreSQL 16 with a password made for this run
         run: |
+          umask 077
           password="$(openssl rand -base64 24 | tr -d '/+=')"
           echo "::add-mask::${password}"
-          echo "PGPASSWORD=${password}" >> "$GITHUB_ENV"
-          docker run -d --name privpay-pg -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD="${password}" "$POSTGRES_IMAGE"
-          # The official image restarts the server once after initialising; TCP only answers after that restart.
+          # The password lives in a file that only the bootstrap step reads (PG_ADMIN_PASSWORD_FILE, CLAUDE.md), not in
+          # GITHUB_ENV, so no later step or third-party action sees it. docker run takes it from its own environment.
+          printf '%s' "$password" > "${RUNNER_TEMP}/pg_admin_password"
+          POSTGRES_PASSWORD="$password" docker run -d --name privpay-pg -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD "$POSTGRES_IMAGE"
+          # Checked from the host through the published port, which is how every later step reaches the server. The
+          # official image restarts the server once after initialising; TCP only answers after that restart.
           for _ in $(seq 1 30); do
-            if docker exec privpay-pg pg_isready -h 127.0.0.1 -U postgres; then exit 0; fi
+            if pg_isready -h "$PGHOST" -p "$PGPORT" -U postgres; then exit 0; fi
             sleep 2
           done
           echo "PostgreSQL did not become ready" >&2
@@ -102,10 +107,10 @@ jobs:
             echo "PG_HOST=${PGHOST}"
             echo "PG_PORT=${PGPORT}"
             echo "PG_ADMIN_USER=${PGUSER}"
-            echo "PG_ADMIN_PASSWORD=${PGPASSWORD}"
+            echo "PG_ADMIN_PASSWORD_FILE=${RUNNER_TEMP}/pg_admin_password"
             echo "PG_SECRETS_DIR=${secrets_dir}"
           } > "$env_file"
-          ENV_FILE="$env_file" bash scripts/ci/bootstrap-twice.sh
+          PGPASSWORD="$(cat "${RUNNER_TEMP}/pg_admin_password")" ENV_FILE="$env_file" bash scripts/ci/bootstrap-twice.sh
       - run: pnpm test:integration
       # test:security does not exist until M3-06; --if-present runs it from then on without a skip in between.
       - run: pnpm run --if-present test:security

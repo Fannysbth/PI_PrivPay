@@ -36,13 +36,28 @@ snapshot() {
   {
     psql -X -q -d postgres -f "$DB_DIR/snapshot.sql"
     for database in "${DATABASES[@]}"; do
-      psql -X -q -d "$database" -f "$DB_DIR/snapshot.sql" | grep '^schema|'
+      psql -X -q -d "$database" -f "$DB_DIR/snapshot.sql" | grep '^schema|' \
+        || { echo "no schema line for database ${database}" >&2; exit 1; }
     done
   } >"$WORK/$1.txt"
 }
 
+# Two empty snapshots would be identical, so each kind of line must be there in the expected number: 12 roles, the
+# five databases, five public-schema ACLs.
+expect_count() {
+  local kind="$1" expected="$2" file="$3" actual
+  actual="$(grep -c "^${kind}|" "$file" || true)"
+  if [ "$actual" != "$expected" ]; then
+    echo "snapshot has ${actual} '${kind}' lines, expected ${expected}: the snapshot is incomplete" >&2
+    exit 1
+  fi
+}
+
 bootstrap first
 snapshot first
+expect_count role 12 "$WORK/first.txt"
+expect_count database 5 "$WORK/first.txt"
+expect_count schema 5 "$WORK/first.txt"
 bootstrap second
 snapshot second
 

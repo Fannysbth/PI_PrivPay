@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parse } from 'yaml';
@@ -62,7 +63,9 @@ describe('M0-07 the workflow pins everything it downloads (S-08)', () => {
     for (const [, job] of jobs) {
       if (job.container !== undefined) expect(job.container.image).toMatch(DIGEST);
     }
-    for (const line of raw.split('\n').filter((l) => /docker run/.test(l))) {
+    for (const line of raw
+      .split('\n')
+      .filter((l) => /docker run/.test(l) && !l.trim().startsWith('#'))) {
       expect(line).toMatch(/\$\{?[A-Z_]+_IMAGE\}?/);
     }
   });
@@ -96,7 +99,17 @@ describe('M0-07 the workflow asks for the least it needs (S-08)', () => {
   });
 
   it('M0-07 the workflow uses no repository secret: the database password is made for each run', () => {
-    expect(raw).not.toMatch(/\$\{\{\s*secrets\./);
+    expect(raw).not.toMatch(/\$\{\{[^}]*\bsecrets\b/);
+    expect(raw).not.toMatch(/secrets:\s*inherit/);
+  });
+
+  it('M0-07 the generated password reaches only the steps that need it, through a file and not GITHUB_ENV', () => {
+    const commands = commandsOf('integration');
+    expect(commands).not.toMatch(/PGPASSWORD=.*GITHUB_ENV/);
+    expect(commands).toContain('PG_ADMIN_PASSWORD_FILE');
+    // docker run takes the password from its own environment, so it never appears in a process list.
+    expect(commands).not.toMatch(/-e POSTGRES_PASSWORD=/);
+    expect(commands.indexOf('::add-mask::')).toBeLessThan(commands.indexOf('docker run'));
   });
 
   it('M0-07 Node comes from .nvmrc in every job that sets it up', () => {
@@ -168,6 +181,18 @@ describe('M0-07 integration runs against PostgreSQL 16 with a throwaway password
   it('M0-07 removes the database container even when a step fails', () => {
     const cleanup = stepsOf('integration').find((s) => s.run?.includes('docker rm -f') === true);
     expect(cleanup?.if).toBe('always()');
+  });
+
+  it('M0-07 the comparison script is valid bash and refuses an empty snapshot', () => {
+    const syntax = spawnSync('bash', ['-n', 'scripts/ci/bootstrap-twice.sh'], {
+      cwd: root,
+      encoding: 'utf8',
+    });
+    expect(syntax.stderr).toBe('');
+    expect(syntax.status).toBe(0);
+    const script = readFileSync(join(root, 'scripts', 'ci', 'bootstrap-twice.sh'), 'utf8');
+    // An empty section would be identical in both runs, so the number of lines per kind is checked as well.
+    expect(script).toContain('expect_count');
   });
 
   it('M0-07 the comparison script exists and stops on the first error', () => {
