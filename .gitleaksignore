@@ -1,0 +1,3 @@
+# Historical finding, false positive: the public example Idempotency-Key UUID in a throwaway prototype test.
+# The file was deleted from the tree (commit c87bda7) but stays in history; history is not rewritten.
+a88793174983000da292ff6c15663e6cb7124262:prototypes/idempotency-check/idempotency.test.mjs:generic-api-key:67

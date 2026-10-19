@@ -1,0 +1,29 @@
+# Extends gitleaks default rules. Keep allowlists narrow and justified.
+# Used by pre-commit, CI, and the manual command in CLAUDE.md (same file everywhere).
+# Syntax needs gitleaks >= 8.25 ([[allowlists]] with condition); pinned to 8.30.1 in CI and pre-commit.
+title = "PrivPay gitleaks"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Example files only contain placeholders"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)secrets/README\.md$''',
+]
+
+# The two entries below apply only under docs/ and tests/ (condition = AND), never to services/ or packages/.
+[[allowlists]]
+description = "Fictitious PrivPay pseudonyms (PSEU- + 8 hex) in documentation and test fixtures; tokens are not credentials and all test data is fake (PRD 16, D-24)"
+condition = "AND"
+paths = ['''^(docs|tests)/''']
+regexTarget = "secret"
+regexes = ['''^PSEU-[0-9A-F]{8}$''']
+
+[[allowlists]]
+description = "Public example Idempotency-Key UUID used in the PRD and in TF-08 fixtures; a client-chosen UUID is not a secret"
+condition = "AND"
+paths = ['''^(docs|tests)/''']
+regexTarget = "secret"
+regexes = ['''^7c9e6679-7425-40de-944b-e07fc1f90ae7$''']

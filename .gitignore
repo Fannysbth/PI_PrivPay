@@ -14,3 +14,60 @@ secrets/
 # Dependencies and generated files
 node_modules/
 '@ | Set-Content -Path .gitignore -Encoding utf8
+# Secrets and local env — never commit (SECURITY.md section 3)
+.env
+.env.*
+!.env.example
+secrets/*
+!secrets/README.md
+!secrets/.gitkeep
+*.pem
+*.key
+*.p12
+*.pfx
+*.jks
+id_rsa*
+*.kdbx
+credentials.json
+service-account*.json
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.pnpm-store/
+.turbo/
+
+# Test and measurement artefacts (keep curated results in docs/ or results/ explicitly)
+newman-report*/
+k6-output/
+*.har
+test-results/
+playwright-report/
+
+# Logs and dumps — may contain data even if synthetic
+*.log
+logs/
+*.sql.gz
+*.dump
+*.bak
+pgdata/
+*.pcap
+
+# Editors and OS
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.swp
+.DS_Store
+Thumbs.db
+
+# Local tooling
+.claude/settings.local.json
+.python-version
+__pycache__/
+*.pyc
+.luarocks/

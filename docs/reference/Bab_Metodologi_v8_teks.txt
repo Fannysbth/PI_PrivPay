@@ -1,0 +1,343 @@
+METODOLOGI
+
+Privacy-by-Design menempatkan perlindungan data pribadi sebagai properti arsitektur, bukan sebagai kontrol tambahan yang dipasang setelah sistem berjalan. Prinsip minimisasi data mensyaratkan setiap komponen hanya memperoleh atribut yang benar-benar diperlukan untuk menjalankan fungsinya, sementara pembatasan tujuan mensyaratkan data yang dikumpulkan untuk satu tujuan tidak dipakai ulang untuk tujuan lain tanpa dasar yang sah [1], [2]. Pada arsitektur monolitik, kedua prinsip tersebut relatif mudah ditegakkan karena data berada dalam satu batas kepercayaan. Ekosistem microservices membalik kondisi itu: satu transaksi pembayaran dapat melewati gerbang API, layanan transaksi, deteksi penipuan, notifikasi, hingga rekonsiliasi, dan pada tiap lompatan data pribadi berpotensi tersalin ke basis data serta berkas log yang berbeda [3].
+
+Pseudonimisasi menjadi kontrol teknis yang relevan untuk kondisi tersebut karena mengganti pengenal langsung dengan nilai pengganti, sehingga data tidak lagi dapat dikaitkan dengan subjek data tanpa informasi tambahan yang disimpan terpisah [4]. Masalahnya, implementasi yang umum dijumpai bersifat statis: satu fungsi hash atau HMAC dipakai untuk seluruh layanan dan seluruh tujuan pemrosesan. Token yang dihasilkan menjadi pengenal tetap yang konsisten lintas layanan, sehingga dua basis data yang bocor masih dapat ditautkan kembali melalui token yang sama. Gagasan pseudonim yang bergantung pada domain penerima dan tujuan pemrosesan telah dibahas pada kajian pseudonimisasi terdahulu [5]. Penelitian ini menerapkan gagasan tersebut secara terpusat dan non-blind sebagai pseudonimisasi dinamis, yaitu token yang nilainya bergantung pada layanan pemilik token, tujuan pemrosesan, dan masa berlaku, sehingga token untuk layanan notifikasi berbeda dengan token untuk layanan deteksi penipuan meskipun merujuk subjek data yang sama. Token tersebut tetap tergolong data pribadi [18], sehingga akses terhadapnya tetap dibatasi.
+
+Karena penelitian ini tidak berhenti pada analisis risiko melainkan membangun dan menguji sebuah artefak perangkat lunak, metode penelitian yang digunakan adalah Design Science Research Methodology (DSRM) [6]. DSRM dipilih karena menyediakan kerangka yang menghubungkan identifikasi masalah, perancangan artefak, demonstrasi, dan evaluasi dalam satu alur yang dapat dipertanggungjawabkan secara ilmiah. Artefak yang dibangun berupa pola arsitektur Privacy-by-Design beserta prototipe layanan privasi pada ekosistem microservices pembayaran digital bernama PrivPay. Enam tahapan DSRM yang diadaptasi pada penelitian ini ditunjukkan pada Gambar 1, dengan umpan balik dari tahap evaluasi kembali ke tahap perancangan ketika hasil pengujian menunjukkan kebutuhan perbaikan.
+
+Perlu dibedakan antara metode penelitian dan metode teknis. DSRM adalah kerangka penelitian yang mengatur bagaimana artefak dirancang dan dievaluasi, sedangkan pseudonimisasi dinamis adalah teknik yang diimplementasikan di dalam artefak tersebut. Pengembangan artefak sendiri dilakukan secara iteratif dalam beberapa sprint pendek, mengikuti siklus hidup pengembangan perangkat lunak dengan pendekatan agile, agar temuan dari pengujian satu iterasi dapat langsung memperbaiki rancangan pada iterasi berikutnya [7].
+
+[]
+
+Gambar 1. Tahapan penelitian berdasarkan Design Science Research Methodology.
+
+A. KEBUTUHAN SISTEM
+
+Tahap ini bertujuan merumuskan kebutuhan artefak berdasarkan masalah paparan data pribadi pada komunikasi antar-layanan, serta menurunkan prinsip Privacy-by-Design dan ketentuan regulasi menjadi kebutuhan yang dapat diuji. Dasar penurunan kebutuhan diambil dari prinsip minimisasi data, pembatasan tujuan, dan akuntabilitas sebagaimana diatur dalam GDPR dan UU Perlindungan Data Pribadi [1], [8]. Klasifikasi data pribadi umum dan spesifik mengikuti Pasal 4 UU PDP: nomor rekening dan data keuangan tergolong spesifik, sedangkan nama, NIK, nomor telepon, dan email tergolong umum, meskipun kombinasinya tetap dapat mengidentifikasi seseorang. Pemetaan dari prinsip ke kebutuhan sistem disajikan pada Tabel I.
+
+Tabel I. Pemetaan Prinsip Privacy-by-Design ke Kebutuhan Sistem
+
+  -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Prinsip                 Kebutuhan sistem yang diturunkan                                                                                            Mekanisme pada artefak
+  ----------------------- --------------------------------------------------------------------------------------------------------------------------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Minimisasi data         Layanan hilir tidak menerima pengenal langsung                                                                              Gateway mengganti customer_id dan nomor rekening dengan token; NIK, nama, dan email tidak diteruskan, melainkan disimpan terenkripsi di brankas identitas Privacy Service
+
+  Pembatasan tujuan       Token hanya sah untuk satu pasangan layanan dan tujuan pemrosesan                                                           Pengikatan token pada service_id dan purpose sesuai tabel konteks sah (P1 sampai P7)
+
+  Penyimpanan terbatas    Token memiliki masa berlaku dan identitas tidak disimpan lebih lama dari perlu                                              TTL per tujuan, status token, key_version pada pemetaan, serta pengosongan identitas pada pemetaan dan brankas
+
+  Akuntabilitas           Seluruh penerbitan, pertukaran, permintaan pembukaan, persetujuan, dan pembukaan token tercatat tanpa memuat data pribadi   Modul Audit di Privacy Service dengan audit_log append-only berantai hash; audit internal bekerja di atas pseudonim
+
+  Keamanan sejak awal     Identitas asli hanya dibuka bila benar-benar dibutuhkan dan diotorisasi                                                     Hasil audit bawaan berupa pseudonim; pembukaan identitas hanya dengan dasar sah, persetujuan pihak kedua (prinsip empat mata), sekali pakai, dan terbatas pada atribut yang disetujui
+  -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+1) Kebutuhan Fungsional
+
+Sistem harus menyediakan pendaftaran akun dan autentikasi pengguna beserta penerbitan token akses, sehingga setiap permintaan yang masuk ke gerbang API membawa identitas pemohon yang terverifikasi. Saat pendaftaran, identitas nasabah (NIK, nama, nomor telepon, dan nomor rekening) harus disimpan terenkripsi per kolom pada brankas identitas di Privacy Service, bukan pada layanan bisnis. Setelah autentikasi berhasil, sistem harus mampu memproses transaksi pembayaran secara utuh pada konfigurasi baseline tanpa lapisan privasi dan konfigurasi usulan dengan lapisan privasi, agar perbandingan dilakukan terhadap fungsi bisnis yang identik.
+
+Kebutuhan inti terletak pada lapisan privasi. Sistem harus menerbitkan token pseudonim yang nilainya ditentukan oleh jenis dan identitas subjek, layanan pemilik token, tujuan pemrosesan, dan nonce, serta menyimpan pemetaan antara token dan subjek pada penyimpanan yang terpisah dari layanan bisnis. Setiap layanan hilir harus dapat menjalankan fungsinya hanya dengan token miliknya: Transaction memperoleh customer_token dan account_token, Fraud memperoleh fraud_token beserta atribut risiko (nominal, jam, dan geohash) tanpa identitas, Notification memperoleh notif_token per transaksi yang diterjemahkan ke pseudonim domain, dan Reconciliation memperoleh account_token untuk pencocokan settlement. Layanan hilir yang memerlukan token untuk layanan lain harus menukar token miliknya melalui Privacy Service, dan hanya pertukaran yang terdaftar yang diizinkan.
+
+Sistem juga harus menolak permintaan pembukaan token yang berasal dari layanan yang bukan pemilik token, yang menyebutkan tujuan pemrosesan berbeda dari tujuan saat token diterbitkan, yang memakai token kedaluwarsa atau dicabut, atau yang tidak membawa peran auditor. Audit internal harus dapat dijalankan sepenuhnya di atas pseudonim, sehingga hasil audit bawaan tidak memuat atribut brankas. Pembukaan identitas hanya boleh terjadi melalui permintaan pembukaan yang menyebut dasar sah, nomor kasus, dan atribut yang diminta, lalu disetujui oleh admin yang bukan pemohon. Persetujuan berlaku sekali pakai dalam jangka waktu terbatas, dan pembukaan hanya mengembalikan atribut yang disetujui dari himpunan yang diizinkan Tabel 5 (customer_id, NIK, dan nama). Seluruh keputusan tersebut, baik yang diizinkan maupun ditolak, harus tercatat pada jejak audit yang dapat ditinjau. Pada sisi administrasi, sistem harus menyediakan pencabutan token per token maupun per subjek, yang sekaligus mengosongkan isi brankas subjek tersebut.
+
+2) Kebutuhan Nonfungsional
+
+Dari sisi keamanan, kunci kriptografis, tabel pemetaan, dan brankas identitas harus berada pada batas kepercayaan yang terpisah dari layanan bisnis, sehingga kebocoran satu layanan hilir tidak cukup untuk merekonstruksi identitas subjek data. Tiga kunci dipisahkan: K_token untuk membangkitkan pseudonim, K_index untuk indeks pencarian buta, dan K_field untuk enkripsi kolom. Token yang diterbitkan harus tahan terhadap penautan silang, dalam arti token subjek yang sama pada dua layanan berbeda tidak boleh identik dan tidak boleh dapat diturunkan satu sama lain tanpa kunci.
+
+Dari sisi performa, penambahan lapisan privasi membawa konsekuensi berupa panggilan jaringan dan operasi kriptografis tambahan pada jalur kritis. Penelitian ini menetapkan kriteria penerimaan yang diterapkan pada beban 100 pengguna konkuren, berupa peningkatan latensi persentil ke-95 tidak lebih dari 20% dan penurunan throughput tidak lebih dari 15% dibandingkan arsitektur baseline. Ambang tersebut merupakan kriteria penelitian ini, bukan klaim standar industri, dan hasil pengukuran akan dibahas apa adanya apabila ambang tidak terpenuhi.
+
+Ketersediaan juga menjadi perhatian karena Privacy Service berpotensi menjadi titik kegagalan tunggal. Prototipe karena itu harus dapat dijalankan dalam lebih dari satu replika, dan kegagalan penerbitan token harus menghasilkan penolakan transaksi yang eksplisit, bukan pengiriman payload berisi data asli sebagai mekanisme cadangan (fail-closed). Terakhir, seluruh komponen harus dapat dijalankan ulang pada lingkungan yang identik agar eksperimen bersifat reproducible.
+
+B. PERANCANGAN SISTEM
+
+Perancangan sistem bertujuan menyusun cetak biru artefak, mulai dari interaksi aktor, alur proses, arsitektur komponen, aliran data pribadi antarkomponen, skema pembentukan token, hingga struktur penyimpanan pemetaan, brankas identitas, dan jejak audit.
+
+1) Diagram Use Case
+
+Sistem melibatkan empat aktor. Nasabah mendaftar akun, mengirimkan transaksi pembayaran, dan menerima notifikasi. Fraud Analyst meninjau transaksi yang ditahan karena terindikasi mencurigakan, dengan hanya melihat transaction_id, nominal, skor, dan aturan yang terpicu. Auditor mengajukan audit internal yang hasilnya berupa pseudonim, dapat melihat audit log, dan bila ada dasar sah dapat mengajukan pembukaan identitas bersyarat, yang merupakan satu-satunya jalur de-pseudonimisasi. Admin melihat audit log, menyetujui atau menolak permintaan pembukaan identitas, serta mencabut token atau seluruh token milik satu subjek. Penyimpanan identitas di brankas, penerbitan token, evaluasi kebijakan, dan pencatatan jejak audit dimodelkan sebagai use case yang disertakan melalui relasi include, karena keempatnya selalu dijalankan setiap kali data pribadi melintasi batas layanan. Diagram use case sistem ditunjukkan pada Gambar 2.
+
+[]
+
+Gambar 2. Diagram use case sistem pembayaran digital dengan pola Privacy-by-Design.
+
+2) Diagram Aktivitas
+
+Gambar 3 menunjukkan alur aktivitas satu permintaan transaksi, mulai dari pengiriman permintaan oleh nasabah hingga pengembalian respons. Gerbang API (Kong) terlebih dahulu memvalidasi JWT dan mengambil customer_id dari klaimnya; permintaan dengan kredensial tidak valid ditolak di gerbang. Permintaan yang lolos ditangani plugin privacy-tokenizer, yang memanggil Privacy Service dengan customer_id dan nomor rekening beserta konteksnya, yaitu layanan tujuan TRANSACTION dan tujuan PAYMENT_PROCESSING. Bila Privacy Service tidak tersedia, permintaan ditolak dan data asli tidak diteruskan. Policy Evaluation Engine mencocokkan konteks dengan tabel konteks sah, dan hanya permintaan yang cocok yang dilanjutkan.
+
+Percabangan berikutnya menentukan apakah token aktif untuk kombinasi subjek, layanan, dan tujuan tersebut masih tersedia. Jika ada, token tersebut dipakai ulang; jika tidak, token baru dibangkitkan dan pemetaannya disimpan. Gerbang kemudian mengganti customer_id dan nomor rekening dengan token, membuang NIK, nama, dan email, lalu meneruskan permintaan ke Transaction Service. Transaction menukar token miliknya menjadi notif_token, dan menjadi fraud_token bila nominal melewati ambang, sehingga Fraud dan Notification hanya menerima token miliknya. Perlu dicatat bahwa penggunaan kembali token yang masih aktif merupakan keputusan rancangan yang mengorbankan sebagian sifat dinamis demi konsistensi referensi pada layanan hilir; konsekuensinya, panjang masa berlaku token menjadi parameter yang menentukan derajat ketahanan terhadap penautan, dan teknik ini lebih tepat disebut semi-dinamis.
+
+[]
+
+Gambar 3. Diagram aktivitas alur transaksi dengan pseudonimisasi dinamis.
+
+3) Rancangan Arsitektur
+
+Dua konfigurasi arsitektur dirancang agar evaluasi dapat dilakukan secara terkontrol. Konfigurasi baseline pada Gambar 4 merepresentasikan praktik yang umum dijumpai: gerbang API meneruskan payload berisi customer_id, NIK, nama, dan nomor rekening apa adanya ke layanan hilir, dan setiap layanan menyimpan salinannya pada basis data masing-masing. Konfigurasi ini menjadi pembanding, bukan rancangan yang diusulkan.
+
+[]
+
+Gambar 4. Arsitektur baseline tanpa lapisan privasi sebagai pembanding.
+
+Konfigurasi usulan pada Gambar 5 menyisipkan lapisan privasi di antara lapisan tepi dan lapisan layanan bisnis. Lapisan tepi terdiri atas API Gateway berbasis Kong, yang menjalankan plugin JWT dan plugin kustom privacy-tokenizer sebagai titik tokenisasi pertama, serta Auth Service berbasis Keycloak yang menerbitkan JWT. Lapisan privasi berisi Privacy Service dengan empat komponen: Policy Evaluation Engine yang memutuskan apakah kombinasi layanan, tujuan, jenis subjek, dan peran pemohon diizinkan; Token Generator yang membangkitkan token melalui HMAC-SHA256 dengan nonce dan masa berlaku; penyimpanan pemetaan dan brankas identitas; serta modul Audit. Lapisan layanan bisnis terdiri atas Transaction, Fraud, Notification, dan Reconciliation Service, yang seluruhnya hanya menerima token. Pengecualian yang disengaja adalah nomor telepon yang disimpan Notification pada registry kontak berkunci pseudonim domain, karena layanan ini harus benar-benar mengirim pesan ke nasabah.
+
+Rancangan ini bersifat stateful karena menyimpan tabel pemetaan dan brankas identitas, berbeda dengan pendekatan stateless yang hanya mengandalkan HMAC dan menurunkan kembali token setiap kali dibutuhkan. Pilihan stateful diambil karena pembukaan identitas asli secara terkontrol, pencabutan token, dan rotasi kunci sulit dilakukan tanpa penyimpanan pemetaan. Konsekuensi yang disadari adalah Privacy Service menjadi pemusatan risiko: komponen ini memegang kunci, pemetaan, dan brankas sekaligus, sehingga kompromi terhadapnya membatalkan seluruh perlindungan. Mitigasi yang diterapkan pada prototipe berupa pemisahan basis data, enkripsi per kolom dengan kunci terpisah, aturan bahwa Privacy Service tidak pernah memanggil layanan lain, pembatasan antarmuka hanya pada operasi yang diperlukan, serta pencatatan audit yang tidak dapat ditulis ulang oleh akun aplikasi. Keterbatasan ini dinyatakan secara eksplisit sebagai batasan penelitian.
+
+[]
+
+Gambar 5. Arsitektur usulan: data asli hanya melewati lapisan tepi dan tersimpan terenkripsi di zona privasi, sedangkan layanan bisnis hanya memegang token.
+
+Gambar 5 menunjukkan tiga lapisan. Klien, auditor, dan bank mitra hanya berhubungan dengan API Gateway pada lapisan tepi (aliran 1 sampai 3). Plugin privacy-tokenizer di Gateway meneruskan customer_id dan nomor rekening ke Privacy Service pada zona privasi untuk ditokenkan, dan saat pendaftaran identitas disimpan terenkripsi di identity_vault (aliran 4). Gateway kemudian meneruskan permintaan ke layanan bisnis hanya dalam bentuk token (aliran 5). Bila suatu layanan perlu berbicara dengan layanan lain atau membutuhkan nilai asli untuk tujuan yang sah, ia menukar token atau meminta domain pseudonim ke Privacy Service (aliran 6). Satu-satunya data asli yang keluar dari sistem adalah nomor HP beserta isi SMS generik yang dikirim Notification ke penyedia SMS (aliran 7).
+
+4) Data Flow Diagram (DFD)
+
+Karena penelitian ini berkaitan dengan privasi data, aliran data pribadi antarkomponen perlu digambarkan secara eksplisit: data apa yang dikirim, ke mana, dan dalam bentuk apa. Aliran tersebut dimodelkan dengan DFD pada Gambar 6. Setiap kotak adalah layanan, penyimpanan, atau pihak yang terlibat, setiap panah adalah aliran data yang diberi nomor DF, dan kotak biru putus-putus menandai zona pseudonimisasi, yaitu satu-satunya tempat data pribadi asli disimpan dan dipetakan ke token. Panah merah menunjukkan aliran yang membawa data pribadi asli, panah putus-putus menunjukkan aliran yang membawa token, dan panah biasa menunjukkan aliran tanpa data pribadi.
+
+[]
+
+Gambar 6. Data Flow Diagram sistem dengan zona pseudonimisasi.
+
+Alur data dapat dibaca dari kiri ke kanan. Nasabah mengirim data pribadi asli ke API Gateway (DF1), yaitu NIK, nama, nomor telepon, email, dan nomor rekening saat pendaftaran, serta nomor rekening, merchant, nominal, dan geohash saat transaksi. Gateway membuat akun di Auth Service dan memvalidasi JWT (DF2). Gateway lalu mengirim pengenal asli ke Privacy Service (DF3): saat pendaftaran, identitas disimpan pada brankas (DF5); saat transaksi, customer_id dan nomor rekening ditukar dengan token yang pemetaannya disimpan (DF4). Setiap operasi dicatat pada audit log tanpa memuat data pribadi (DF6). Gateway sendiri yang meneruskan payload bertoken ke Transaction (DF7), dan pada pendaftaran meneruskan pseudonim domain beserta nomor telepon ke Notification (DF8).
+
+Sejak titik ini, layanan bisnis hanya bertukar token. Transaction menukar token miliknya di Privacy Service (DF9) sebelum memanggil Fraud (DF10) dan Notification (DF11), dan Notification menerjemahkan notif_token menjadi pseudonim domain (DF12) untuk mencari nomor telepon di registry kontaknya, lalu mengirim pesan melalui penyedia SMS (DF13). Reconciliation mengambil daftar transaksi dari Transaction tanpa identitas (DF14), menerima laporan settlement bank yang nomor rekeningnya telah ditokenisasi Gateway (DF15, DF16), dan meminta token ke Privacy Service (DF17). Audit internal pada DF17 hanya menghasilkan token audit. Data asli hanya dapat keluar kembali melalui pembukaan identitas bersyarat pada DF17, setelah permintaan pembukaan disetujui admin, dan hanya berupa atribut yang disetujui. Admin, Auditor, dan Fraud Analyst mengakses sistem melalui Gateway (DF18). Akun login dan email pada Auth Service (DF19) berada di luar zona pseudonimisasi dan tidak dilindungi oleh mekanisme ini; hal tersebut dinyatakan sebagai batasan penelitian. Rincian setiap aliran disajikan pada Tabel II.
+
+Tabel II. Rincian Aliran Data pada DFD
+
+  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Aliran            Dari → Ke                                       Data yang dikirim                                                                                                                                           Bentuk data
+  ----------------- ----------------------------------------------- ----------------------------------------------------------------------------------------------------------------------------------------------------------- ---------------------------------------------------------------
+  DF1               Nasabah → API Gateway                           Pendaftaran: NIK, nama, no. HP, email, no. rekening. Transaksi: no. rekening, merchant, nominal, geohash, JWT                                               Data asli
+
+  DF2               API Gateway ↔ Auth Service                      Email, username, kata sandi saat daftar; JWT dan customer_id                                                                                                Data asli (di luar zona)
+
+  DF3               API Gateway → Privacy Service                   customer_id dan no. rekening untuk tokenisasi; NIK, nama, no. HP, no. rekening untuk brankas saat daftar; konteks layanan dan tujuan                        Data asli masuk, token keluar
+
+  DF4               Privacy Service ↔ pseudonym_mapping             Token, indeks buta subjek, subjek terenkripsi, layanan, tujuan, TTL, status                                                                                 Token dan identitas terenkripsi
+
+  DF5               Privacy Service ↔ identity_vault                NIK, nama, no. HP, no. rekening, customer_id terenkripsi per kolom                                                                                          Data asli terenkripsi
+
+  DF6               Privacy Service → audit_log                     Aksi, layanan pemohon, token, mapping_id, keputusan, waktu                                                                                                  Tanpa data pribadi
+
+  DF7               API Gateway → Transaction                       transaction_id, customer_token, account_token, merchant_id, nominal, geohash                                                                                Token
+
+  DF8               API Gateway → Notification                      Pseudonim domain, no. HP, preferensi kanal (sekali saat daftar)                                                                                             Token dan no. HP asli (pengecualian)
+
+  DF9               Transaction ↔ Privacy Service                   Pertukaran token (fraud_token, notif_token), status transaksi, penerbitan ulang                                                                             Token
+
+  DF10              Transaction → Fraud                             fraud_token, nominal, jam, geohash                                                                                                                          Token
+
+  DF11              Transaction → Notification                      notif_token, templat, nominal                                                                                                                               Token
+
+  DF12              Notification ↔ Privacy Service                  notif_token, lalu pseudonim domain                                                                                                                          Token
+
+  DF13              Notification → penyedia SMS                     No. HP dan teks notifikasi                                                                                                                                  Data asli (no. HP)
+
+  DF14              Reconciliation ↔ Transaction                    Tanggal, lalu transaction_id, nominal, waktu selesai                                                                                                        Tanpa data pribadi
+
+  DF15              Simulator bank → API Gateway                    No. rekening, nominal, referensi bank                                                                                                                       Data asli
+
+  DF16              API Gateway → Reconciliation                    account_token, nominal, referensi bank                                                                                                                      Token
+
+  DF17              Reconciliation ↔ Privacy Service                transaction_id untuk token rekonsiliasi dan audit; hanya bila permintaan pembukaan disetujui, atribut yang disetujui (bagian dari customer_id, NIK, nama)   Token; data asli terbatas hanya pada pembukaan yang disetujui
+
+  DF18              Admin / Auditor / Fraud Analyst ↔ API Gateway   Permintaan audit, permintaan dan persetujuan pembukaan, pencabutan, tinjauan transaksi; hasil audit (pseudonim) kembali ke auditor                          Tanpa data pribadi, kecuali hasil pembukaan yang disetujui
+
+  DF19              Auth Service ↔ keycloak-db                      Akun login, email, kredensial                                                                                                                               Data asli (di luar zona)
+  ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Tabel II juga menjadi acuan pengukuran paparan data pribadi pada pengujian: himpunan atribut pengenal yang diterima suatu layanan ditentukan dari aliran yang masuk ke layanan tersebut, lalu dicocokkan dengan payload, isi basis data, dan log yang tertangkap saat eksperimen.
+
+5) Skema Pembentukan Token Pseudonim Dinamis
+
+Token dibentuk melalui fungsi HMAC-SHA256 [9] atas gabungan jenis subjek, identitas subjek, layanan pemilik token, tujuan pemrosesan, dan nonce, menggunakan kunci K_token yang hanya berada di Privacy Service. Keluaran digest dipotong menjadi delapan karakter heksadesimal, diubah menjadi huruf kapital, dan diberi awalan PSEU-, sehingga token berbentuk seperti PSEU-7BCD04F2. Jenis subjek (CUSTOMER atau ACCOUNT) memisahkan ruang token pelanggan dan rekening, sedangkan nonce membuat token hasil penerbitan ulang berbeda dari token sebelumnya. Versi kunci, waktu kedaluwarsa, dan status tidak dimuat di dalam token, melainkan disimpan pada baris pemetaan. Skema pembentukan token ditunjukkan pada Gambar 7.
+
+Konstruksi ini membuat token subjek yang sama berbeda nilainya pada layanan dan tujuan pemrosesan yang berbeda, sehingga penautan antarbasis data yang bocor menjadi tidak langsung. Pemotongan menjadi delapan karakter heksadesimal (32 bit) dipilih agar token ringkas, dengan konsekuensi ruang keluaran yang kecil; tabrakan karena itu ditangani melalui batasan unik pada kolom pseudonym dan pembangkitan ulang dengan nonce baru. Frekuensi pembangkitan ulang ini dicatat sebagai parameter yang diverifikasi pada pengujian keunikan token. Masa berlaku token ditetapkan per tujuan dari kebutuhan proses bisnis, misalnya 900 detik untuk pemrosesan pembayaran, 30 hari untuk deteksi penipuan, dan 600 detik untuk audit internal.
+
+[]
+
+Gambar 7. Skema pembentukan token pseudonim dinamis berbasis konteks.
+
+6) Rancangan Basis Data Layanan Privasi
+
+Struktur penyimpanan pada Privacy Service dirancang untuk memisahkan identitas, pemetaan token, status transaksi, permintaan pembukaan, dan jejak audit, sebagaimana ditunjukkan pada Gambar 8. Entitas identity_vault adalah brankas identitas: satu baris per nasabah yang menyimpan customer_id, NIK, nama, nomor telepon, dan nomor rekening dalam bentuk terenkripsi AES-256-GCM per kolom, dengan customer_lookup sebagai indeks buta untuk pencarian. Entitas pseudonym_mapping menyimpan token beserta jenis subjek, subjek terenkripsi, indeks buta subjek, layanan pemilik, tujuan, transaction_id, versi kunci, waktu terbit, waktu kedaluwarsa, dan status, sehingga satu subjek dapat memiliki banyak token yang berlaku bersamaan untuk konteks berbeda. Nilai customer_lookup pada brankas sama dengan subject_lookup pada pemetaan subjek pelanggan, sehingga brankas dapat dibuka dari baris pemetaan tanpa menyimpan customer_id dalam bentuk jelas. Entitas transaction_status menjadi dasar penolakan penerbitan ulang pada transaksi yang sudah selesai. Entitas disclosure_request menyimpan setiap permintaan pembukaan identitas: token audit yang dirujuk, dasar dan nomor kasus, nama atribut yang diminta, pemohon, penyetuju, status (PENDING, APPROVED, REJECTED, USED, EXPIRED), serta waktu keputusan, kedaluwarsa, dan pemakaian. Entitas audit_log menyimpan setiap operasi beserta keputusannya tanpa kolom identitas; pada pembukaan yang dicatat hanya nama atribut, bukan nilainya.
+
+Kebijakan tidak disimpan sebagai tabel basis data, melainkan sebagai konfigurasi yang ditetapkan sebelum implementasi: Tabel 1 berisi tujuh konteks sah (P1 sampai P7), Tabel 2 berisi dua pertukaran token yang sah, Tabel 3 berisi matriks operasi, Tabel 4 memetakan proses bisnis ke tujuan, Tabel 5 membatasi atribut brankas yang boleh dikembalikan, dan Tabel 6 berisi dasar pembukaan identitas yang sah (sengketa transaksi, dugaan penipuan yang telah dikonfirmasi, dan permintaan resmi aparat penegak hukum). Pada Tabel 5, hanya konteks audit internal (P7) yang dapat mengembalikan customer_id, NIK, dan nama, dan itu pun hanya melalui permintaan pembukaan yang disetujui serta terbatas pada atribut yang disetujui; konteks lain tidak mengembalikan atribut apa pun. Pemetaan dikosongkan identitasnya setelah masa retensi 90 hari, sedangkan brankas dikosongkan melalui pencabutan subjek.
+
+[]
+
+Gambar 8. Rancangan basis data layanan privasi.
+
+7) Diagram Sekuens Audit dan Pembukaan Identitas Bersyarat
+
+Proses yang paling menentukan keamanan rancangan adalah pembukaan kembali identitas asli. Penyimpanan data yang sudah dipseudonimkan menjadi percuma bila proses audit justru membuka identitas secara rutin, sehingga audit dipisahkan menjadi dua jalur, sebagaimana ditunjukkan Gambar 9. Pola ini mengikuti pseudonimisasi data audit dengan reidentifikasi bersyarat [19] dan pembukaan pseudonim yang memerlukan lebih dari satu pihak [20].
+
+Jalur A adalah audit internal bawaan. Auditor mengajukan permintaan audit melalui gerbang API, yang meneruskannya ke Reconciliation Service beserta klaim JWT. Reconciliation meminta token audit (P7) dari transaction_id, lalu mengembalikan hasil audit berupa token tersebut beserta transaction_id, nominal, status, dan waktu. Tidak ada atribut brankas yang dibuka, sehingga pemeriksaan kewajaran transaksi dan penelusuran jejak audit dilakukan sepenuhnya di atas pseudonim.
+
+Jalur B hanya dipakai bila identitas benar-benar dibutuhkan. Auditor mengajukan permintaan pembukaan yang memuat token audit, dasar pembukaan dari Tabel 6, nomor kasus, dan atribut yang diminta. Permintaan disimpan berstatus PENDING dan harus disetujui oleh admin yang bukan pemohon (prinsip empat mata). Persetujuan berlaku sekali pakai selama 600 detik. Reconciliation kemudian mengajukan de-pseudonimisasi dengan tujuan INTERNAL_AUDIT dan merujuk permintaan tersebut. Privacy Service mengevaluasi lima gerbang berurutan: token ada, layanan pemohon sama dengan layanan pemilik token, tujuan yang diajukan sama dengan tujuan saat penerbitan, token belum kedaluwarsa atau dicabut, dan permintaan pembukaan telah disetujui, belum dipakai, belum kedaluwarsa, serta diajukan oleh auditor yang sama. Dua syarat tambahan juga diperiksa, yaitu konteks tersebut memang boleh dibuka dan pemohon berperan auditor.
+
+Bila seluruh syarat terpenuhi, Privacy Service membuka brankas dan mengembalikan hanya atribut yang disetujui, yang merupakan bagian dari himpunan Tabel 5 (customer_id, NIK, dan nama); nomor telepon dan nomor rekening tidak pernah dikembalikan. Status permintaan berubah menjadi USED, dan atribut tersebut tidak disimpan di basis data Reconciliation. Bila salah satu syarat gagal, proses berhenti pada kegagalan pertama dan mengembalikan respons galat dengan bentuk seragam. Permintaan, persetujuan atau penolakan, dan pembukaan sama-sama menghasilkan catatan pada audit log tanpa nilai data pribadi, karena percobaan akses yang gagal justru merupakan data yang paling penting untuk analisis keamanan. Jalur inilah yang mewujudkan ketentuan bahwa layanan hilir tidak pernah melihat data asli kecuali benar-benar dibutuhkan.
+
+[]
+
+Gambar 9. Diagram sekuens audit internal berbasis pseudonim dan pembukaan identitas bersyarat.
+
+C. IMPLEMENTASI
+
+Implementasi dilakukan secara iteratif dalam beberapa sprint, dengan setiap sprint menyelesaikan satu bagian artefak dan diakhiri pengujian pendahuluan terhadap bagian tersebut. Sprint pertama menghasilkan layanan autentikasi dan gerbang API, sprint kedua menghasilkan Privacy Service beserta pemetaan, brankas, dan audit, sprint ketiga menghasilkan layanan bisnis yang dapat dijalankan pada seluruh konfigurasi pembanding, dan sprint keempat menyiapkan instrumentasi pengukuran.
+
+1) Lingkungan dan Teknologi Implementasi
+
+Perangkat lunak dibangun menggunakan bahasa TypeScript di atas kerangka kerja NestJS karena struktur modularnya memudahkan pemisahan antarlayanan. Rincian teknologi yang digunakan disajikan pada Tabel III.
+
+Tabel III. Teknologi yang Digunakan pada Implementasi Prototipe
+
+  -----------------------------------------------------------------------------------------------------------------------------
+  Komponen                             Teknologi
+  ------------------------------------ ----------------------------------------------------------------------------------------
+  Gerbang API                          Kong dengan plugin JWT dan plugin kustom privacy-tokenizer (Lua)
+
+  Layanan bisnis dan layanan privasi   Node.js dengan TypeScript, kerangka kerja NestJS
+
+  Autentikasi dan otorisasi            Keycloak dengan token JWT, peran auditor dan admin, service account
+
+  Kriptografi                          Node crypto: HMAC-SHA256 untuk token dan indeks buta, AES-256-GCM untuk enkripsi kolom
+
+  Basis data                           PostgreSQL 16, satu instans per layanan
+
+  Orkestrasi lingkungan eksperimen     Docker dan Docker Compose
+
+  Pengujian fungsional                 Postman dan Newman
+
+  Pengujian beban                      k6
+
+  Pemantauan sumber daya               cAdvisor, Prometheus, dan Grafana
+  -----------------------------------------------------------------------------------------------------------------------------
+
+2) Implementasi Lapisan Privasi
+
+Privacy Service diimplementasikan sebagai layanan tersendiri yang mengekspos operasi penyimpanan identitas, penerbitan token, pertukaran token, penerjemahan ke pseudonim domain, pembukaan token, penerbitan ulang, pencabutan, dan pembacaan audit log. Setiap operasi memanggil Policy Evaluation Engine sebelum menyentuh data. Layanan pemohon diambil dari klaim JWT service account, bukan dari isi permintaan, sehingga satu layanan tidak dapat mengaku sebagai layanan lain. Kebijakan disimpan sebagai konfigurasi, bukan ditulis tersebar dalam logika, sehingga perubahan kebijakan tidak mengubah kode layanan bisnis. Ketiga kunci dimuat dari variabel lingkungan yang hanya tersedia di kontainer Privacy Service dan tidak pernah dikirimkan melalui antarmuka mana pun.
+
+Pencegatan payload dilakukan oleh plugin privacy-tokenizer pada gerbang API, yang berjalan setelah plugin JWT: plugin membaca customer_id dari klaim dan nomor rekening dari isi permintaan, memanggil Privacy Service, mengganti keduanya dengan token, membuang NIK, nama, dan email, lalu meneruskan permintaan. Pada pendaftaran, plugin yang sama mengirim identitas ke brankas sebelum meneruskan pseudonim domain dan nomor telepon ke Notification. Bila Privacy Service tidak tersedia, plugin menolak dengan kode 503. Pendekatan ini menjaga agar kode layanan bisnis pada seluruh konfigurasi tetap identik, yang penting untuk validitas internal eksperimen: perbedaan hasil pengukuran tidak dapat dikaitkan dengan perbedaan logika bisnis.
+
+3) Implementasi Konfigurasi Pembanding
+
+Kedua konfigurasi dijalankan dari basis kode yang sama dan dipilih melalui variabel lingkungan PRIVACY_MODE pada berkas Docker Compose. Konfigurasi baseline mengatur plugin ke mode passthrough sehingga payload diteruskan apa adanya. Konfigurasi usulan mengaktifkan seluruh lapisan privasi. Varian pseudonim statis, yang hanya dipakai pada pengujian penautan, menghitung token dari HMAC atas identitas subjek saja dan memakainya bersama di seluruh layanan. Seluruh layanan dijalankan dengan batas CPU dan memori yang sama pada setiap konfigurasi agar penggunaan sumber daya dapat dibandingkan.
+
+4) Penyiapan Data Uji
+
+Data yang digunakan adalah data sintetis yang dibangkitkan menyerupai pola data nyata, berupa 1.000 nasabah dengan NIK, nama, nomor telepon, email, dan nomor rekening, serta transaksi dengan nominal, merchant, jam, dan geohash. Setiap atribut pengenal diisi nilai kenari (canary) yang unik, sehingga kemunculannya di payload, basis data, atau log dapat dicocokkan secara persis pada pengukuran paparan. Penggunaan data sintetis dipilih karena penelitian ini tidak memperoleh akses terhadap data nasabah sebenarnya dan penggunaan data asli akan menimbulkan persoalan perizinan serta risiko privasi yang bertentangan dengan tujuan penelitian. Konsekuensinya, distribusi data uji tidak sepenuhnya mencerminkan karakteristik beban produksi, dan hal ini dicatat sebagai batasan yang memengaruhi generalisasi hasil.
+
+5) Penerapan Lingkungan Eksperimen
+
+Seluruh layanan dikemas sebagai citra Docker agar lingkungan eksekusi konsisten dan dapat direproduksi [10]. Eksperimen dijalankan pada satu virtual private server yang menampung seluruh kontainer, dengan pembangkit beban dijalankan dari mesin terpisah bila tersedia agar konsumsi sumber daya alat uji tidak mencemari pengukuran. Basis data dipulihkan ke keadaan awal yang sama sebelum setiap run, dan urutan run diselang-seling antarkonfigurasi agar pergeseran kondisi server tidak tertuang seluruhnya ke satu konfigurasi. Penempatan seluruh layanan pada satu mesin menghilangkan variabel latensi jaringan antarnode, yang menguntungkan dari sisi kontrol eksperimen namun membuat hasil pengukuran cenderung optimistis dibandingkan penerapan tersebar; keterbatasan ini dinyatakan sebagai batasan lingkungan pengujian.
+
+D. METODE PENGUJIAN
+
+Pengujian dirancang untuk menjawab empat hal secara terpisah, yaitu apakah fungsi bisnis tetap berjalan, seberapa besar paparan data pribadi berkurang, apakah kontrol akses mampu menahan percobaan pembukaan token yang tidak sah dan penautan antarbasis data, dan berapa besar biaya performa yang harus dibayar. Dalam kerangka evaluasi DSR, rancangan ini mengikuti strategi Technical Risk and Efficacy [12]: evaluasi bersifat artifisial dan dilakukan setelah artefak selesai dibangun (ex post), dengan tujuan menunjukkan bahwa perbedaan hasil disebabkan oleh artefak itu sendiri, bukan oleh perbedaan logika bisnis atau lingkungan. Evaluasi naturalistik dengan pengguna atau data produksi nyata berada di luar cakupan penelitian dan dinyatakan sebagai pekerjaan lanjutan.
+
+Pengujian dijalankan pada dua konfigurasi dari basis kode yang sama sebagaimana dijelaskan pada Subbab C.3, yaitu baseline dan usulan. Varian pseudonim statis ditambahkan khusus untuk pengujian penautan. Setiap pengujian diulang lima kali dengan urutan konfigurasi yang diselang-seling (baseline, usulan, baseline, dan seterusnya). Cakupan evaluasi dibatasi pada alur yang menjawab judul dan deskripsi penelitian, yaitu pendaftaran akun, transaksi normal, transaksi mencurigakan hingga penahanan, rekonsiliasi dari transaksi, dan audit internal. Peninjauan transaksi oleh Fraud Analyst dan laporan settlement bank termasuk dalam rancangan tetapi tidak dievaluasi. Variabel serta metrik yang diukur dirangkum pada Tabel V.
+
+1) Pengujian Fungsional
+
+Pengujian black-box digunakan untuk memastikan artefak memenuhi kebutuhan fungsional tanpa memeriksa struktur kode internal [11]. Kasus uji mencakup pendaftaran akun beserta penyimpanan identitas di brankas, autentikasi, transaksi normal, transaksi mencurigakan yang ditahan, penolakan transaksi tanpa kredensial, pengiriman notifikasi, penerbitan ulang token yang kedaluwarsa di tengah proses, rekonsiliasi harian, dan audit internal. Kriteria kelulusan adalah kesesuaian antara keluaran yang diamati dan keluaran yang diharapkan pada kedua konfigurasi, kecuali kasus yang khusus menguji lapisan privasi, yang hanya berlaku pada konfigurasi usulan. Pengujian dijalankan melalui koleksi Postman yang dieksekusi secara otomatis dengan Newman agar dapat diulang tanpa intervensi manual. Tiap kasus uji dipetakan ke satu kebutuhan sistem pada Tabel I sehingga dapat ditelusuri dari prinsip ke kebutuhan hingga ke bukti pengujian.
+
+2) Pengukuran Paparan Data Pribadi
+
+Paparan data pribadi diukur dengan menelusuri payload yang benar-benar diterima setiap layanan hilir dan basis data yang menyimpannya. Himpunan atribut pengenal langsung yang diukur adalah P = {nama, NIK, nomor telepon, email, nomor rekening, customer_id}. Untuk setiap layanan s, rasio paparan dihitung sebagai perbandingan antara jumlah atribut pengenal langsung yang diterima layanan tersebut dan jumlah total atribut pengenal langsung, yaitu E(s) = |P(s)| / |P|, sehingga nilainya selalu berada pada rentang 0 sampai 1. Himpunan P(s) diturunkan dari aliran data yang masuk ke layanan s pada Tabel II, dan nilai harapannya ditetapkan lebih dahulu sebagaimana pada Tabel IV, kemudian dibandingkan dengan nilai yang teramati saat eksperimen. Nilai rata-rata paparan dihitung di seluruh layanan hilir, dan pengurangan paparan dinyatakan sebagai selisih relatif antara konfigurasi baseline dan konfigurasi usulan. Karena rasio ini deterministik, kriteria keberhasilannya bukan uji signifikansi statistik, melainkan kesesuaian nilai teramati dengan nilai harapan dan nilai E(s) konfigurasi usulan yang lebih rendah daripada baseline pada setiap layanan hilir.
+
+Tabel IV. Nilai Harapan Paparan E(s) per Layanan Hilir pada Jalur Normal
+
+  -------------------------------------------------------------------------------------------------------------
+  Layanan          P(s) baseline                                  E(s) baseline   P(s) usulan    E(s) usulan
+  ---------------- ---------------------------------------------- --------------- -------------- --------------
+  Transaction      customer_id, NIK, nama, no. rekening           4/6             —              0
+
+  Fraud            customer_id, NIK, nama, no. rekening           4/6             —              0
+
+  Notification     customer_id, NIK, nama, no. rekening, no. HP   5/6             no. HP         1/6
+
+  Reconciliation   customer_id, NIK, nama, no. rekening           4/6             —              0
+  -------------------------------------------------------------------------------------------------------------
+
+Dua keputusan penghitungan ditetapkan sebelum pengujian. Pertama, nomor telepon pada Notification adalah pengecualian yang disengaja karena layanan ini harus mengirim pesan, sehingga pada hasil utama tetap dihitung sebagai atribut terpapar (perlakuan konservatif). Atribut yang dikembalikan pada jalur audit internal tidak dimasukkan ke E(s) Reconciliation. Hasil audit bawaan diperiksa dengan pemindaian nilai kenari dan diharapkan tidak memuat atribut brankas sama sekali. Pembukaan identitas bersyarat (atribut yang disetujui melalui DF17) tidak disimpan dan dilaporkan terpisah sebagai paparan terkontrol, berupa jumlah pembukaan, kesesuaian atribut yang dikembalikan dengan atribut yang disetujui, dan keberadaan baris audit untuk setiap permintaan, persetujuan, dan pembukaan. Kedua, Auth Service dan basis datanya (DF19) berada di luar zona pseudonimisasi, sehingga rata-rata E(s) dilaporkan dua kali: seluruh layanan dan hanya layanan di dalam cakupan perlindungan.
+
+Kesesuaian P(s) dengan kenyataan diverifikasi dengan pemindaian nilai kenari. Nilai kenari setiap atribut pengenal, yang disisipkan sejak alur pendaftaran, dicocokkan secara persis dengan payload pada antarmuka tiap layanan, isi basis data, dan berkas log. Hasilnya dilaporkan sebagai presisi dan recall P(s) prediksi terhadap P(s) teramati. Pencocokan nilai persis dipilih dibandingkan pemindaian dengan ekspresi reguler umum karena deteksi pengenal berbasis ekspresi reguler dilaporkan kurang andal pada atribut seperti ID dan nama pengguna [16]. Pemindaian log penting karena penelitian terdahulu menemukan data sensitif seperti stempel waktu dan ID hampir selalu hadir pada berkas log [17]. Pada konfigurasi usulan, nilai kenari NIK dan nama diharapkan hanya ditemukan dalam bentuk terenkripsi di brankas identitas.
+
+Metrik ini mengukur paparan secara struktural, yaitu ada atau tidaknya atribut pengenal pada payload, dan tidak mengukur risiko identifikasi ulang secara statistik. Nilai nol pada rasio paparan tidak berarti risiko identifikasi ulang hilang, karena kombinasi atribut kuasi-pengenal seperti nominal transaksi, jam, dan geohash masih berpotensi menyempitkan ruang kandidat. Interpretasi hasil karena itu dibatasi pada pengurangan paparan pengenal langsung. Rasio ini juga berbeda dari indeks paparan yang dihitung per lapisan arsitektur dengan bobot heuristik [14]: E(s) adalah rasio cacah per layanan yang terbatas pada rentang 0 sampai 1 dan diverifikasi terhadap lalu lintas dan isi basis data yang teramati.
+
+3) Pengujian Keamanan Kontrol Akses
+
+Pengujian keamanan difokuskan pada mekanisme de-pseudonimisasi, pertukaran token, brankas identitas, dan penautan token, dan dilakukan melalui kasus uji negatif, yaitu permintaan yang seharusnya ditolak. Skenario penolakan mencakup permintaan dari layanan yang bukan pemilik token, permintaan dengan tujuan pemrosesan yang berbeda dari tujuan penerbitan, permintaan memakai token yang telah melewati masa berlaku atau dicabut, permintaan tanpa peran auditor, permintaan tujuan di luar daftar yang sah, pertukaran token yang tidak terdaftar, layanan hilir yang mengirim pengenal asli, dan layanan selain gerbang API yang mencoba menulis ke brankas. Skenario khusus pembukaan identitas mencakup pembukaan tanpa permintaan yang disetujui, persetujuan oleh pemohon sendiri, persetujuan oleh pengguna tanpa peran admin, pemakaian ulang persetujuan yang sudah dipakai atau kedaluwarsa, dasar pembukaan di luar Tabel 6, dan permintaan atribut di luar yang disetujui. Pembukaan yang sah juga diperiksa agar hanya mengembalikan atribut yang disetujui. Metrik yang digunakan adalah proporsi permintaan tidak sah yang berhasil ditolak dengan kode dan alasan yang tepat, serta kelengkapan catatan audit atas percobaan tersebut. Pengujian unit terhadap fungsi pembangkitan dan validasi token juga dijalankan untuk memeriksa keunikan token lintas kombinasi konteks, frekuensi pembangkitan ulang akibat tabrakan pada pemotongan 32 bit, dan kebenaran perlakuan terhadap token kedaluwarsa pada tingkat kode.
+
+Dua skenario ditambahkan untuk menguji sifat yang dinyatakan pada kebutuhan nonfungsional. Pertama, simulasi penautan lintas-layanan: penyerang diasumsikan memegang salinan dua basis data layanan hilir (misalnya Fraud dan Notification) dan mencoba mencocokkan token milik subjek yang sama. Tingkat keberhasilan penautan dilaporkan untuk pseudonim statis dan untuk token usulan. Penautan di dalam satu pasangan layanan dan tujuan selama masa berlaku token diperkirakan tetap mungkin karena token aktif digunakan ulang (keputusan rancangan pada Subbab B.2), termasuk jendela 30 hari pada Fraud, dan hal ini dilaporkan sebagai keterbatasan, bukan disembunyikan. Kedua, uji fail-closed: satu replika Privacy Service dimatikan saat beban berjalan, lalu diperiksa bahwa transaksi yang gagal ditolak secara eksplisit, tidak ada payload berisi data asli yang sampai ke layanan hilir (diverifikasi dengan pemindaian nilai kenari), dan waktu hingga layanan pulih dicatat. Rotasi kunci hanya dirancang sebagai prosedur tertulis dan tidak diuji.
+
+Pengujian ini menguji ketahanan terhadap penyalahgunaan antarmuka yang sah dan terhadap penautan oleh pihak yang memegang basis data bocor, bukan terhadap serangan kriptografis pada fungsi HMAC maupun terhadap penyerang yang telah menguasai kunci atau Privacy Service beserta brankasnya. Hasil penautan bersifat empiris pada skenario yang diuji dan tidak merupakan bukti formal ketidakterhubungan. Batas tersebut dinyatakan secara eksplisit agar kesimpulan tidak melampaui apa yang benar-benar diuji.
+
+4) Pengujian Performa
+
+Pengujian performa dilakukan menggunakan k6 pada satu tingkat beban, yaitu 100 pengguna konkuren, dijalankan selama lima menit setelah periode pemanasan satu menit, pada kedua konfigurasi. Skenario beban berupa campuran 70% transaksi normal dan 30% transaksi mencurigakan. Metrik yang dikumpulkan meliputi latensi rata-rata, latensi persentil ke-50, ke-95, dan ke-99, throughput dalam permintaan per detik, tingkat kesalahan, serta penggunaan CPU dan memori tiap kontainer yang diambil melalui cAdvisor. Latensi internal operasi penerbitan token juga diukur terpisah sebagai mikrobenchmark agar biaya operasi kriptografis dapat dibedakan dari latensi ujung ke ujung.
+
+Overhead dihitung sebagai selisih relatif metrik konfigurasi usulan terhadap baseline. Unit analisis adalah ringkasan per pengulangan (p95 dan throughput tiap run), bukan seluruh permintaan yang digabung. Setiap metrik dilaporkan sebagai rerata, simpangan baku, dan interval kepercayaan 95% (distribusi t dengan empat derajat bebas). Karena lima pengulangan memberi daya statistik rendah, penafsiran bertumpu pada interval kepercayaan, bukan pada nilai p. Kriteria penerimaan: lulus bila estimasi kenaikan p95 tidak melebihi 20% dan penurunan throughput tidak melebihi 15%, dengan tingkat kesalahan di bawah 1% pada kedua konfigurasi; bila batas atas interval kepercayaan melampaui ambang, hasil dinyatakan tidak konklusif dan dibahas apa adanya. Ambang tersebut merupakan kriteria penelitian ini, bukan standar industri; studi pembanding umumnya menilai penerimaan secara kualitatif [13]. Pembangkit beban k6 dengan jumlah pengguna tetap bersifat closed-loop, sehingga laju permintaan turun saat sistem melambat dan latensi ekor dapat tampak lebih baik daripada kenyataan; hal ini dicatat sebagai ancaman validitas.
+
+5) Variabel dan Metrik Pengujian
+
+Tabel V. Variabel dan Metrik Pengujian
+
+  -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Aspek                     Metrik                                                                                                                                                           Instrumen                                                                Kriteria
+  ------------------------- ---------------------------------------------------------------------------------------------------------------------------------------------------------------- ------------------------------------------------------------------------ -----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+  Fungsionalitas            Proporsi kasus uji yang lulus                                                                                                                                    Postman dan Newman                                                       Seluruh kasus uji lulus pada kedua konfigurasi (kasus khusus lapisan privasi pada konfigurasi usulan)
+
+  Paparan data pribadi      E(s) per layanan; rata-rata E(s) (seluruh layanan dan hanya dalam cakupan); presisi dan recall P(s) terhadap nilai kenari; paparan terkontrol jalur audit        Analisis payload, basis data, dan log dengan nilai kenari                E(s) teramati sama dengan nilai harapan Tabel IV; E(s) usulan lebih rendah daripada baseline pada setiap layanan hilir; hasil audit bawaan tanpa atribut brankas; pembukaan hanya atribut yang disetujui dan tercatat
+
+  Keamanan kontrol akses    Proporsi permintaan tidak sah yang ditolak; kelengkapan audit; tingkat keberhasilan penautan lintas-layanan; transaksi dengan data asli lolos saat fail-closed   Kasus uji negatif, simulasi penautan, pengujian unit, pematian replika   Seluruh permintaan tidak sah ditolak dan tercatat; penautan lintas-layanan pada token usulan lebih rendah daripada pseudonim statis; tidak ada data asli lolos saat fail-closed
+
+  Performa                  Latensi rata-rata, p50, p95, p99; throughput; tingkat kesalahan; rerata, simpangan baku, dan interval kepercayaan 95% dari lima pengulangan                      k6 (closed-loop)                                                         Pada 100 pengguna: kenaikan p95 tidak melebihi 20% dan penurunan throughput tidak melebihi 15% terhadap baseline; tingkat kesalahan di bawah 1%
+
+  Pemanfaatan sumber daya   Penggunaan CPU dan memori per kontainer; pertumbuhan penyimpanan per token                                                                                       cAdvisor dan Prometheus                                                  Kenaikan dilaporkan dan dibahas; tidak ada ambang keputusan
+  -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+Empat pengujian tersebut secara bersama-sama menjawab rumusan masalah penelitian. Pengujian fungsional memastikan artefak layak dibandingkan, pengukuran paparan menjawab sejauh mana arsitektur usulan mengurangi penyebaran data pribadi, pengujian keamanan menjawab apakah mekanisme pembatasan layanan dan tujuan, pembatasan atribut brankas, ketahanan terhadap penautan, dan perilaku fail-closed benar bekerja, dan pengujian performa menjawab apakah biaya yang ditimbulkan masih dapat diterima untuk kebutuhan operasional pembayaran digital. Analisis risiko LINDDUN tidak diulang setelah implementasi karena hasilnya bergantung pada penilaian analis [15]; sebagai gantinya, DFD dipertahankan sebagai sumber nilai harapan E(s) yang dapat dihitung ulang oleh siapa pun. Konsekuensinya, kategori ancaman LINDDUN yang tidak tercakup oleh pengukuran paparan, seperti Detectability dan Non-compliance, tidak dievaluasi dan dinyatakan sebagai batasan penelitian. Beban selain 100 pengguna, stress hingga titik jenuh, spike, soak, dan penerapan multi-node juga di luar cakupan.
+
+CATATAN: RUJUKAN YANG DIPAKAI PADA BAB INI
+
+Penomoran di bawah bersifat sementara dan perlu disesuaikan dengan daftar pustaka pada naskah lengkap. Rujukan yang menyangkut klaim empiris dan DOI yang belum terverifikasi perlu dicek ke Crossref sebelum disubmit.
+
+[1] Regulation (EU) 2016/679 (General Data Protection Regulation), Art. 5 dan Art. 25.
+
+[2] A. Cavoukian, Privacy by Design: The 7 Foundational Principles, Information and Privacy Commissioner of Ontario.
+
+[3] S. Newman, Building Microservices: Designing Fine-Grained Systems, 2nd ed. O'Reilly Media.
+
+[4] ENISA, Pseudonymisation Techniques and Best Practices, European Union Agency for Cybersecurity.
+
+[5] Doesburg, van Gastel, dan Poll, makalah pseudonimisasi berbasis domain dan tujuan, BENEVOL 2025 (lengkapi judul dan halaman dari bab tinjauan pustaka). Rancangan pada bab ini bersifat terpusat dan non-blind, berbeda dari kerangka polymorphic yang mereka bahas.
+
+[6] K. Peffers, T. Tuunanen, M. A. Rothenberger, dan S. Chatterjee, “A design science research methodology for information systems research,” Journal of Management Information Systems, 2007.
+
+[7] Rujukan SDLC agile yang dipakai pada bab tinjauan pustaka.
+
+[8] Undang-Undang Republik Indonesia Nomor 27 Tahun 2022 tentang Pelindungan Data Pribadi.
+
+[9] H. Krawczyk, M. Bellare, dan R. Canetti, “HMAC: Keyed-hashing for message authentication,” RFC 2104, 1997.
+
+[10] Rujukan kontainerisasi dan reproduksibilitas lingkungan eksperimen.
+
+[11] Rujukan metode black-box testing yang dipakai pada bab tinjauan pustaka.
+
+[12] J. Venable, J. Pries-Heje, dan R. Baskerville, “FEDS: a Framework for Evaluation in Design Science Research,” European Journal of Information Systems, vol. 25, no. 1, hlm. 77-89, 2016. DOI 10.1057/ejis.2014.36 (belum terverifikasi).
+
+[13] L. Loechel dkk., “Hook-in Privacy Techniques for gRPC-based Microservice Communication,” arXiv:2404.05598, 2024.
+
+[14] Chereja dkk., “Privacy-Conducive Data Ecosystem Architecture: By-Design Vulnerability Assessment Using Privacy Risk Expansion Factor and Privacy Exposure Index,” Sensors, vol. 25, no. 11, art. 3554, 2025. DOI 10.3390/s25113554.
+
+[15] Langthaler, Eibl, Klüver, dan Unterweger, “Evaluating the Efficacy of LINDDUN GO for Privacy Threat Modeling for Local Renewable Energy Communities,” ICISSP 2025, hlm. 518-525. DOI 10.5220/0013163000003899 (belum terverifikasi).
+
+[16] Aghili, Wu, Khomh, dan Li, “SDLog,” arXiv:2505.14976.
+
+[17] Aghili, Li, dan Khomh, “An Empirical Study of Sensitive Information in Logs,” arXiv:2409.11313.
+
+[18] European Data Protection Board, Guidelines 01/2025 on Pseudonymisation, 2025.
+
+[19] U. Flegel, “Evaluating the Design of an Audit Data Pseudonymizer Using Basic Building Blocks for Anonymity,” 2005 (baru dibaca dari slide presentasi; cek naskah makalah lengkap dan tempat terbitnya).
+
+[20] T. Petersen, “Privacy-preserving storage of enterprise logdata using pseudonymisation and threshold cryptosystems,” PET-CON 2018.1 (baru dibaca dari slide presentasi; cek naskah lengkapnya).

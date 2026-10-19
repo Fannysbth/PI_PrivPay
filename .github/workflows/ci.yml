@@ -1,0 +1,185 @@
+# CI draft for PrivPay. Jobs that need code are guarded by hashFiles() so the pipeline
+# is green on the empty skeleton and starts enforcing as soon as M0 adds the files.
+# TODO(M0, ADR-0002): pin every action to a commit SHA and review Node/pnpm versions.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secrets:
+    # Runs the pinned gitleaks CLI with the same .gitleaks.toml and .gitleaksignore as pre-commit and the local command
+    # (CLAUDE.md, Perintah). The tarball is verified against the checksum published for v8.30.1.
+    name: secret scan (full history)
+    runs-on: ubuntu-latest
+    env:
+      GITLEAKS_VERSION: 8.30.1
+      GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: install gitleaks (pinned, checksum verified)
+        run: |
+          curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf gitleaks.tar.gz gitleaks
+          sudo install -m 0755 gitleaks /usr/local/bin/gitleaks
+      - run: gitleaks detect --log-opts="--all" --redact -v --config .gitleaks.toml
+
+  quality:
+    name: lint, typecheck, unit tests
+    runs-on: ubuntu-latest
+    if: hashFiles('pnpm-lock.yaml') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+  integration:
+    name: integration + security tests (PostgreSQL 16)
+    runs-on: ubuntu-latest
+    if: hashFiles('pnpm-lock.yaml') != ''
+    needs: quality
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # TODO(ADR-0004): local phase uses a plain PostgreSQL 16 (services: postgres) with a fresh
+      # test database per run; switch to Testcontainers once Docker is part of the workflow.
+      - run: pnpm test:integration
+      - run: pnpm test:security
+
+  sast:
+    name: CodeQL
+    runs-on: ubuntu-latest
+    if: hashFiles('pnpm-lock.yaml') != ''
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+      - uses: github/codeql-action/analyze@v3
+
+  semgrep:
+    name: Semgrep
+    runs-on: ubuntu-latest
+    if: hashFiles('pnpm-lock.yaml') != ''
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@v4
+      - run: semgrep scan --error --config p/typescript --config p/nodejs --config p/owasp-top-ten --config p/secrets
+
+  dependencies:
+    name: dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/dependency-review-action@v4
+        if: github.event_name == 'pull_request'
+        with:
+          fail-on-severity: high
+      - uses: pnpm/action-setup@v4
+        if: hashFiles('pnpm-lock.yaml') != ''
+      - uses: actions/setup-node@v4
+        if: hashFiles('pnpm-lock.yaml') != ''
+        with:
+          node-version-file: .nvmrc
+      - if: hashFiles('pnpm-lock.yaml') != ''
+        run: pnpm audit --prod --audit-level high
+
+  lua:
+    name: luacheck (Kong plugin)
+    runs-on: ubuntu-latest
+    if: hashFiles('services/gateway/plugins/**/*.lua') != ''
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          sudo apt-get update && sudo apt-get install -y luarocks
+          sudo luarocks install luacheck
+          luacheck services/gateway/plugins
+
+  containers:
+    name: hadolint + Trivy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: hadolint
+        run: |
+          files=$(git ls-files | grep -E '(^|/)Dockerfile$' || true)
+          for f in $files; do echo "== $f"; docker run --rm -i hadolint/hadolint < "$f"; done
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: '1'
+
+  e2e:
+    name: end-to-end (compose + Newman + PII scan), both modes
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' && hashFiles('deploy/docker-compose.yml', 'docker-compose.yml') != ''
+    needs: [quality, integration]
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [baseline, proposed]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: generate throwaway secrets for CI
+        run: |
+          mkdir -p secrets
+          for f in pseudonym_hmac_secret blind_index_secret field_encryption_key; do openssl rand -hex 32 > secrets/$f; done
+          for f in privacy_db_password transaction_db_password fraud_db_password notification_db_password reconciliation_db_password keycloak_db_password keycloak_admin_password grafana_admin_password; do openssl rand -base64 24 > secrets/$f; done
+          cp .env.example .env
+      - run: PRIVACY_MODE=${{ matrix.mode }} docker compose up -d --build --wait
+      - run: pnpm newman
+        env:
+          PRIVACY_MODE: ${{ matrix.mode }}
+      - run: pnpm pii-scan
+        env:
+          PRIVACY_MODE: ${{ matrix.mode }}
+      - if: always()
+        run: docker compose logs --no-color > compose-logs.txt || true
+      # compose-logs.txt may contain data even when synthetic; upload only when needed for debugging, short retention.
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compose-logs-${{ matrix.mode }}
+          path: compose-logs.txt
+          retention-days: 3
+      - if: always()
+        run: docker compose down -v

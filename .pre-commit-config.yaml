@@ -1,0 +1,45 @@
+# Install: pip install pre-commit && pre-commit install --install-hooks
+# Pin revs to the latest released tag when this file is activated (M0) and let Dependabot/pre-commit autoupdate keep them current.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1   # same version as CI; the shared .gitleaks.toml needs >= 8.25
+    hooks:
+      - id: gitleaks
+        args: [--config=.gitleaks.toml]
+  - repo: https://github.com/hadolint/hadolint
+    rev: v2.12.0
+    hooks:
+      - id: hadolint
+  - repo: local
+    hooks:
+      - id: no-console-in-services
+        name: forbid console.* in service code (use the redacting logger)
+        language: pygrep
+        entry: '\bconsole\.(log|debug|info|warn|error|trace)\b'
+        files: '^(services|packages)/.*\.ts$'
+        exclude: '(\.spec\.ts|\.test\.ts)$'
+      - id: no-env-or-secret-files
+        name: block .env and secrets/ content
+        language: fail
+        entry: 'Do not commit .env or files under secrets/ (SECURITY.md section 3)'
+        files: '(^|/)\.env($|\.(?!example$))|^secrets/(?!README\.md$|\.gitkeep$)'
+      - id: no-skipped-tests
+        name: forbid .only / describe.skip / it.skip committed
+        language: pygrep
+        entry: '\b(describe|it|test)\.(only|skip)\b|\bxit\(|\bxdescribe\('
+        files: '\.(spec|test)\.ts$'
