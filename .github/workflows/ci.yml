@@ -1,6 +1,6 @@
-# CI draft for PrivPay. Jobs that need code are guarded by hashFiles() so the pipeline
-# is green on the empty skeleton and starts enforcing as soon as M0 adds the files.
-# TODO(M0, ADR-0002): pin every action to a commit SHA and review Node/pnpm versions.
+# CI for PrivPay. The local gate (CLAUDE.md, Perintah) runs here too; tests/repo/ci-workflow.spec.ts checks this file.
+# Every action is pinned to a commit SHA and every image to a digest (S-08); Dependabot proposes the updates.
+# The compose-based end-to-end job stays switched off until Docker is part of the project (ADR-0004, DK-01).
 name: ci
 
 on:
@@ -26,9 +26,10 @@ jobs:
       GITLEAKS_VERSION: 8.30.1
       GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          persist-credentials: false
       - name: install gitleaks (pinned, checksum verified)
         run: |
           curl -sSfL -o gitleaks.tar.gz "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
@@ -40,11 +41,12 @@ jobs:
   quality:
     name: lint, typecheck, unit tests
     runs-on: ubuntu-latest
-    if: hashFiles('pnpm-lock.yaml') != ''
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -54,72 +56,115 @@ jobs:
       - run: pnpm test
 
   integration:
+    # PostgreSQL 16 is the target version (ADR-0004); locally the tests run on 18, so this job also repeats them on 16.
+    # The container is started by a step, not as a service, because its admin password is generated for each run.
     name: integration + security tests (PostgreSQL 16)
     runs-on: ubuntu-latest
-    if: hashFiles('pnpm-lock.yaml') != ''
     needs: quality
+    env:
+      POSTGRES_IMAGE: postgres:16@sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PG_HOST: 127.0.0.1
+      PG_PORT: '5432'
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # TODO(ADR-0004): local phase uses a plain PostgreSQL 16 (services: postgres) with a fresh
-      # test database per run; switch to Testcontainers once Docker is part of the workflow.
+      - name: start PostgreSQL 16 with a password made for this run
+        run: |
+          password="$(openssl rand -base64 24 | tr -d '/+=')"
+          echo "::add-mask::${password}"
+          echo "PGPASSWORD=${password}" >> "$GITHUB_ENV"
+          docker run -d --name privpay-pg -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD="${password}" "$POSTGRES_IMAGE"
+          # The official image restarts the server once after initialising; TCP only answers after that restart.
+          for _ in $(seq 1 30); do
+            if docker exec privpay-pg pg_isready -h 127.0.0.1 -U postgres; then exit 0; fi
+            sleep 2
+          done
+          echo "PostgreSQL did not become ready" >&2
+          exit 1
+      - name: bootstrap twice and compare the catalog (M0-05 idempotency)
+        run: |
+          umask 077
+          secrets_dir="${RUNNER_TEMP}/privpay-secrets"
+          mkdir -p "$secrets_dir"
+          echo "PG_SECRETS_DIR=${secrets_dir}" >> "$GITHUB_ENV"
+          env_file="${RUNNER_TEMP}/bootstrap.env"
+          {
+            echo "PG_HOST=${PGHOST}"
+            echo "PG_PORT=${PGPORT}"
+            echo "PG_ADMIN_USER=${PGUSER}"
+            echo "PG_ADMIN_PASSWORD=${PGPASSWORD}"
+            echo "PG_SECRETS_DIR=${secrets_dir}"
+          } > "$env_file"
+          ENV_FILE="$env_file" bash scripts/ci/bootstrap-twice.sh
       - run: pnpm test:integration
-      - run: pnpm test:security
+      # test:security does not exist until M3-06; --if-present runs it from then on without a skip in between.
+      - run: pnpm run --if-present test:security
+      - name: remove the database container
+        if: always()
+        run: docker rm -f privpay-pg
 
   sast:
     name: CodeQL
     runs-on: ubuntu-latest
-    if: hashFiles('pnpm-lock.yaml') != ''
     permissions:
       contents: read
       security-events: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: github/codeql-action/init@v3
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: github/codeql-action/init@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
         with:
           languages: javascript-typescript
           queries: security-extended
-      - uses: github/codeql-action/analyze@v3
+      - uses: github/codeql-action/analyze@48870fdd6b42ee6474ec4207209ff87609271a5e # v4.39.0
 
   semgrep:
     name: Semgrep
     runs-on: ubuntu-latest
-    if: hashFiles('pnpm-lock.yaml') != ''
     container:
-      image: semgrep/semgrep
+      image: semgrep/semgrep:1.181.0@sha256:81474464c1f07483ba0682a44787fd93c91397419762a04abe2bafaae396304b
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: semgrep scan --error --config p/typescript --config p/nodejs --config p/owasp-top-ten --config p/secrets
 
   dependencies:
     name: dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/dependency-review-action@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4.9.0
         if: github.event_name == 'pull_request'
         with:
           fail-on-severity: high
-      - uses: pnpm/action-setup@v4
-        if: hashFiles('pnpm-lock.yaml') != ''
-      - uses: actions/setup-node@v4
-        if: hashFiles('pnpm-lock.yaml') != ''
+      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-      - if: hashFiles('pnpm-lock.yaml') != ''
-        run: pnpm audit --prod --audit-level high
+      - run: pnpm audit --prod --audit-level high
 
   lua:
     name: luacheck (Kong plugin)
     runs-on: ubuntu-latest
     if: hashFiles('services/gateway/plugins/**/*.lua') != ''
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - run: |
           sudo apt-get update && sudo apt-get install -y luarocks
           sudo luarocks install luacheck
@@ -128,13 +173,17 @@ jobs:
   containers:
     name: hadolint + Trivy
     runs-on: ubuntu-latest
+    env:
+      HADOLINT_IMAGE: hadolint/hadolint:v2.15.1@sha256:32dac94127fd60b7b7e3fbfc65e1383b9b5e25c9bfd7b8536de7a539fe68a12d
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - name: hadolint
         run: |
           files=$(git ls-files | grep -E '(^|/)Dockerfile$' || true)
-          for f in $files; do echo "== $f"; docker run --rm -i hadolint/hadolint < "$f"; done
-      - uses: aquasecurity/trivy-action@0.28.0
+          for f in $files; do echo "== $f"; docker run --rm -i "$HADOLINT_IMAGE" < "$f"; done
+      - uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
         with:
           scan-type: fs
           scanners: vuln,secret,misconfig
@@ -143,6 +192,7 @@ jobs:
           exit-code: '1'
 
   e2e:
+    # Switched off until Docker is part of the project (ADR-0004, DK-01): without a compose file the condition is false.
     name: end-to-end (compose + Newman + PII scan), both modes
     runs-on: ubuntu-latest
     if: github.event_name != 'pull_request' && hashFiles('deploy/docker-compose.yml', 'docker-compose.yml') != ''
@@ -152,9 +202,11 @@ jobs:
       matrix:
         mode: [baseline, proposed]
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@d9184bf108216479bc5a137cc391f4d7b14c870b # v6.1.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
           cache: pnpm
@@ -176,7 +228,7 @@ jobs:
         run: docker compose logs --no-color > compose-logs.txt || true
       # compose-logs.txt may contain data even when synthetic; upload only when needed for debugging, short retention.
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: compose-logs-${{ matrix.mode }}
           path: compose-logs.txt

@@ -149,7 +149,7 @@ Penerbit JWT tiruan khusus dev. Menolak start bila `NODE_ENV=production` atau `D
 | SAST dan lain-lain | CodeQL, Semgrep, Trivy, hadolint, dependency-review | CI (Trivy image dan hadolint aktif bila ada Dockerfile) |
 | e2e compose | Newman + `pii-scan` pada kedua mode | **ditunda** sampai Docker (DK-01) |
 
-Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (CLAUDE.md). Pin versi image dan Action (SHA) dikerjakan di M0-07 (TODO di `ci.yml`).
+Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (CLAUDE.md). Semua Action dipin ke SHA commit dan semua image ke digest (M0-07); `tests/repo/ci-workflow.spec.ts` menjaganya. Job `integration` membangkitkan kata sandi admin PostgreSQL 16 per run dan menjalankan `scripts/ci/bootstrap-twice.sh` (bootstrap dua kali, snapshot katalog identik).
 
 ## 15. Kriteria penerimaan
 
