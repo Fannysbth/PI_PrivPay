@@ -8,7 +8,6 @@ import {
   Controller,
   Get,
   Header,
-  HttpException,
   Inject,
   Module,
   type ArgumentsHost,
@@ -22,8 +21,8 @@ import type { ErrorRequestHandler, NextFunction, Request, Response } from 'expre
 import { SystemClock, type Clock } from '../clock';
 import { loadConfig } from '../config';
 import { RealDelay, type Delay } from '../delay';
-import { DomainError, toClientError, toWireError, type Reason } from '../errors';
 import { createLogger, type Logger } from '../logger';
+import { respond } from './http-errors';
 import { HttpMetrics, routeLabel } from './metrics';
 import { serviceConfigSchema, type ServiceId } from './service-config';
 
@@ -98,45 +97,6 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 /** Only the gateway answers external clients (ADR-0008); the others answer other services. */
 const EXTERNAL: ReadonlySet<ServiceId> = new Set<ServiceId>(['gateway']);
 
-const statusOf = (error: unknown): number | undefined => {
-  if (error instanceof HttpException) return error.getStatus();
-  if (typeof error === 'object' && error !== null) {
-    // Express middleware such as the body parser reports its status this way.
-    const status = (error as { status?: unknown }).status;
-    if (typeof status === 'number') return status;
-  }
-  return undefined;
-};
-
-/** Nothing about the failure is forwarded: the error's text could hold a SQL fragment or a value (S-42). */
-function reasonFor(error: unknown): Reason {
-  if (error instanceof DomainError) return error.reason;
-  const status = statusOf(error);
-  if (status === 401) return 'UNAUTHENTICATED';
-  if (status === 403) return 'FORBIDDEN_ROLE';
-  if (status === 429) return 'RATE_LIMITED';
-  if (status === 503) return 'SERVICE_UNAVAILABLE';
-  // Malformed body, unknown route, wrong method, too large: the caller sent something we do not accept.
-  if (status !== undefined && status >= 400 && status < 500) return 'VALIDATION_ERROR';
-  return 'INTERNAL_ERROR';
-}
-
-function respond(error: unknown, res: Response, external: boolean): void {
-  const requestId =
-    typeof res.locals['requestId'] === 'string' ? res.locals['requestId'] : randomUUID();
-  const reason = reasonFor(error);
-  res.locals['reason'] = reason;
-  const { status, body } = (external ? toClientError : toWireError)(
-    new DomainError(reason),
-    requestId,
-  );
-  if (res.headersSent) {
-    res.end();
-    return;
-  }
-  res.status(status).json(body);
-}
-
 @Catch()
 class ServiceExceptionFilter implements ExceptionFilter {
   constructor(private readonly external: boolean) {}
@@ -193,19 +153,23 @@ export async function createServiceApp(
     if (closing) res.setHeader('connection', 'close');
 
     const started = performance.now();
-    res.on('finish', () => {
+    // 'close' fires for finished and for aborted responses alike, so a request cut off by a shutdown is not lost.
+    res.on('close', () => {
       const route = routeLabel((req as { route?: { path?: unknown } }).route?.path);
       const seconds = (performance.now() - started) / 1000;
-      metrics.record(req.method, route, res.statusCode, seconds);
+      const failedLate: unknown = res.locals['status'];
+      const status =
+        typeof failedLate === 'number' ? failedLate : res.writableFinished ? res.statusCode : 499;
+      metrics.record(req.method, route, status, seconds);
       const fields = {
         request_id: requestId,
         route,
-        status: res.statusCode,
+        status,
         latency_ms: Math.round(seconds * 1000),
       };
       const reason: unknown = res.locals['reason'];
       const logged = typeof reason === 'string' ? { ...fields, reason } : fields;
-      if (res.statusCode >= 500) logger.error('http_request', logged);
+      if (status >= 500) logger.error('http_request', logged);
       else logger.info('http_request', logged);
     });
     next();
@@ -221,10 +185,13 @@ export async function createServiceApp(
 
   const server = app.getHttpServer() as Server;
   let shutdown: Promise<void> | undefined;
+  let listening: Promise<{ host: string; port: number }> | undefined;
 
   const stop = async (): Promise<void> => {
     closing = true;
     const failures: unknown[] = [];
+    // A stop that arrives while the server is still binding waits for it, so it never closes the app under it.
+    await listening?.catch(() => undefined);
     if (server.listening) {
       const drained = new Promise<void>((resolve) => {
         server.close(() => {
@@ -263,10 +230,13 @@ export async function createServiceApp(
   return {
     app,
     httpServer: server,
-    async listen() {
-      await app.listen(config.PORT, config.BIND_HOST);
-      const address = server.address() as AddressInfo;
-      return { host: address.address, port: address.port };
+    listen() {
+      listening ??= (async () => {
+        await app.listen(config.PORT, config.BIND_HOST);
+        const address = server.address() as AddressInfo;
+        return { host: address.address, port: address.port };
+      })();
+      return listening;
     },
     close() {
       shutdown ??= stop();

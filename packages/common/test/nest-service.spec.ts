@@ -1,7 +1,8 @@
 import 'reflect-metadata';
 import { request as httpRequest } from 'node:http';
 import { networkInterfaces } from 'node:os';
-import { Controller, Get, Module, Param } from '@nestjs/common';
+import { Controller, Get, Module, Param, Res } from '@nestjs/common';
+import type { Response } from 'express';
 import request from 'supertest';
 import { FakeClock } from '../src/clock';
 import { ConfigError } from '../src/config';
@@ -14,7 +15,21 @@ import { capture } from './log-capture';
 const canary = ['PSEU', 'AB12CD34'].join('-');
 const baseEnv = { PRIVACY_MODE: 'proposed', PORT: '0' };
 const NEVER: Delay = { wait: () => new Promise<void>(() => undefined) };
-const IMMEDIATELY: Delay = { wait: () => Promise.resolve() };
+// Resolves at once and records what it was asked to wait for.
+const waits: number[] = [];
+const IMMEDIATELY: Delay = {
+  wait: (ms) => {
+    waits.push(ms);
+    return Promise.resolve();
+  },
+};
+
+/** Polls (bounded, no sleeping) until `done()` holds; the events awaited here are already on their way. */
+async function until(done: () => boolean): Promise<void> {
+  for (let attempt = 0; attempt < 2000 && !done(); attempt += 1) {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+  }
+}
 
 const gate = (): { promise: Promise<void>; open: () => void } => {
   let open: () => void = () => undefined;
@@ -37,6 +52,13 @@ class ProbeController {
   @Get('raw')
   raw(): never {
     throw new Error('SELECT secret FROM vault WHERE fake_marker = 1');
+  }
+
+  @Get('partial')
+  partial(@Res() res: Response): never {
+    // The status line and a first chunk are already on the wire when the failure happens.
+    res.write('partial');
+    throw new Error('failure after the headers were sent');
   }
 
   @Get('slow/:id')
@@ -78,6 +100,7 @@ async function start(
 beforeEach(() => {
   held = gate();
   reached = () => undefined;
+  waits.length = 0;
 });
 afterEach(async () => {
   held.open();
@@ -125,6 +148,7 @@ describe('M0-06 metrics and logs carry no value taken from the request (NFR-14, 
     const metrics = (await request(server).get('/metrics')).text;
     expect(metrics).not.toContain(canary);
     expect(metrics).toContain('route="/unmatched"');
+    expect(metrics).toContain('route="/probe/slow/{id}"');
     expect(lines.join('\n')).not.toContain(canary);
   });
 
@@ -175,10 +199,17 @@ describe('M0-06 every failure has the same shape and leaks nothing (NFR-25, S-42
     const response = await request(service.httpServer).get('/probe/raw');
     expect(response.status).toBe(500);
     expect(response.body).toMatchObject({ error: { code: 'INTERNAL_ERROR' } });
+    // Exactly the uniform fields: nothing like a stack, a cause or the original message can ride along.
+    expect(Object.keys((response.body as { error: object }).error).sort()).toEqual([
+      'code',
+      'message',
+      'reason',
+      'request_id',
+    ]);
     for (const text of [JSON.stringify(response.body), lines.join('\n')]) {
       expect(text).not.toContain('SELECT');
       expect(text).not.toContain('fake_marker');
-      expect(text).not.toContain('at ');
+      expect(text).not.toContain('stack');
     }
   });
 
@@ -233,31 +264,42 @@ describe('M0-06 the environment is validated at start (fail fast, NFR-20)', () =
   });
 });
 
-describe('M0-06 the service listens on loopback only (AZ-43)', () => {
-  it('M0-06 listens on 127.0.0.1 and refuses connections to any other local address', async () => {
-    const { service } = await start('bank-simulator');
+/** The error code of a connection attempt, or 'connected'. */
+function connectCode(host: string, port: number): Promise<string> {
+  return new Promise<string>((resolve) => {
+    const req = httpRequest({ host, port, path: '/health', timeout: 2000 }, (res) => {
+      res.resume();
+      resolve('connected');
+    });
+    req.on('error', (error: NodeJS.ErrnoException) => {
+      resolve(error.code ?? 'error');
+    });
+    req.end();
+  });
+}
+
+describe.each(SERVICE_IDS)('M0-06 %s listens on loopback only (AZ-43)', (id) => {
+  it('M0-06 binds 127.0.0.1 and refuses connections that arrive on any other local address', async () => {
+    const { service } = await start(id);
     const { host, port } = await service.listen();
     expect(host).toBe('127.0.0.1');
-    await request(`http://${host}:${String(port)}`)
-      .get('/health')
-      .expect(200);
+    expect(await connectCode(host, port)).toBe('connected');
 
+    // 127.0.0.2 is loopback too, but not the address the service is bound to: it exists on every machine, so this
+    // check never passes vacuously. The machine's own addresses are tried as well when it has any.
     const external = Object.values(networkInterfaces())
       .flat()
       .filter((net) => net !== undefined && net.family === 'IPv4' && !net.internal)
       .map((net) => net?.address ?? '');
-    for (const address of external) {
-      const code = await new Promise<string>((resolve) => {
-        const req = httpRequest({ host: address, port, path: '/health', timeout: 2000 }, () => {
-          resolve('connected');
-        });
-        req.on('error', (error: NodeJS.ErrnoException) => {
-          resolve(error.code ?? 'error');
-        });
-        req.end();
-      });
-      expect(code).toBe('ECONNREFUSED');
+    for (const address of ['127.0.0.2', ...external]) {
+      expect(await connectCode(address, port)).toBe('ECONNREFUSED');
     }
+  });
+
+  it('M0-06 does not start without PRIVACY_MODE (fail fast)', async () => {
+    await expect(createServiceApp({ service: id }, { PORT: '0' })).rejects.toThrow(
+      'PRIVACY_MODE (missing)',
+    );
   });
 });
 
@@ -329,6 +371,7 @@ describe('M0-06 shutdown finishes running requests and closes the pools (qa E-08
     await service.close();
     expect(await stuck).toBe('cut off');
     expect(closed).toEqual(['pool']);
+    expect(waits).toEqual([10_000]);
   });
 
   it('M0-06 a pool that fails to close does not stop the others from closing', async () => {
@@ -347,5 +390,63 @@ describe('M0-06 shutdown finishes running requests and closes the pools (qa E-08
     await service.listen();
     await expect(service.close()).rejects.toThrow('shutdown');
     expect(closed).toEqual(['second']);
+  });
+
+  it('M0-06 a request cut off by the shutdown is still logged and counted, as 499', async () => {
+    const { service, lines } = await start('fraud-service', {
+      modules: [ProbeModule],
+      delay: IMMEDIATELY,
+    });
+    const { host, port } = await service.listen();
+    const arrived = new Promise<void>((resolve) => {
+      reached = resolve;
+    });
+    const stuck = request(`http://${host}:${String(port)}`)
+      .get('/probe/slow/3')
+      .then(
+        () => 'finished',
+        () => 'cut off',
+      );
+    await arrived;
+    await service.close();
+    await stuck;
+    await until(() => lines.join(' ').includes('"status":499'));
+    expect(lines.join(' ')).toContain('"status":499');
+    expect(lines.join(' ')).not.toContain('/probe/slow/3');
+  });
+
+  it('M0-06 a signal that arrives while the service is still starting does not leave it half stopped', async () => {
+    const { service } = await start('gateway');
+    const starting = service.listen();
+    const closing = service.close();
+    await starting;
+    await closing;
+    expect(service.httpServer.listening).toBe(false);
+  });
+});
+
+describe('M0-06 a failure after the response started is not reported as a success', () => {
+  it('M0-06 the connection is destroyed instead of ending the truncated body normally', async () => {
+    const { service } = await start('transaction-service', { modules: [ProbeModule] });
+    const { host, port } = await service.listen();
+    const outcome = await new Promise<string>((resolve) => {
+      const req = httpRequest({ host, port, path: '/probe/partial' }, (res) => {
+        res.on('error', () => {
+          resolve('aborted');
+        });
+        res.on('aborted', () => {
+          resolve('aborted');
+        });
+        res.on('end', () => {
+          resolve('ended normally');
+        });
+        res.resume();
+      });
+      req.on('error', () => {
+        resolve('aborted');
+      });
+      req.end();
+    });
+    expect(outcome).toBe('aborted');
   });
 });
