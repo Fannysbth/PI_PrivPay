@@ -17,6 +17,8 @@ export default tseslint.config(
       'scripts/**',
       'prototypes/**',
       'tests/repo/fixtures/**',
+      // Command-line helpers outside any tsconfig; they print with console on purpose.
+      'tools/*/scripts/**',
     ],
   },
   js.configs.recommended,

@@ -26,7 +26,7 @@ import { respond } from './http-errors';
 import { HttpMetrics, routeLabel } from './metrics';
 import { serviceConfigSchema, type ServiceId } from './service-config';
 
-type ServiceModules = NonNullable<ModuleMetadata['imports']>;
+export type ServiceModules = NonNullable<ModuleMetadata['imports']>;
 
 /** What a service's own modules may need while they are being built. */
 export interface ModuleContext {

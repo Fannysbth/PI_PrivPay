@@ -29,6 +29,7 @@ pnpm typecheck                    # tsc --noEmit di semua paket
 pnpm build                        # tsc -b: paket dan layanan ke dist/ (N-04); jalankan layanan: `node services/<nama>/dist/main.js`
 pnpm test                         # unit
 pnpm test:smoke                   # build, lalu tiap layanan hasil build dijalankan sebagai proses (health, SIGTERM di Linux)
+pnpm --filter @privpay/dev-idp run make-secrets   # sekali: rahasia klien dev-idp di secrets/ (tidak menimpa); lihat tools/dev-idp/README.md
 pnpm test:integration             # butuh PostgreSQL lokal (`scripts/db/bootstrap.ps1` sekali); DB tes dibuat ulang bersih tiap run (ADR-0004)
 pnpm test:security                # kasus TK-xx
 pnpm audit --prod --audit-level high
