@@ -450,3 +450,56 @@ describe('M0-06 a failure after the response started is not reported as a succes
     expect(outcome).toBe('aborted');
   });
 });
+
+describe('M1-01 a service may build its modules from the validated environment', () => {
+  it('M1-01 the factory receives the environment and the clock, and what it returns is mounted', async () => {
+    const seen: { port?: string; now?: string } = {};
+    const clock = new FakeClock(new Date('2026-10-19T08:00:00+07:00'));
+    const created = await createServiceApp(
+      {
+        service: 'dev-idp',
+        modules: (context) => {
+          seen.port = context.env['PORT'];
+          seen.now = context.clock.now().toISOString();
+          return [ProbeModule];
+        },
+      },
+      baseEnv,
+      { clock, logDestination: capture().destination },
+    );
+    open.push(created);
+    expect(seen).toEqual({ port: '0', now: '2026-10-19T01:00:00.000Z' });
+    await request(created.httpServer).get('/probe/domain').expect(403);
+    const health = await request(created.httpServer).get('/health').expect(200);
+    expect(health.body).toMatchObject({ service: 'dev-idp', status: 'ok' });
+  });
+
+  it('M1-01 a ConfigError raised by the factory stops the start, like the platform configuration does', async () => {
+    const failure = createServiceApp(
+      {
+        service: 'dev-idp',
+        modules: () => {
+          throw new ConfigError([{ name: 'DEV_IDP_ENABLED', problem: 'invalid' }]);
+        },
+      },
+      baseEnv,
+    );
+    await expect(failure).rejects.toThrow('DEV_IDP_ENABLED (invalid)');
+  });
+
+  it('M1-01 the factory is not called when the platform configuration is already wrong', async () => {
+    let called = false;
+    const failure = createServiceApp(
+      {
+        service: 'dev-idp',
+        modules: () => {
+          called = true;
+          return [];
+        },
+      },
+      { PORT: '0' },
+    );
+    await expect(failure).rejects.toThrow('PRIVACY_MODE (missing)');
+    expect(called).toBe(false);
+  });
+});

@@ -26,10 +26,23 @@ import { respond } from './http-errors';
 import { HttpMetrics, routeLabel } from './metrics';
 import { serviceConfigSchema, type ServiceId } from './service-config';
 
+type ServiceModules = NonNullable<ModuleMetadata['imports']>;
+
+/** What a service's own modules may need while they are being built. */
+export interface ModuleContext {
+  /** The environment the platform configuration was validated from. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly clock: Clock;
+}
+
 export interface ServiceDefinition {
   readonly service: ServiceId;
-  /** The service's own modules (controllers and providers); the platform ones are added here. */
-  readonly modules?: NonNullable<ModuleMetadata['imports']>;
+  /**
+   * The service's own modules (controllers and providers); the platform ones are added here. A function is called after
+   * the platform configuration is valid, so a ConfigError it raises stops the start the same way (fail fast).
+   */
+  readonly modules?:
+    ServiceModules | ((context: ModuleContext) => ServiceModules | Promise<ServiceModules>);
 }
 
 /** Everything a test (or a later ticket) may replace; production uses the defaults. */
@@ -126,11 +139,15 @@ export async function createServiceApp(
   });
   const metrics = new HttpMetrics();
   const external = EXTERNAL.has(definition.service);
+  const serviceModules =
+    typeof definition.modules === 'function'
+      ? await definition.modules({ env, clock })
+      : (definition.modules ?? []);
   let closing = false;
 
   const root: DynamicModule = {
     module: ServiceRootModule,
-    imports: [...(definition.modules ?? [])],
+    imports: [...serviceModules],
     controllers: [HealthController, MetricsController],
     providers: [
       {
