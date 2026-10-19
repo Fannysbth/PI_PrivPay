@@ -1,0 +1,27 @@
+{
+  "name": "privpay",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PrivPay: Privacy-by-Design e-wallet microservices prototype (research artefact)",
+  "packageManager": "pnpm@12.14.0",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "jest --config jest.config.cjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/jest": "^30.0.0",
+    "@types/node": "^24.19.2",
+    "eslint": "^10.13.0",
+    "jest": "^30.5.2",
+    "prettier": "^3.9.10",
+    "ts-jest": "^29.4.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.71.2"
+  }
+}

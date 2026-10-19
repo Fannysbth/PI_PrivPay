@@ -38,6 +38,8 @@ pnpm pii-scan                     # pemindai nilai kenari (payload, DB, log)
 
 gitleaks di Windows: `winget install Gitleaks.Gitleaks`. Bila shell belum memuat `%LOCALAPPDATA%\Microsoft\WinGet\Links` di PATH, panggil dengan path lengkap `"$LOCALAPPDATA/Microsoft/WinGet/Links/gitleaks.exe"`. Allowlist PSEU-token dan UUID contoh hanya berlaku di `docs/` dan `tests/`, tidak di `services/` atau `packages/`.
 
+Status perintah (diperbarui per tiket): **sudah ada** sejak M0-01: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm test`, dan `gitleaks`. **Belum ada:** `pnpm test:integration` (M0-05), `pnpm test:security` (M3-06), `pnpm audit` selain `--prod` bersih (lihat CHANGELOG), `pnpm newman` (M6-01), `pnpm pii-scan` (M2-10), `docker compose` (DK-01). Gunakan `corepack pnpm <perintah>` bila `pnpm` tidak ada di PATH.
+
 Gerbang lokal sebelum menyatakan tiket selesai: lint, typecheck, test, test:integration, audit, dan pemindaian secret (`gitleaks detect`). Tampilkan keluarannya.
 
 ## Struktur repo
