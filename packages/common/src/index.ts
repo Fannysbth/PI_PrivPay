@@ -1,6 +1,7 @@
 export * from './clock';
 export * from './config';
 export * from './db';
+export * from './migrate';
 export * from './delay';
 export * from './errors';
 export * from './http';

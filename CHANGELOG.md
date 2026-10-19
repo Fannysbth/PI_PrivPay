@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M0-04 runner migrasi maju-saja
+
+- Ditambah: `@privpay/common` modul `migrate`: `readMigrations(root, mode)` (berkas `NNNN_nama.sql` di `common/` lalu folder mode, satu urutan 1..n tanpa celah atau duplikat, checksum SHA-256 dengan akhir baris dinormalkan agar checkout dengan autocrlf tidak dianggap berubah) dan `migrate(pool, {root, mode})`: menolak peran yang bukan pemilik database sebelum mengubah apa pun, kunci advisory per database (`MIGRATION_LOCK_KEY`), tabel `schema_migrations(version, name, checksum, applied_at)`, satu transaksi per migrasi, riwayat diverifikasi lebih dulu (berkas terapan berubah, hilang, atau berganti nama gagal, termasuk pindah mode pada database yang sama). `MigrationError` hanya memuat nama berkas, tidak pernah isi SQL; error basis data asli ada di `cause`.
+- Tanpa rollback otomatis dan tanpa dependensi baru. 18 tes unit dan 15 tes integrasi (peran asli; checksum, urutan, peran salah, transaksi batal, idempoten, kunci).
+- Mutasi: cek pemilik dimatikan → 1 tes gagal; cek checksum dimatikan → 1 tes gagal; kunci advisory dimatikan → 2 tes gagal (tes pertama lolos, jadi diganti tes yang menahan kunci dari koneksi lain dan menunggu lewat `pg_locks`, tanpa sleep).
+- Keputusan: nomor berkas berlanjut dari `common` ke folder mode (satu urutan), sehingga berkas `common` baru tidak bisa disisipkan setelah berkas mode ada; folder mode yang tidak ada dianggap kosong, folder akar yang tidak ada adalah error.
+
 ### M0-05 bootstrap DB multi-layanan dan harness tes
 
 - Diubah: `scripts/db/bootstrap.sql` dan `bootstrap.ps1` kini membuat satu database dan pasangan peran pemilik/runtime untuk tiap layanan (privacy, transaction, fraud, notification, reconciliation; privacy tetap `privpay_app` dan `privpay_auditor`), hanya peran milik layanan yang boleh terhubung ke databasenya, dan keanggotaan sementara admin pada semua peran pemilik dicabut di akhir. `ALTER ROLE` hanya menyinkronkan kata sandi (admin non-superuser tidak boleh menyatakan ulang atribut SUPERUSER). Parameter `-EnvFile` memungkinkan skrip dicoba di server sementara. Penjelasan di `scripts/db/README.md`.
