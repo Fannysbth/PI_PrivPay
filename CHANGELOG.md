@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M0-02 `@privpay/common`: config, Clock, error, logger
+
+- Ditambah: `packages/common` (`@privpay/common`) dengan modul `config` (`loadConfig`, `readSecret`, `readKey`: rahasia hanya dari berkas lewat `NAME_FILE`, nilai mentah di env ditolak, pesan error hanya memuat nama variabel), `clock` (`SystemClock`, `FakeClock`), `errors` (delapan kode klien, tabel reason ADR-0008, `toWireError`/`toClientError`), dan `logger` (pino; hanya field `LogFields`, field lain dibuang dan namanya dicatat di `dropped_fields`, nilai field diperiksa polanya, nama peristiwa divalidasi).
+- 51 tes baru (61 seluruhnya). Mutasi manual yang dijalankan dan membuat tes gagal: logger menyimpan field tak dikenal, error klien menampilkan `reason`, nilai rahasia mentah di env diterima.
+- Dependensi runtime baru (keduanya dari ADR-0002): `zod` (validasi env dan batas, MIT) dan `pino` (logger berredaksi, MIT; membawa 12 paket transitif MIT/ISC: `@pinojs/redact`, `atomic-sleep`, `on-exit-leak-free`, `pino-abstract-transport`, `pino-std-serializers`, `process-warning`, `quick-format-unescaped`, `real-require`, `safe-stable-stringify`, `sonic-boom`, `split2`, `thread-stream`). `pnpm audit --prod --audit-level high`: tidak ada kerentanan.
+- Catatan: `exports` paket menunjuk langsung ke `src/index.ts`; langkah build untuk Docker ditentukan di M0-06/DK-01.
+
 ### M0-01 workspace dan tooling
 
 - Ditambah: pnpm workspace (`packages/*`, `services/*`, `tools/*`), TypeScript 6.0 `strict` + `noUncheckedIndexedAccess`, ESLint 10 (typescript-eslint strict) + Prettier, Jest 30 + ts-jest, `.nvmrc` Node 24, `packageManager` pnpm 12.14.0.
