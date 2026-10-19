@@ -1,6 +1,6 @@
 # Spesifikasi: platform dan CI
 
-Sumber: PRD 10, 14, 17; ADR-0002, 0004, 0006, 0007, 0008; CLAUDE.md; SECURITY.md. Bagian yang berbeda dari teks PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`. Butir bertanda **[K-nn]** adalah keputusan spec yang menunggu konfirmasi (daftar di `OPEN_QUESTIONS.md` bagian F).
+Sumber: PRD 10, 14, 17; ADR-0002, 0004, 0006, 0007, 0008; CLAUDE.md; SECURITY.md. Bagian yang berbeda dari teks PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`. Butir bertanda **[K-nn]** adalah keputusan spec yang diterima Fanny (bawaan, Gerbang 3) (daftar di `OPEN_QUESTIONS.md` bagian F).
 
 ## 1. Tanggung jawab
 
@@ -170,6 +170,6 @@ Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (CLAUDE.md). Pin vers
 
 Keycloak, Kong, Docker Compose, TLS antar-layanan, tiga jaringan Docker, Prometheus/Grafana dan pengukuran sumber daya (semua fase Docker, DK-xx), rotasi kunci otomatis, UI.
 
-## 17. Keputusan spec yang menunggu konfirmasi
+## 17. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-01 reason `DISCLOSURE_NOT_PENDING` 409 untuk approve/reject pada status selain PENDING (PRD diam). K-02 reason `TRANSACTION_NOT_FOUND` 404 untuk audit-request pada `transaction_id` tak dikenal. K-03 pembatasan `aud` token aktor (butir 7.6).

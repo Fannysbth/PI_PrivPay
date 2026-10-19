@@ -39,7 +39,7 @@ Pemanggil `API_GATEWAY` dengan `X-Actor-Token` berperan `auditor`. `{transaction
 
 ### 3.4 `POST /reconciliation/disclosure` **[Δ PRD, K-15]**
 
-PRD 9 (E3) menyebut Reconciliation memanggil `/de-pseudonymize` pada pembukaan bersyarat, tetapi tidak ada rute yang memicunya dan PRD 10 tidak mendaftarkannya. Diusulkan (menunggu persetujuan, errata E-25): pemanggil `API_GATEWAY` dengan `X-Actor-Token` berperan `auditor`; `{audit_token, disclosure_id}`; Reconciliation memanggil `POST /de-pseudonymize {pseudonym: audit_token, purpose: "INTERNAL_AUDIT", disclosure_id}` dengan JWT `RECONCILIATION` + `X-Actor-Token` yang sama; respons 200 `{attributes}` **hanya diteruskan dan tidak disimpan** (tidak ada tabel, log, atau metrik yang memuat nilainya). Penolakan Privacy diteruskan (klien melihat `ACCESS_DENIED`).
+PRD 9 (E3) menyebut Reconciliation memanggil `/de-pseudonymize` pada pembukaan bersyarat, tetapi tidak ada rute yang memicunya dan PRD 10 tidak mendaftarkannya. Disetujui Fanny (Gerbang 3, errata E-25): pemanggil `API_GATEWAY` dengan `X-Actor-Token` berperan `auditor`; `{audit_token, disclosure_id}`; Reconciliation memanggil `POST /de-pseudonymize {pseudonym: audit_token, purpose: "INTERNAL_AUDIT", disclosure_id}` dengan JWT `RECONCILIATION` + `X-Actor-Token` yang sama; respons 200 `{attributes}` **hanya diteruskan dan tidak disimpan** (tidak ada tabel, log, atau metrik yang memuat nilainya). Penolakan Privacy diteruskan (klien melihat `ACCESS_DENIED`).
 
 ### 3.5 `GET /health`, `GET /metrics`
 
@@ -68,6 +68,6 @@ Tidak ada nomor rekening di `settlement_items` dan tidak ada hasil pembukaan di 
 
 Peninjauan settlement oleh manusia, rekonsiliasi multi-bank, laporan format bank nyata, UI audit.
 
-## 8. Keputusan spec yang menunggu konfirmasi
+## 8. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-15 rute `/reconciliation/disclosure`. K-18 endpoint Transaction untuk D1/E1. K-22 aturan status batch, satu laporan per tanggal, dan perilaku bila laporan atau Privacy tidak ada. K-23 jam penjadwal harian `RECON_DAILY_RUN_UTC`.

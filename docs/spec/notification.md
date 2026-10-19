@@ -1,6 +1,6 @@
 # Spesifikasi: Notification Service dan SMS simulator
 
-Sumber: PRD 9 (A4, B7..B10), 10 (kontrak notifikasi), 11, 13 (FR-08, 19, 20); D-08; ADR-0004, 0006. **[K-nn]** menunggu konfirmasi.
+Sumber: PRD 9 (A4, B7..B10), 10 (kontrak notifikasi), 11, 13 (FR-08, 19, 20); D-08; ADR-0004, 0006. **[K-nn]** diterima Fanny (bawaan, Gerbang 3).
 
 ## 1. Tanggung jawab
 
@@ -55,6 +55,6 @@ HP hanya di `contact_registry` dan di perjalanan ke SMS; tidak di log, metrik, a
 
 Kanal selain SMS, templat bebas, pengiriman ulang otomatis, penyedia SMS nyata, preferensi pengguna.
 
-## 8. Keputusan spec yang menunggu konfirmasi
+## 8. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-21 teks templat SMS dan nama env `SMS_SIMULATOR_TEST_ENDPOINTS`/`SMS_SIMULATOR_FAIL`.

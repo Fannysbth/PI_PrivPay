@@ -1,6 +1,6 @@
 # Spesifikasi: Privacy Service
 
-Sumber: PRD 6, 6.1, 6.2, 7, 7.4, 8, 10, 11, 12; DESIGN_DECISIONS D-01..D-19; ADR-0005, 0007, 0008, 0010, 0011; prototipe P-2/P-3 (riwayat git `a887931`, `2755840`). Perubahan terhadap PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`; keputusan yang menunggu konfirmasi ditandai **[K-nn]** (`OPEN_QUESTIONS.md` bagian F).
+Sumber: PRD 6, 6.1, 6.2, 7, 7.4, 8, 10, 11, 12; DESIGN_DECISIONS D-01..D-19; ADR-0005, 0007, 0008, 0010, 0011; prototipe P-2/P-3 (riwayat git `a887931`, `2755840`). Perubahan terhadap PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`; keputusan yang diterima Fanny (bawaan, Gerbang 3) ditandai **[K-nn]** (`OPEN_QUESTIONS.md` bagian F).
 
 ## 1. Tanggung jawab
 
@@ -242,6 +242,6 @@ Tes ditulis lebih dulu dan terbukti gagal; nama tes memuat ID. Basis data Postgr
 
 Implementasi rantai hash, rotasi kunci (hanya `key_version` dan prosedur tertulis), rotasi `K_index`, penghapusan fisik mapping/audit, pembukaan lewat jalur selain disclosure, replika/HA, mode `static` (ADR-0003).
 
-## 14. Keputusan spec yang menunggu konfirmasi
+## 14. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-06 pola `AccountNumber` `^[0-9]{8,20}$`. K-07 `INVALID_BASIS`/`ATTRIBUTE_NOT_ALLOWED` ditulis sebagai audit DENIED. K-08 filter `action` dan `disclosure_id` pada `GET /audit-log`. K-09 status transaksi terminal tidak dapat kembali. K-10 `/identity` idempoten (201 lalu 200). K-11 token `expired` dapat dicabut dan pencabutan ulang idempoten. K-12 batas body 16 KiB, pola `case_ref`, batas 20 percobaan tabrakan nilai pseudonym. K-26 jam job retensi (`RETENTION_JOB_RUN_UTC`). K-13 brankas hilang saat pembukaan → `TOKEN_NOT_FOUND`.

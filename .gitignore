@@ -48,6 +48,9 @@ k6-output/
 test-results/
 playwright-report/
 
+# Secret-scanner reports: unredacted runs can contain the matched values
+gitleaks-report*.json
+
 # Logs and dumps — may contain data even if synthetic
 *.log
 logs/

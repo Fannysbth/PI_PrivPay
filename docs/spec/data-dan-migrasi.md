@@ -114,6 +114,6 @@ Aturan: kolom tambahan khusus baseline tidak boleh dimuat pada migrasi `common`.
 
 Penghapusan fisik baris mapping dan audit (PRD 6.2 butir 4), rotasi `K_index` (hanya prosedur tertulis), partisi tabel, replikasi.
 
-## 13. Keputusan spec yang menunggu konfirmasi
+## 13. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-04 `CHECK` nilai pada `transactions.status`/`fraud_decision`. K-05 `UNIQUE (batch_id, bank_reference)` pada `settlement_items`.

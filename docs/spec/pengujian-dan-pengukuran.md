@@ -1,6 +1,6 @@
 # Spesifikasi: pengujian dan pengukuran
 
-Sumber: PRD 18 (rencana pengujian), 13, 14; Bab Metodologi v8 bagian D; `docs/qa/qa-checklist.md`; `docs/security/security-checklist.md`; ADR-0003 (hanya baseline dan proposed), 0004 (fase lokal), 0006, 0008. **[K-nn]** menunggu konfirmasi.
+Sumber: PRD 18 (rencana pengujian), 13, 14; Bab Metodologi v8 bagian D; `docs/qa/qa-checklist.md`; `docs/security/security-checklist.md`; ADR-0003 (hanya baseline dan proposed), 0004 (fase lokal), 0006, 0008. **[K-nn]** diterima Fanny (bawaan, Gerbang 3).
 
 ## 1. Tanggung jawab
 
@@ -143,6 +143,6 @@ Berlaku pada kedua mode kecuali dinyatakan; TF khusus lapisan privasi hanya pada
 
 Mode `static`, beban selain 100 VU, stress/spike/soak, multi-node, evaluasi naturalistik dengan pengguna/data produksi, pengulangan LINDDUN setelah implementasi (DFD dipertahankan sebagai sumber nilai harapan), pengujian rotasi kunci, serangan kriptografis pada HMAC, penyerang yang telah menguasai kunci atau Privacy Service.
 
-## 11. Keputusan spec yang menunggu konfirmasi
+## 11. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-24 format nilai kenari (bagian 6) dan lokasi `tests/pii-scan` untuk proxy pengamat.

@@ -1,6 +1,6 @@
 # Spesifikasi: Fraud Service
 
-Sumber: PRD 10 ("Penilaian risiko di Fraud"), 11, 13 (FR-18, FR-37), 16, 17; D-14; ADR-0006, 0008. **[K-nn]** menunggu konfirmasi.
+Sumber: PRD 10 ("Penilaian risiko di Fraud"), 11, 13 (FR-18, FR-37), 16, 17; D-14; ADR-0006, 0008. **[K-nn]** diterima Fanny (bawaan, Gerbang 3).
 
 ## 1. Tanggung jawab
 
@@ -52,6 +52,6 @@ Tidak ada identitas dan tidak ada `transaction_id` di tabel; token milik layanan
 
 Model ML, profil di luar riwayat asesmen, peninjauan analis (ada di Transaction), pembobotan dinamis, aturan tambahan agar `BLOCK` dapat tercapai.
 
-## 8. Keputusan spec yang menunggu konfirmasi
+## 8. Keputusan spec (diterima Fanny, bawaan, Gerbang 3)
 
 K-20 env baru `FRAUD_HOLD_THRESHOLD`/`FRAUD_BLOCK_THRESHOLD`, pembagian sumber parameter antara env dan `risk_rules`, dan pembacaan `risk_rules` saat runtime dengan `active=false` dilewati (PRD 11 menyediakan kolom `active` tetapi tidak menetapkan perilakunya).
