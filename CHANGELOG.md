@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M1-02 `authenticate`: dua token (ADR-0007)
+
+- Ditambah: `authenticate(headers, {clock, issuer, service, resolveKey, acceptCustomerToken?})` di `@privpay/common`. `requestingService` hanya dari `azp` token `Authorization` lewat allowlist (api-gateway, transaction, fraud, notification, reconciliation, admin-console → ADMIN_CONSOLE, bank-simulator → BANK; nasabah → CUSTOMER hanya bila gateway memintanya); klaim lain, header lain, dan body tidak pernah memengaruhinya (D-16, TK-07). Token aktor: harus orang admin-console dengan tepat satu peran; token layanan, nasabah, atau bank sebagai aktor ditolak; token orang di `Authorization` menolak `X-Actor-Token`; `aud` kedua token harus memuat layanan penerima (K-03). Umur token dibatasi 300 detik di sisi penerima (`maxLifetimeSeconds`). Kegagalan: `UNAUTHENTICATED` atau `FORBIDDEN_ROLE` dengan kategori pendek sebagai `cause`, tidak pernah isi token.
+- Hardening `verifyJwt`: penulisan base64url non-kanonik ditolak (N-15).
+- Aturan lint (kriteria wajib hasil Fase 2): `no-restricted-syntax` melarang `===`, `!==`, `==` dan `Buffer.equals` pada operan bernama rahasia (N-16). Terbukti pada kode nyata: perbandingan `client_secret ===` di dev-idp dilaporkan, dikembalikan; seluruh repo lulus tanpa positif palsu.
+- Tes: 33 `authenticate` (diulang 15 kali tanpa kegagalan setelah memperbaiki satu tes yang kadang lolos), 1 `jwt` baru, 2 aturan lint. Mutasi (masing-masing membuat tes gagal): identitas ganda diizinkan, bank/nasabah boleh meneruskan orang, azp aktor tidak diperiksa, nasabah diterima layanan lain, service account boleh membawa `roles`, `aud` aktor tidak diperiksa.
+- Dependensi: tidak ada. Keputusan sementara N-13..N-16 di `docs/OPEN_QUESTIONS.md` bagian G.
+
 ### M1-01 `dev-idp`: penerbit JWT tiruan khusus dev
 
 - Ditambah: `tools/dev-idp` (`@privpay/dev-idp`). Inti `IdentityProvider` tanpa framework: `client_credentials` untuk lima service account (rahasia dari `secrets/<klien>_client_secret`, dibandingkan lewat digest SHA-256 dan `safeEqual`), `dev_login` untuk pengguna seed (tanpa kata sandi), JWKS dari kunci RS256 yang dibuat saat start dan tidak pernah ditulis, token ≤ 300 detik dengan `iss=privpay-dev-idp`, `aud` per klien (service) atau per peran (manusia, spec 7 butir 6), `roles` tepat satu untuk manusia, `customer_id` hanya untuk `customer-app`. API admin `POST /admin/users` (hanya `{username}`) dan `DELETE /admin/users/{customer_id}` hanya untuk `api-gateway` (token untuk audience `dev-idp`): tanpa/rusak/kedaluwarsa 401, klien lain atau manusia atau audience lain 403 (AZ-38, AZ-39).

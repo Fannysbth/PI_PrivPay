@@ -161,6 +161,26 @@ describe('M1-01 signJwt and verifyJwt: RS256 only, every claim checked (NFR-21, 
     expect(failure(sign(claims({ exp: NOW + 86_400 })), options(clock))).toBe('accepted');
   });
 
+  it('M1-02 a token written in a non-canonical base64url form is rejected, so one token has one spelling', () => {
+    const token = sign(claims());
+    const [header = '', payload = '', signature = ''] = token.split('.');
+    // The last character of a 256-byte signature carries two bits; the other four are ignored by a lenient decoder, so
+    // three other characters decode to the very same bytes and the signature would still verify.
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+    const original = Buffer.from(signature, 'base64url');
+    const respelled = Array.from({ length: alphabet.length }, (_, index) => alphabet.charAt(index))
+      .map((last) => signature.slice(0, -1) + last)
+      .filter(
+        (candidate) =>
+          candidate !== signature && Buffer.from(candidate, 'base64url').equals(original),
+      );
+    expect(respelled.length).toBeGreaterThan(0);
+    expect(failure(token, options(clock))).toBe('accepted');
+    for (const candidate of respelled) {
+      expect(failure([header, payload, candidate].join('.'), options(clock))).toBe('malformed');
+    }
+  });
+
   it('M1-01 a token from the future (iat) beyond the clock is rejected', () => {
     expect(failure(sign(claims({ iat: NOW + 3600 })), options(clock))).toBe('not_yet_valid');
   });

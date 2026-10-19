@@ -3,6 +3,8 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 const testFunctions = ['it', 'test', 'describe'];
+// Names that mark a value as a secret. `token` is left out on purpose: it is compared everywhere as a presence check.
+const SECRET_NAME = '/secret|passw(or)?d|hmac|api_?key|private_?key/i';
 
 export default tseslint.config(
   {
@@ -57,6 +59,23 @@ export default tseslint.config(
         ...['fit', 'fdescribe', 'xit', 'xdescribe', 'xtest'].map((name) => ({
           name,
           message: 'Focused or skipped tests are not allowed.',
+        })),
+      ],
+      // A secret is compared with safeEqual from @privpay/common (timingSafeEqual), never with ===, !==, == or
+      // Buffer.equals, which stop at the first differing byte (Phase 2 requirement, M1-02). The rule goes by the
+      // name of the operand; a comparison with a literal, null or undefined (a presence check) is not about a secret
+      // value and is left alone.
+      'no-restricted-syntax': [
+        'error',
+        ...[
+          `BinaryExpression[operator=/^[!=]==?$/]:not(:has(> Literal)):not(:has(> Identifier[name='undefined'])) > Identifier[name=${SECRET_NAME}]`,
+          `BinaryExpression[operator=/^[!=]==?$/]:not(:has(> Literal)):not(:has(> Identifier[name='undefined'])) > MemberExpression[property.name=${SECRET_NAME}]`,
+          `CallExpression[callee.property.name='equals'][callee.object.name=${SECRET_NAME}]`,
+          `CallExpression[callee.property.name='equals'][callee.object.property.name=${SECRET_NAME}]`,
+        ].map((selector) => ({
+          selector,
+          message:
+            'Compare secrets with safeEqual (timingSafeEqual), not with ===, !==, == or Buffer.equals.',
         })),
       ],
     },

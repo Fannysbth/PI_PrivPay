@@ -73,6 +73,11 @@ export function verifyJwt(token: string, options: VerifyOptions): Record<string,
   if (token.length === 0 || token.length > MAX_LENGTH) return reject('malformed');
   const parts = token.split('.');
   if (parts.length !== 3 || !parts.every((part) => SEGMENT.test(part))) return reject('malformed');
+  // One token, one spelling: a lenient decoder ignores the spare bits of a segment's last character, so several
+  // strings would decode to the same bytes and the same signature. Only the canonical form is accepted.
+  if (!parts.every((part) => Buffer.from(part, 'base64url').toString('base64url') === part)) {
+    return reject('malformed');
+  }
   const [headerSegment = '', payloadSegment = '', signatureSegment = ''] = parts;
 
   const header = decodeObject(headerSegment);

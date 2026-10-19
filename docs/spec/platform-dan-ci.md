@@ -98,7 +98,8 @@ Aturan: kegagalan yang tidak dikenal menjadi 500 `INTERNAL_ERROR`; detail hanya 
 4. Bila `Authorization` sudah token manusia (`ADMIN_CONSOLE`), `X-Actor-Token` ditolak (tidak ada identitas ganda); aktor diambil dari token itu sendiri.
 5. Token nasabah (`azp=customer-app`, membawa `customer_id`) hanya diterima oleh Gateway dan tidak pernah diteruskan ke hilir.
 6. **[Δ PRD / usulan S-03, K-03]** Pembatasan `aud` token aktor: `aud` token manusia hanya memuat layanan yang dilewati operasi perannya, sehingga layanan hilir lain tidak dapat memakai ulang token itu: `auditor`: `api-gateway`, `reconciliation-service`, `privacy-service`; `fraud_analyst`: `api-gateway`, `transaction-service`; `admin`: `api-gateway`, `privacy-service`. Layanan hilir yang diretas tetap dapat memakai ulang token pada layanan di jalurnya selama ≤ 5 menit (T-15, risiko sisa).
-7. Perbandingan nilai rahasia (kunci, rahasia klien) hanya lewat `safeEqual`.
+7. Perbandingan nilai rahasia (kunci, rahasia klien) hanya lewat `safeEqual`; aturan lint `no-restricted-syntax` melarang `===`, `!==`, `==`, dan `Buffer.equals` pada operan bernama rahasia (N-16).
+8. **[N-13, N-14]** Hanya service account yang membawa `X-Actor-Token`; token sahih untuk layanan lain 403, bukan 401; header ganda 401; `roles`/`customer_id` pada jenis pemanggil yang salah 401.
 
 ## 8. `/health` dan `/metrics` (NFR-14)
 
