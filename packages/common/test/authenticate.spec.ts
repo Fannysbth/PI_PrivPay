@@ -568,3 +568,22 @@ describe('M1-02 K-03 the receiver checks the role against its own path, not only
     },
   );
 });
+
+describe('M1-03 every route the gateway forwards with a person has a role whose path reaches the upstream', () => {
+  it.each([
+    ['AZ-04 GET /transaction/held', 'fraud_analyst', 'transaction-service'],
+    ['AZ-05 POST /transaction/{id}/review', 'fraud_analyst', 'transaction-service'],
+    ['AZ-06 POST /reconciliation/audit-request', 'auditor', 'reconciliation-service'],
+    ['AZ-07 POST /reconciliation/disclosure', 'auditor', 'reconciliation-service'],
+    // The administrator starts the daily run, which Reconciliation checks the actor token of (reconciliation.md 3.2).
+    ['AZ-08 POST /reconciliation/run', 'admin', 'reconciliation-service'],
+    ['AZ-10 POST /disclosure-requests', 'auditor', 'privacy-service'],
+    ['AZ-11 POST /disclosure-requests/{id}/approve', 'admin', 'privacy-service'],
+    ['AZ-13 GET /audit-log', 'admin', 'privacy-service'],
+    ['AZ-14 GET /audit-log/timeline/{pseudonym}', 'auditor', 'privacy-service'],
+    ['AZ-17 POST /subject/revoke', 'admin', 'privacy-service'],
+  ] as const)('M1-03 %s: a %s token for the gateway reaches %s', (_route, role, upstream) => {
+    expect(ROLE_SERVICES[role]).toContain('api-gateway');
+    expect(ROLE_SERVICES[role]).toContain(upstream);
+  });
+});

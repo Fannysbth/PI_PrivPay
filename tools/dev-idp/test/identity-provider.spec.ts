@@ -193,7 +193,12 @@ describe('M1-01 client_credentials issues a service token (ADR-0007, NFR-21)', (
 describe('M1-01 dev_login issues a human token for a seed user (ADR-0007 items 5, 6, 8)', () => {
   const cases: [string, string, string, string[]][] = [
     ['customer-app', 'nasabah.uji.101', 'customer', ['api-gateway']],
-    ['admin-console', 'admin.uji.1', 'admin', ['api-gateway', 'privacy-service']],
+    [
+      'admin-console',
+      'admin.uji.1',
+      'admin',
+      ['api-gateway', 'privacy-service', 'reconciliation-service'],
+    ],
     [
       'admin-console',
       'auditor.uji.1',

@@ -1,0 +1,117 @@
+import { generateKeyPairSync } from 'node:crypto';
+import { DomainError, FakeClock } from '@privpay/common';
+import { JwksKeys, type JwksSource } from '../src/jwks';
+
+// Public keys the way the dev IdP publishes them; made for the run.
+const a = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const b = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const jwk = (pair: typeof a, kid: string): unknown => ({
+  ...pair.publicKey.export({ format: 'jwk' }),
+  kid,
+  alg: 'RS256',
+  use: 'sig',
+});
+
+describe('M1-03 JwksKeys finds the public key of a token and refreshes at most once per cooldown', () => {
+  let clock: FakeClock;
+  let published: unknown;
+  let calls: number;
+  let failing: boolean;
+  const source: JwksSource = {
+    fetch: () => {
+      calls += 1;
+      if (failing) return Promise.reject(new Error('idp down at http://127.0.0.1:1'));
+      return Promise.resolve(published);
+    },
+  };
+  beforeEach(() => {
+    clock = new FakeClock(new Date('2026-10-19T08:00:00Z'));
+    published = { keys: [jwk(a, 'k1')] };
+    calls = 0;
+    failing = false;
+  });
+  const keys = (): JwksKeys => new JwksKeys({ source, clock, cooldownSeconds: 30 });
+
+  it('M1-03 loads on first use and then answers from memory', async () => {
+    const store = keys();
+    await store.ensure('k1');
+    await store.ensure('k1');
+    expect(calls).toBe(1);
+    expect(store.resolveKey('k1')?.type).toBe('public');
+  });
+
+  it('M1-03 an unknown key id triggers one refresh, then waits out the cooldown', async () => {
+    const store = keys();
+    await store.ensure('k1');
+    published = { keys: [jwk(a, 'k1'), jwk(b, 'k2')] };
+    await store.ensure('k2');
+    expect(store.resolveKey('k2')).toBeDefined();
+    expect(calls).toBe(2);
+
+    await store.ensure('nope');
+    await store.ensure('nope');
+    expect(calls).toBe(2);
+    clock.advance(30);
+    await store.ensure('nope');
+    expect(calls).toBe(3);
+    expect(store.resolveKey('nope')).toBeUndefined();
+  });
+
+  it('M1-03 a key the issuer rotated out stops being accepted after the next refresh', async () => {
+    const store = keys();
+    await store.ensure('k1');
+    published = { keys: [jwk(b, 'k2')] };
+    clock.advance(30);
+    await store.ensure('k2');
+    expect(store.resolveKey('k1')).toBeUndefined();
+    expect(store.resolveKey('k2')).toBeDefined();
+  });
+
+  it('M1-03 an IdP that cannot be reached is SERVICE_UNAVAILABLE without its address or message', async () => {
+    failing = true;
+    const store = keys();
+    const error = await store.ensure('k1').catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(DomainError);
+    expect((error as DomainError).reason).toBe('SERVICE_UNAVAILABLE');
+    expect(`${(error as Error).message} ${String((error as Error).cause)}`).not.toContain(
+      '127.0.0.1',
+    );
+  });
+
+  it('M1-03 a failed load is retried after the cooldown and keeps the keys it already had', async () => {
+    const store = keys();
+    await store.ensure('k1');
+    failing = true;
+    clock.advance(30);
+    await store.ensure('unknown').catch(() => undefined);
+    expect(store.resolveKey('k1')).toBeDefined();
+    failing = false;
+    clock.advance(30);
+    await store.ensure('unknown');
+    expect(calls).toBe(3);
+  });
+
+  it.each([
+    ['not an object', 'text'],
+    ['no keys list', {}],
+    ['keys that are not a list', { keys: 'x' }],
+    [
+      'a private key (d present)',
+      { keys: [{ ...(jwk(a, 'k1') as object), d: 'secret-material' }] },
+    ],
+    ['a key that is not RSA', { keys: [{ kty: 'oct', k: 'AAAA', kid: 'k1' }] }],
+    ['a key without kid', { keys: [{ ...(jwk(a, 'k1') as object), kid: undefined }] }],
+    ['a key for another algorithm', { keys: [{ ...(jwk(a, 'k1') as object), alg: 'HS256' }] }],
+  ])('M1-03 a JWKS with %s is refused and publishes no key', async (_name, body) => {
+    published = body;
+    const store = keys();
+    await expect(store.ensure('k1')).rejects.toBeInstanceOf(DomainError);
+    expect(store.resolveKey('k1')).toBeUndefined();
+  });
+
+  it('M1-03 two requests for an unknown key at the same time share one fetch', async () => {
+    const store = keys();
+    await Promise.all([store.ensure('k1'), store.ensure('k1'), store.ensure('other')]);
+    expect(calls).toBe(1);
+  });
+});

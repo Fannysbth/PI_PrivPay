@@ -4,9 +4,17 @@
   "private": true,
   "description": "PrivPay gateway (skeleton: the shared service bootstrap only)",
   "dependencies": {
-    "@privpay/common": "workspace:*"
+    "@nestjs/common": "^11.2.7",
+    "@privpay/common": "workspace:*",
+    "reflect-metadata": "^0.2.2",
+    "zod": "^4.6.7"
   },
   "scripts": {
     "start": "node dist/main.js"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.1"
   }
 }

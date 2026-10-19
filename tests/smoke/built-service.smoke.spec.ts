@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -66,12 +66,32 @@ const waitForHealth = async (port: number, running: Running): Promise<unknown> =
   throw new Error(`service did not answer /health. output so far:\n${running.output()}`);
 };
 
+/** The gateway needs the addresses of what it calls and its client secret file; the other services need nothing more. */
+const gatewaySecrets = mkdtempSync(join(tmpdir(), 'privpay-smoke-gateway-'));
+writeFileSync(
+  join(gatewaySecrets, 'api_gateway_client_secret'),
+  'fake-secret-api-gateway-0123456789abcdef\n',
+);
+afterAll(() => {
+  rmSync(gatewaySecrets, { recursive: true, force: true });
+});
+const extraEnv = (id: string): Record<string, string> =>
+  id === 'gateway'
+    ? {
+        IDP_URL: 'http://127.0.0.1:9',
+        PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+        TRANSACTION_SERVICE_URL: 'http://127.0.0.1:9',
+        RECONCILIATION_SERVICE_URL: 'http://127.0.0.1:9',
+        API_GATEWAY_CLIENT_SECRET_FILE: join(gatewaySecrets, 'api_gateway_client_secret'),
+      }
+    : {};
+
 describe.each(SERVICE_IDS)('N-04 the built %s runs as a process', (id) => {
   const entry = join('services', id, 'dist', 'main.js');
 
   it('N-04 node dist/main.js serves /health on loopback and stops on SIGTERM with exit code 0', async () => {
     const port = await freePort();
-    const running = start(entry, { PRIVACY_MODE: 'baseline', PORT: String(port) });
+    const running = start(entry, { PRIVACY_MODE: 'baseline', PORT: String(port), ...extraEnv(id) });
     try {
       const health = await waitForHealth(port, running);
       expect(health).toMatchObject({ status: 'ok', service: id, mode: 'baseline' });

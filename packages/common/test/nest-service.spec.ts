@@ -7,7 +7,7 @@ import request from 'supertest';
 import { FakeClock } from '../src/clock';
 import { ConfigError } from '../src/config';
 import { type Delay } from '../src/delay';
-import { DomainError } from '../src/errors';
+import { DomainError, RateLimitedError } from '../src/errors';
 import { createServiceApp, SERVICE_IDS, type ServiceApp, type ServiceId } from '../src/nest';
 import { capture } from './log-capture';
 
@@ -47,6 +47,19 @@ class ProbeController {
   @Get('domain')
   domain(): never {
     throw new DomainError('POLICY_NOT_ALLOWED');
+  }
+
+  // A catch-all route (the gateway) names the route it matched itself, so metrics keep a template per route.
+  @Get('templated/:id')
+  templated(@Param('id') id: string, @Res({ passthrough: true }) res: Response): { id: string } {
+    res.locals['routeTemplate'] =
+      id === 'hostile' ? '/probe/templated/12345678901234' : '/probe/templated/{id}';
+    return { id };
+  }
+
+  @Get('limited')
+  limited(): never {
+    throw new RateLimitedError(17);
   }
 
   @Get('raw')
@@ -192,6 +205,29 @@ describe('M0-06 every failure has the same shape and leaks nothing (NFR-25, S-42
     expect(response.body).toMatchObject({
       error: { code: 'ACCESS_DENIED', reason: 'POLICY_NOT_ALLOWED' },
     });
+  });
+
+  it('M1-03 a route template chosen by the service is the metrics label, and a value that looks like data is not', async () => {
+    const { service } = await start('gateway', { modules: [ProbeModule] });
+    await request(service.httpServer).get('/probe/templated/abc').expect(200);
+    await request(service.httpServer).get('/probe/templated/hostile').expect(200);
+    const metrics = (await request(service.httpServer).get('/metrics')).text;
+    expect(metrics).toContain('route="/probe/templated/{id}"');
+    expect(metrics).toContain('route="/other"');
+    expect(metrics).not.toContain('12345678901234');
+  });
+
+  it('M1-03 a RateLimitedError is a 429 that says how long to wait (Retry-After)', async () => {
+    const { service } = await start('gateway', { modules: [ProbeModule] });
+    const response = await request(service.httpServer).get('/probe/limited');
+    expect(response.status).toBe(429);
+    expect(response.headers['retry-after']).toBe('17');
+    expect(response.body).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+    expect(Object.keys((response.body as { error: object }).error).sort()).toEqual([
+      'code',
+      'message',
+      'request_id',
+    ]);
   });
 
   it('M0-06 an unexpected error is a generic 500 without its text, stack or SQL, in the body and the log', async () => {

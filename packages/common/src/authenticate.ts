@@ -24,7 +24,8 @@ export type HumanRole = (typeof HUMAN_ROLES)[number];
 export const ROLE_SERVICES: Readonly<Record<HumanRole, readonly string[]>> = {
   auditor: ['api-gateway', 'reconciliation-service', 'privacy-service'],
   fraud_analyst: ['api-gateway', 'transaction-service'],
-  admin: ['api-gateway', 'privacy-service'],
+  // Also reconciliation-service: the administrator starts the daily run (AZ-08), and Reconciliation checks the actor token.
+  admin: ['api-gateway', 'privacy-service', 'reconciliation-service'],
 };
 
 /** The gateway is the only service that takes customer tokens (ADR-0007 item 4). */

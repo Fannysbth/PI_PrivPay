@@ -172,7 +172,11 @@ export async function createServiceApp(
     const started = performance.now();
     // 'close' fires for finished and for aborted responses alike, so a request cut off by a shutdown is not lost.
     res.on('close', () => {
-      const route = routeLabel((req as { route?: { path?: unknown } }).route?.path);
+      // A service with one catch-all route (the gateway) names the route it matched; otherwise Express's own template.
+      const named: unknown = res.locals['routeTemplate'];
+      const route = routeLabel(
+        typeof named === 'string' ? named : (req as { route?: { path?: unknown } }).route?.path,
+      );
       const seconds = (performance.now() - started) / 1000;
       const failedLate: unknown = res.locals['status'];
       const status =

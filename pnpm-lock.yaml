@@ -254,9 +254,28 @@ importers:
 
   services/gateway:
     dependencies:
+      '@nestjs/common':
+        specifier: ^11.2.7
+        version: 11.2.7(reflect-metadata@0.2.2)(rxjs@7.8.2)(supports-color@8.1.1)
       '@privpay/common':
         specifier: workspace:*
         version: link:../../packages/common
+      reflect-metadata:
+        specifier: ^0.2.2
+        version: 0.2.2
+      zod:
+        specifier: ^4.6.7
+        version: 4.6.7
+    devDependencies:
+      '@types/express':
+        specifier: ^5.0.6
+        version: 5.0.6
+      '@types/supertest':
+        specifier: ^7.2.1
+        version: 7.2.1
+      supertest:
+        specifier: ^7.3.1
+        version: 7.3.1(supports-color@8.1.1)
 
   services/notification-service:
     dependencies:

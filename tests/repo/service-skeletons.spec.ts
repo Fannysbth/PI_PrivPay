@@ -11,18 +11,22 @@ describe.each(SERVICE_IDS)('M0-06 %s is only the shared bootstrap', (id) => {
       /\r\n/g,
       '\n',
     );
+    // The gateway adds its own module (routes, rate limit, keys); every other service is the bare bootstrap.
     expect(main).toBe(
-      `import { runService } from '@privpay/common/nest';\n\nvoid runService({ service: '${id}' });\n`,
+      id === 'gateway'
+        ? "import { runService } from '@privpay/common/nest';\nimport { gatewayModules } from './gateway.module';\n\nvoid runService({ service: 'gateway', modules: gatewayModules() });\n"
+        : `import { runService } from '@privpay/common/nest';\n\nvoid runService({ service: '${id}' });\n`,
     );
   });
 
-  it('M0-06 the package depends on @privpay/common and on nothing else', () => {
+  it('M0-06 the package depends on @privpay/common, and only the gateway on more', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'services', id, 'package.json'), 'utf8')) as {
       name: string;
       dependencies: Record<string, string>;
     };
     expect(pkg.name).toBe(`@privpay/${id}`);
-    expect(pkg.dependencies).toEqual({ '@privpay/common': 'workspace:*' });
+    expect(pkg.dependencies['@privpay/common']).toBe('workspace:*');
+    if (id !== 'gateway') expect(Object.keys(pkg.dependencies)).toEqual(['@privpay/common']);
   });
 });
 
