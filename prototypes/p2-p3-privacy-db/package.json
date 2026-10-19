@@ -1,0 +1,9 @@
+{
+  "name": "p2-p3-privacy-db",
+  "private": true,
+  "type": "module",
+  "description": "THROWAWAY prototype P-2/P-3 (Phase 2); deleted after ADRs",
+  "dependencies": {
+    "pg": "^8.23.1"
+  }
+}

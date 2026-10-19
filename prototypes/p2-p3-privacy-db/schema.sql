@@ -1,0 +1,100 @@
+-- THROWAWAY prototype schema (PRD 11 privacy-db + decisions E-06). Applied by the schema owner role.
+-- Role names follow ADR-0004: privpay_app (privacy_app) and privpay_auditor (auditor_role).
+REVOKE ALL ON SCHEMA public FROM PUBLIC;
+GRANT USAGE ON SCHEMA public TO privpay_app, privpay_auditor;
+
+CREATE TYPE subject_type_enum AS ENUM ('CUSTOMER', 'ACCOUNT');
+CREATE TYPE token_status_enum AS ENUM ('active', 'expired', 'revoked');
+
+CREATE TABLE pseudonym_mapping (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  subject_type    subject_type_enum NOT NULL,
+  subject_id_enc  BYTEA        NULL,
+  subject_lookup  BYTEA        NULL,
+  pseudonym       VARCHAR(16)  NOT NULL UNIQUE,
+  service_id      VARCHAR(32)  NOT NULL,
+  purpose         VARCHAR(48)  NOT NULL,
+  transaction_id  VARCHAR(32),
+  key_version     SMALLINT     NOT NULL DEFAULT 1,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  expires_at      TIMESTAMPTZ  NOT NULL,
+  revoked_at      TIMESTAMPTZ,
+  purged_at       TIMESTAMPTZ,
+  status          token_status_enum NOT NULL DEFAULT 'active',
+  CONSTRAINT chk_purged CHECK (
+    purged_at IS NULL OR (subject_id_enc IS NULL AND subject_lookup IS NULL))
+);
+CREATE UNIQUE INDEX uq_mapping_active ON pseudonym_mapping (subject_lookup, service_id, purpose) WHERE status = 'active';
+CREATE INDEX idx_mapping_pseudonym ON pseudonym_mapping (pseudonym);
+CREATE INDEX idx_mapping_expiry    ON pseudonym_mapping (expires_at) WHERE status = 'active';
+CREATE INDEX idx_mapping_tx        ON pseudonym_mapping (transaction_id);
+CREATE INDEX idx_mapping_purge     ON pseudonym_mapping (expires_at) WHERE purged_at IS NULL;
+
+CREATE TABLE transaction_status (
+  transaction_id  VARCHAR(32) PRIMARY KEY,
+  status          VARCHAR(16) NOT NULL,
+  updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE identity_vault (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  customer_lookup  BYTEA        NULL UNIQUE,
+  customer_id_enc  BYTEA        NULL,
+  nik_enc          BYTEA        NULL,
+  nama_enc         BYTEA        NULL,
+  hp_enc           BYTEA        NULL,
+  rekening_enc     BYTEA        NULL,
+  key_version      SMALLINT     NOT NULL DEFAULT 1,
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  purged_at        TIMESTAMPTZ,
+  CONSTRAINT chk_vault_purged CHECK (
+    purged_at IS NULL OR (customer_lookup IS NULL AND customer_id_enc IS NULL AND nik_enc IS NULL
+                          AND nama_enc IS NULL AND hp_enc IS NULL AND rekening_enc IS NULL))
+);
+
+CREATE TABLE disclosure_request (
+  id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  mapping_id       UUID         NOT NULL REFERENCES pseudonym_mapping(id),
+  basis            VARCHAR(32)  NOT NULL,
+  case_ref         VARCHAR(64)  NOT NULL,
+  requested_attrs  TEXT[]       NOT NULL,
+  requester_id     VARCHAR(64)  NOT NULL,
+  approver_id      VARCHAR(64),
+  status           VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+  created_at       TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  decided_at       TIMESTAMPTZ,
+  expires_at       TIMESTAMPTZ,
+  used_at          TIMESTAMPTZ,
+  CONSTRAINT chk_four_eyes CHECK (approver_id IS NULL OR approver_id <> requester_id)
+);
+
+CREATE TABLE audit_log (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  action             VARCHAR(32) NOT NULL,
+  status             VARCHAR(8)  NOT NULL,
+  reason             VARCHAR(32) NOT NULL,
+  requesting_service VARCHAR(32) NOT NULL,
+  actor_id           VARCHAR(64),
+  pseudonym          VARCHAR(16),
+  purpose            VARCHAR(48),
+  transaction_id     VARCHAR(32),
+  mapping_id         UUID REFERENCES pseudonym_mapping(id),
+  disclosure_id      UUID REFERENCES disclosure_request(id),
+  attribute_names    TEXT[],
+  key_version        SMALLINT,
+  prev_hash          CHAR(64),
+  row_hash           CHAR(64),
+  CONSTRAINT chk_attribute_names CHECK (
+    attribute_names IS NULL OR attribute_names <@ ARRAY['customer_id', 'nik', 'nama']::text[])
+);
+CREATE INDEX idx_audit_time   ON audit_log (created_at DESC);
+CREATE INDEX idx_audit_denied ON audit_log (status, reason) WHERE status = 'DENIED';
+CREATE INDEX idx_audit_pseu   ON audit_log (pseudonym);
+
+-- Least privilege (PRD 11, SECURITY.md 2.4)
+REVOKE UPDATE, DELETE ON audit_log FROM privpay_app;
+GRANT  INSERT          ON audit_log TO   privpay_app;
+GRANT  SELECT          ON audit_log TO   privpay_auditor;
+GRANT  SELECT, INSERT, UPDATE ON pseudonym_mapping, transaction_status, identity_vault, disclosure_request TO privpay_app;
+REVOKE ALL ON identity_vault FROM privpay_auditor;
