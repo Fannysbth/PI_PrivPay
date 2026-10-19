@@ -49,10 +49,41 @@ Pasal 4 UU PDP, EDPB Guidelines 01/2025 par. 22, Flegel 2005, Petersen PET-CON 2
 
 | ID | Butir | Sumber | Status |
 | --- | --- | --- | --- |
-| S-01 | Perbandingan nilai rahasia dengan `timingSafeEqual`: tes dan tinjauan kode; belum diuji di prototipe | CLAUDE.md, T-10, ADR-0011 | BELUM TERUJI |
-| S-02 | `ON CONFLICT` paralel pada `POST /transaction` (dua permintaan identik bersamaan, penantian pemenang, batas `HTTP_TIMEOUT_MS`) sebagai tes integrasi M4 | ADR-0009, NFR-23 | BELUM TERUJI |
+| S-01 | Perbandingan nilai rahasia dengan `timingSafeEqual`: tes dan tinjauan kode; belum diuji di prototipe | CLAUDE.md, T-10, ADR-0011 | KRITERIA PENERIMAAN tiket M1-02 (`platform-dan-ci.md` bagian 15) |
+| S-02 | `ON CONFLICT` paralel pada `POST /transaction` (dua permintaan identik bersamaan, penantian pemenang, batas `HTTP_TIMEOUT_MS`) sebagai tes integrasi M4 | ADR-0009, NFR-23 | KRITERIA PENERIMAAN tiket M4-01 (`transaction.md` bagian 8) |
 | S-03 | Batasi `aud` token aktor ke layanan tujuan | ADR-0007, T-15 | USULAN |
 | S-04 | `X-Actor-Token` ditolak bila `Authorization` sudah token manusia (`ADMIN_CONSOLE`) | ADR-0007 | DISETUJUI, tulis di spec |
 | S-05 | `POST /identity` idempoten; perilaku `revoke_subject` untuk subjek tanpa token dan tanpa brankas | ADR-0005 | RINCIAN SPEC |
-| S-06 | TF-15 [strategi C] tidak cukup sebagai penjaga konkurensi; jalankan berulang di M2 | ADR-0010 | RINCIAN TIKET |
-| S-07 | Penulisan audit lewat koneksi `privpay_app` tanpa `RETURNING`; pembacaan lewat `privpay_auditor` (dua pool); belum diuji | ADR-0010 | BELUM TERUJI |
+| S-06 | TF-15 [strategi C] tidak cukup sebagai penjaga konkurensi; jalankan berulang di M2 | ADR-0010 | KRITERIA PENERIMAAN tiket M2-05 (TF-15 khusus, `privacy-service.md` bagian 12) |
+| S-07 | Penulisan audit lewat koneksi `privpay_app` tanpa `RETURNING`; pembacaan lewat `privpay_auditor` (dua pool); belum diuji | ADR-0010 | KRITERIA PENERIMAAN tiket M2-04 (`privacy-service.md` bagian 12) |
+
+## F. Keputusan spec yang menunggu konfirmasi Fanny (Fase 3)
+
+Nilai bawaan dipakai spec sampai diputuskan. "Dampak" menunjukkan spec yang berubah bila jawabannya lain.
+
+| ID | Keputusan spec (nilai bawaan) | Dampak | Status |
+| --- | --- | --- | --- |
+| K-01 | reason `DISCLOSURE_NOT_PENDING` 409 untuk approve/reject di luar status PENDING | PV 4.10, PL 4 | USULAN |
+| K-02 | reason `TRANSACTION_NOT_FOUND` 404 untuk audit-request pada `transaction_id` tak dikenal | RC 3.3, TX 3.4 | USULAN |
+| K-03 | `aud` token aktor dibatasi ke layanan di jalur peran (auditor, fraud_analyst, admin) | PL 7.6 | USULAN (S-03) |
+| K-04 | `CHECK` nilai pada `transactions.status` dan `fraud_decision` | DM 5 | USULAN |
+| K-05 | `UNIQUE (batch_id, bank_reference)` pada `settlement_items` | DM 8, RC 3.1 | USULAN |
+| K-06 | pola nomor rekening `^[0-9]{8,20}$` | PV 4, GW 3 | USULAN |
+| K-07 | `INVALID_BASIS`/`ATTRIBUTE_NOT_ALLOWED` juga ditulis sebagai audit DENIED (tanpa baris `disclosure_request`) | PV 4.10 | USULAN |
+| K-08 | filter `action` dan `disclosure_id` pada `GET /audit-log` | PV 4.8 | USULAN (E-27) |
+| K-09 | status transaksi terminal di Privacy tidak dapat kembali ke non-terminal (409 `TX_TERMINAL`) | PV 4.7 | USULAN |
+| K-10 | `POST /identity` idempoten (201 lalu 200) | PV 4.9 | USULAN |
+| K-11 | token `expired` dapat dicabut; pencabutan ulang idempoten | PV 4.5 | USULAN |
+| K-12 | batas body 16 KiB, pola `case_ref`, jam job retensi dari env | PV 4, 7.11 | USULAN |
+| K-13 | brankas hilang saat pembukaan → `TOKEN_NOT_FOUND` 404 | PV 7.8 | USULAN |
+| K-14 | rute `POST /register` di Gateway dan pembatasan laju per alamat sumber untuk rute itu | GW 3, 6, 7 | USULAN (E-26) |
+| K-15 | rute `POST /reconciliation/disclosure` | RC 3.4, GW 3 | USULAN (E-25) |
+| K-16 | `amount` ≥ 1 (SECURITY.md: non-negatif); pola `geohash` dan `merchant_id` | GW 3, TX 3.1 | USULAN |
+| K-17 | `transaction_id` = `TX-` + epoch milidetik + penghitung 3 digit | GW 4 | USULAN |
+| K-18 | endpoint Transaction untuk Reconciliation: `GET /transaction/completed`, `GET /transaction/{id}` | TX 3.4, RC 3.2/3.3 | USULAN (E-23, E-24) |
+| K-19 | env baru `TX_SWEEP_INTERVAL_SECONDS` (30) | TX 5 | USULAN (E-28) |
+| K-20 | env baru `FRAUD_HOLD_THRESHOLD`/`FRAUD_BLOCK_THRESHOLD`; bobot dan pengali dari `risk_rules`, ambang uang/jam dari env | FR 4 | USULAN (E-28) |
+| K-21 | teks templat SMS dan env `SMS_SIMULATOR_TEST_ENDPOINTS`/`SMS_SIMULATOR_FAIL` | NT 3.2, 4 | USULAN |
+| K-22 | status batch: `unmatched = (#item − matched) + (#transaksi − matched)`; satu laporan per tanggal; perilaku bila laporan atau Privacy tidak ada | RC 3.1, 3.2 | USULAN |
+| K-23 | env baru `RECON_DAILY_RUN_UTC` (`00:10`) | RC 3.2 | USULAN (E-28) |
+| K-24 | format nilai kenari dan lokasi `tests/pii-scan` untuk proxy pengamat | PP 6 | USULAN |

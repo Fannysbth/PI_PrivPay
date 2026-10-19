@@ -40,6 +40,9 @@ Dipakai oleh `/grill-with-docs`: tiap istilah baru atau penajaman istilah langsu
 | Service JWT / Actor token | Service JWT di `Authorization` menentukan `requesting_service` (klaim `azp`); Actor token di `X-Actor-Token` adalah JWT manusia yang divalidasi ulang penerima untuk `actor_id` dan peran (ADR-0007) | `requestingService`, `actorToken` | header peran/aktor polos (dilarang) |
 | Kode klien | Delapan `code` yang tampak ke klien eksternal (ADR-0008); `reason` rinci hanya antar-layanan dan audit | `ClientErrorCode` | "reason" ke klien |
 | Jendela idempotensi | Selama token P1 yang sama berlaku (`TTL_PAYMENT_PROCESSING`); di luar itu kunci yang sama menghasilkan 409 (ADR-0009) | `idempotencyWindow` | |
+| Paparan terkontrol | Atribut identitas yang keluar dari Privacy hanya lewat pembukaan bersyarat yang disetujui; dilaporkan terpisah dari E(s) | | "paparan" polos |
+| E_umum / E_spesifik | Rincian E(s) per kelas data: pengenal umum (nama, NIK, HP, email, `customer_id`) dan spesifik (rekening); bukti pendukung, bukan metrik utama | | |
+| Konfirmasi spec (K-nn) | Keputusan yang diusulkan spec dengan nilai bawaan, menunggu jawaban Fanny (`OPEN_QUESTIONS.md` bagian F) | | |
 | gateway-adapter | Layanan NestJS tipis pengganti Kong pada fase lokal; perilaku tokenisasi identik dengan plugin `privacy-tokenizer` (ADR-0004) | `gateway-adapter` | |
 | dev-idp | Penerbit JWT tiruan khusus dev (RS256 + JWKS) pengganti Keycloak pada fase lokal (ADR-0004) | `dev-idp` | Keycloak (fase Docker) |
 
