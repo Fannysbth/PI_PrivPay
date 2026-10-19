@@ -12,14 +12,11 @@ const clock = new Clock();
 try {
   for (const strategy of ['A', 'B', 'C']) {
     const errors = {};
-    let doubleActive = 0;
     for (let r = 0; r < ROUNDS; r++) {
       const subjectId = `CUST-X${strategy}${r}`;
       const settled = await Promise.allSettled(Array.from({ length: CONC }, () =>
         buatToken(db.app, keys, { subjectType: 'CUSTOMER', subjectId, serviceId: 'TRANSACTION', purpose: 'PAYMENT_PROCESSING', ttlSeconds: 900 }, { strategy, clock })));
       for (const s of settled) if (s.status === 'rejected') { const k = `${s.reason.code ?? ''} ${s.reason.constraint ?? s.reason.message}`; errors[k] = (errors[k] ?? 0) + 1; }
-      const n = (await db.owner.query(`SELECT count(*)::int AS n FROM pseudonym_mapping WHERE status='active' AND service_id='TRANSACTION' AND subject_type='CUSTOMER'`)).rows[0].n;
-      doubleActive = Math.max(doubleActive, n);
     }
     console.log(`strategy ${strategy}: ${ROUNDS} rounds x ${CONC} parallel; rejected requests by cause:`, JSON.stringify(errors));
   }

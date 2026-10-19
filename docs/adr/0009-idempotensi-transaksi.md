@@ -18,7 +18,7 @@
 
 ## Bukti prototipe Fase 2 (sekali pakai, `node --test`, 9 tes lulus)
 
-Tanpa sidik jari rahasia, TF-08 tetap dapat menguji "isi beda menghasilkan 409": kunci sama dengan `amount`, `merchant_id`, `geohash`, rekening sumber berbeda, atau pelanggan berbeda semuanya `409 IDEMPOTENCY_CONFLICT` tanpa mengembalikan data transaksi pertama. Isi sama menghasilkan `200` dengan `transaction_id` asli dan satu baris. Replay setelah re-issue di tengah proses dalam jendela TTL tetap `200` (re-issue memakai ulang token aktif). Replay di luar jendela tanpa re-issue `409` dan tidak membuat transaksi ganda. Tidak ada rekening mentah atau `customer_id` yang tersimpan. Tes mutasi (perbandingan selalu "sama") membuat tes 409 gagal. Perilaku paralel (`ON CONFLICT`) belum diuji di prototipe ini dan menjadi tes integrasi M4.
+Pada model dalam memori (bukan database; token dan TTL disimulasikan, Transaction memakai `Map`), tanpa sidik jari rahasia, TF-08 tetap dapat menguji "isi beda menghasilkan 409": kunci sama dengan `amount`, `merchant_id`, `geohash`, rekening sumber berbeda, atau pelanggan berbeda semuanya `409 IDEMPOTENCY_CONFLICT` tanpa mengembalikan data transaksi pertama. Isi sama menghasilkan `200` dengan `transaction_id` asli dan satu baris. Replay setelah re-issue di tengah proses dalam jendela TTL tetap `200` (re-issue memakai ulang token aktif). Replay di luar jendela tanpa re-issue `409` dan tidak membuat transaksi ganda. Tidak ada rekening mentah atau `customer_id` yang tersimpan. Mutasi manual satu kali (tidak dikomit): perbandingan dipaksa selalu "sama", dan tes 409 gagal. Unique key sungguhan di PostgreSQL belum diuji. Perilaku paralel (`ON CONFLICT`) belum diuji di prototipe ini dan menjadi tes integrasi M4.
 
 ## Konsekuensi
 

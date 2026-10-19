@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { Clock, createTestDb, newKeys } from './lib/db.mjs';
 import { buatToken } from './lib/buat-token.mjs';
-import { loadKeys, tokenValue } from './lib/crypto.mjs';
+import { loadKeys, subjectLookup, tokenValue } from './lib/crypto.mjs';
 
 const CONC = Number(process.env.P2_CONCURRENCY ?? 50);
 const schema = readFileSync(new URL('./schema.sql', import.meta.url), 'utf8');
@@ -35,7 +35,6 @@ for (const strategy of ['B', 'C']) {
       assert.equal(ok.filter((r) => !r.reused).length, 1);
       assert.equal(ok.filter((r) => r.reused).length, CONC - 1);
       assert.equal(new Set(ok.map((r) => r.pseudonym)).size, 1);
-      const { subjectLookup } = await import('./lib/crypto.mjs');
       assert.equal(await activeRows(subjectLookup(keys.kIndex, 'CUSTOMER', subjectId).toString('hex')), 1);
     }
   });
@@ -56,6 +55,18 @@ for (const strategy of ['B', 'C']) {
     assert.deepEqual(Object.fromEntries(rows.map((r) => [r.status, r.n])), { expired: 1, active: 1 });
   });
 }
+
+test('P-2 guard: without the advisory lock (strategy A) the same parallel scenario is rejected by uq_mapping_active', async () => {
+  const clock = new Clock();
+  const rejections = [];
+  for (let round = 0; round < 10 && rejections.length === 0; round++) {
+    const subjectId = `CUST-GUARD${round}`;
+    const settled = await parallel(CONC, () => buatToken(db.app, keys, req({ subjectId }), { strategy: 'A', clock }));
+    rejections.push(...settled.filter((s) => s.status === 'rejected').map((s) => s.reason));
+  }
+  assert.ok(rejections.length > 0, 'strategy A never failed: the concurrency tests would not notice a missing lock');
+  assert.ok(rejections.every((e) => e.code === '23505' && e.constraint === 'uq_mapping_active'));
+});
 
 test('FR-05 one subject gets different tokens per service/purpose; different subjects get different tokens (parallel)', async () => {
   const clock = new Clock();

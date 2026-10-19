@@ -6,8 +6,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const { Pool, Client } = pg;
-const host = process.env.PG_HOST ?? 'localhost';
-const port = Number(process.env.PG_PORT ?? 5432);
+const required = (key) => {
+  const value = process.env[key];
+  if (!value) throw new Error(`${key} must be set: host and port come from the environment (ADR-0004)`);
+  return value;
+};
+const host = required('PG_HOST');
+const port = Number(required('PG_PORT'));
+if (!Number.isInteger(port)) throw new Error('PG_PORT must be an integer');
 const secretsDir = process.env.PG_SECRETS_DIR ?? fileURLToPath(new URL('../../../secrets/', import.meta.url));
 
 const password = (role) => readFileSync(join(secretsDir, `${role}_password`), 'utf8').trim();
@@ -28,10 +34,12 @@ export async function createTestDb(name, schemaSql) {
   const admin = new Client(conn('privpay_test_admin', 'postgres'));
   await admin.connect();
   try {
-    await admin.query(`DROP DATABASE IF EXISTS ${name} WITH (FORCE)`);
-    await admin.query(`CREATE DATABASE ${name} OWNER privpay_privacy_owner`);
-    await admin.query(`REVOKE ALL ON DATABASE ${name} FROM PUBLIC`);
-    await admin.query(`GRANT CONNECT ON DATABASE ${name} TO privpay_app, privpay_auditor`);
+    // DDL cannot take bind parameters; the identifier is validated above and quoted here.
+    const ident = admin.escapeIdentifier(name);
+    await admin.query(`DROP DATABASE IF EXISTS ${ident} WITH (FORCE)`);
+    await admin.query(`CREATE DATABASE ${ident} OWNER privpay_privacy_owner`);
+    await admin.query(`REVOKE ALL ON DATABASE ${ident} FROM PUBLIC`);
+    await admin.query(`GRANT CONNECT ON DATABASE ${ident} TO privpay_app, privpay_auditor`);
   } finally { await admin.end(); }
 
   const owner = new Client(conn('privpay_privacy_owner', name));

@@ -25,7 +25,7 @@ P-3 menguji AES-256-GCM dengan AAD, blind index HMAC, dan pencarian lewat `subje
 - **Rotasi `K_index`:** mengganti `subject_lookup` suatu baris tidak mengganggu dekripsi ciphertext yang terikat `id`.
 - **Basis data:** dump `subject_id_enc` tidak memuat `customer_id` mentah (FR-25); pencarian lewat `subject_lookup` menemukan dan mendekripsi barisnya; `chk_purged` menolak pengosongan setengah (`23514`); `audit_log.attribute_names` hanya menerima {`customer_id`, `nik`, `nama`} dan menolak `hp` serta teks bebas (`23514`, keputusan E-06).
 - **NFR-04:** pada 20.000 baris dengan pengaturan planner bawaan, pencarian lewat `subject_lookup` + layanan + purpose + status aktif dan pencarian lewat `pseudonym` memakai indeks, bukan `Seq Scan`. Ini bukan pengganti `EXPLAIN ANALYZE` pada data M6/M7.
-- **Mutasi:** mengosongkan AAD membuat tes pindah-antar-jenis dan antar-kolom gagal.
+- **Mutasi (manual, tidak dikomit, terhadap tes terbaru):** menghapus `rowId` dari `aadMapping` dan `aadVault` membuat empat tes pengikatan baris gagal (pindah antar baris, antar kolom/pelanggan, penyandian AAD, dan penukaran langsung di database). Tes "cannot be moved across subject types ... or vault columns" memakai AAD berupa string polos dan hanya menjaga pemisahan jenis/kolom, bukan pengikatan baris.
 
 ## Batas bukti
 

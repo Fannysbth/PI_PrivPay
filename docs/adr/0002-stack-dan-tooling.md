@@ -35,6 +35,8 @@ Seluruh usulan pada tabel diterima, dengan penyesuaian:
 
 Jangan memasang dependensi di luar daftar ini tanpa alasan, lisensi, dan hasil `pnpm audit`.
 
+**Dependensi yang sudah dipasang:** `pg@8.23.1` (+13 paket transitif) di folder prototipe Fase 2. Alasan: driver PostgreSQL yang disepakati (tanpa ORM). Lisensi: MIT, kecuali `pg-int8` dan `split2` (ISC). `pnpm audit --prod --audit-level high`: "No known vulnerabilities found" (2026-10-19). Manajer paket dijalankan lewat `corepack pnpm` karena `corepack enable` butuh admin di mesin ini.
+
 ## Konsekuensi
 
 Dampak keamanan: kontrol pencegah kebocoran PII dan rantai pasok dibangun sejak M0. Dampak pengukuran: semua layanan memakai tumpukan sama sehingga perbandingan baseline vs proposed adil.
