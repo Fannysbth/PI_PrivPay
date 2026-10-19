@@ -14,6 +14,7 @@ Mengaktifkan job CI untuk gerbang lokal dengan PostgreSQL service container, dan
 ## Kriteria penerimaan
 
 - [ ] Job `quality` (lint, typecheck, unit), `integration` (PostgreSQL 16 service + bootstrap + `test:integration`/`test:security`), `dependencies` (`pnpm audit --prod --audit-level high`), `secrets` (gitleaks bersama) (S-60..S-65).
+- [ ] Job `integration` menjalankan `scripts/db/bootstrap.sql` dua kali pada PostgreSQL service dengan admin sekali pakai (kata sandi dibangkitkan per run) dan memeriksa bahwa katalog peran, database, dan `pg_auth_members` identik antara jalan pertama dan kedua, serta tidak ada `SET`/`INHERIT` selain `privpay_test_admin` pada peran pemilik (idempotensi M0-05, NFR-09).
 - [ ] Setiap GitHub Action dipin ke commit SHA dan `permissions:` minimal (S-08); versi Node dari `.nvmrc`.
 - [ ] Job e2e berbasis compose tetap tidak aktif sampai DK-01 (ADR-0004).
 

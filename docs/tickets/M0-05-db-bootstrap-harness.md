@@ -14,7 +14,8 @@ Memperluas `scripts/db/bootstrap.*` menjadi satu database dan pasangan peran per
 ## Kriteria penerimaan
 
 - [ ] Bootstrap idempoten membuat database `privpay_<svc>` dan peran `privpay_<svc>_owner`/`privpay_<svc>_app` untuk transaction, fraud, notification, reconciliation (privacy tetap `privpay_privacy_owner`, `privpay_app`, `privpay_auditor`); tidak membuat superuser dan hanya menyentuh objek `privpay_*` (ADR-0004, NFR-09).
-- [ ] Keanggotaan admin pada peran pemilik dicabut di akhir skrip dan statusnya dicetak; kegagalan di tengah diperbaiki dengan menjalankan ulang.
+- [ ] Keanggotaan sementara admin pada peran pemilik dicabut di akhir skrip: setelah bootstrap hanya `privpay_test_admin` yang punya `SET`/`INHERIT` pada peran pemilik (tes `M0-05 only the test admin can use the schema owner roles after the bootstrap`), dan statusnya dicetak. Opsi ADMIN yang PostgreSQL 16+ berikan ke pembuat peran tidak dapat dicabut oleh admin non-superuser dan tetap tercatat di `pg_auth_members` tanpa hak pakai (koreksi ADR-0004). Kegagalan di tengah diperbaiki dengan menjalankan ulang.
+- [ ] Idempotensi dua kali jalan: butuh kredensial admin, yang sengaja tidak dibaca tes lokal; diuji otomatis di CI (M0-07) dan diperiksa manual lokal (lihat CHANGELOG).
 - [ ] Harness `createTestDb(service)` membuat ulang `privpay_<svc>_test` oleh `privpay_test_admin`, menjalankan skema lewat peran pemilik, dan mengembalikan pool untuk peran runtime asli; menolak nama selain `privpay_*`; host/port dari env.
 
 ## Tes dulu (tdd)
