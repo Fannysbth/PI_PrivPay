@@ -71,3 +71,7 @@ Thumbs.db
 __pycache__/
 *.pyc
 .luarocks/
+
+# Local prompt notes
+/PROMPT_AWAL.md
+/PROMPT_TAMBAHAN.md
