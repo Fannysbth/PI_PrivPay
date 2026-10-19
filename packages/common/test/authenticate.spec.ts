@@ -1,8 +1,8 @@
-import { generateKeyPairSync, type KeyObject } from 'node:crypto';
+import { createHmac, generateKeyPairSync, type KeyObject } from 'node:crypto';
 import { FakeClock } from '../src/clock';
 import { DomainError } from '../src/errors';
 import { signJwt } from '../src/jwt';
-import { authenticate, type AuthenticateOptions } from '../src/authenticate';
+import { authenticate, ROLE_SERVICES, type AuthenticateOptions } from '../src/authenticate';
 
 // Tokens are minted here with a key made for the run, the way the dev IdP would, then handed to authenticate.
 const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
@@ -121,15 +121,18 @@ describe('M1-02 requesting_service comes only from the azp of the Authorization 
   });
 
   it('M1-02 an actor token never decides the requesting service, even one that names a service azp', () => {
-    const actor = serviceToken('api-gateway', ['reconciliation-service'], { roles: ['auditor'] });
-    const result = reason(
-      {
-        authorization: bearer(serviceToken('reconciliation', ['reconciliation-service'])),
-        'x-actor-token': actor,
-      },
-      options('reconciliation-service'),
-    );
-    expect(result).toBe('FORBIDDEN_ROLE');
+    // A service token that names itself as the actor, with or without a role claim, is never accepted as a person.
+    const caller = bearer(serviceToken('reconciliation', ['reconciliation-service']));
+    const asActor = (claims: Record<string, unknown>): string =>
+      reason(
+        {
+          authorization: caller,
+          'x-actor-token': serviceToken('api-gateway', ['reconciliation-service'], claims),
+        },
+        options('reconciliation-service'),
+      );
+    expect(asActor({})).toBe('FORBIDDEN_ROLE');
+    expect(asActor({ roles: ['auditor'] })).toBe('UNAUTHENTICATED');
     const plain = authenticate(
       { authorization: bearer(serviceToken('reconciliation', ['reconciliation-service'])) },
       options('reconciliation-service'),
@@ -219,7 +222,39 @@ describe('M1-02 the Authorization header and the token are checked first (ADR-00
     );
   });
 
-  it('M1-02 alg none and HS256 are UNAUTHENTICATED', () => {
+  it('M1-02 HS256 signed with the public key as the secret is UNAUTHENTICATED', () => {
+    const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT', kid: KID })).toString(
+      'base64url',
+    );
+    const payload = Buffer.from(
+      JSON.stringify({
+        iss: ISS,
+        sub: 'transaction',
+        azp: 'transaction',
+        aud: ['privacy-service'],
+        iat: NOW,
+        exp: NOW + 300,
+      }),
+    ).toString('base64url');
+    const mac = createHmac('sha256', pair.publicKey.export({ type: 'spki', format: 'pem' }))
+      .update(`${header}.${payload}`)
+      .digest('base64url');
+    expect(
+      failure({ authorization: bearer(`${header}.${payload}.${mac}`) }, options('privacy-service')),
+    ).toBe('UNAUTHENTICATED:alg');
+  });
+
+  it('M1-02 the Bearer scheme is read without regard to case (RFC 7235), the token itself is not', () => {
+    const token = good();
+    for (const scheme of ['Bearer', 'bearer', 'BEARER']) {
+      expect(
+        authenticate({ authorization: `${scheme} ${token}` }, options('privacy-service'))
+          .requestingService,
+      ).toBe('TRANSACTION');
+    }
+  });
+
+  it('M1-02 alg none is UNAUTHENTICATED', () => {
     const none = `${Buffer.from(JSON.stringify({ alg: 'none', kid: KID })).toString('base64url')}.${Buffer.from(JSON.stringify({ iss: ISS, azp: 'transaction', aud: ['privacy-service'], iat: NOW, exp: NOW + 300 })).toString('base64url')}.`;
     expect(failure({ authorization: bearer(none) }, options('privacy-service'))).toBe(
       'UNAUTHENTICATED:alg',
@@ -367,20 +402,70 @@ describe('M1-02 the actor token (X-Actor-Token) carries a person, never a servic
     });
   });
 
-  it('M1-02 a service token, a customer token and a bank token are not people', () => {
+  it('M1-02 a service token, a customer token and a bank token are not people: FORBIDDEN_ROLE', () => {
     const attempts = [
       serviceToken('api-gateway', [service]),
       humanToken('customer-app', 'customer', [service], { customer_id: 'CUST-000101' }),
       humanToken('bank-simulator', 'bank', [service]),
-      serviceToken('transaction', [service], { roles: ['auditor'] }),
     ];
     for (const actor of attempts) {
-      expect(reason({ authorization: caller(), 'x-actor-token': actor }, options(service))).toMatch(
-        /FORBIDDEN_ROLE|UNAUTHENTICATED/,
+      expect(failure({ authorization: caller(), 'x-actor-token': actor }, options(service))).toBe(
+        'FORBIDDEN_ROLE:not_a_person',
       );
-      expect(
-        reason({ authorization: caller(), 'x-actor-token': actor }, options(service)),
-      ).not.toBe('accepted');
+    }
+  });
+
+  it('M1-02 claims that do not fit the kind of caller are UNAUTHENTICATED in the actor token too, as in Authorization', () => {
+    const broken = [
+      serviceToken('transaction', [service], { roles: ['auditor'] }),
+      humanToken('admin-console', [], [service]),
+      humanToken('admin-console', ['auditor', 'admin'], [service]),
+      humanToken('admin-console', 'superuser', [service]),
+      humanToken('admin-console', 'bank', [service]),
+      humanToken('admin-console', 'auditor', [service], { customer_id: 'CUST-000101' }),
+      mint({ sub: 'u', azp: 'admin-console', aud: [service] }),
+    ];
+    for (const actor of broken) {
+      expect(failure({ authorization: caller(), 'x-actor-token': actor }, options(service))).toBe(
+        'UNAUTHENTICATED:claims',
+      );
+    }
+  });
+
+  it('M1-02 an actor token with a foreign signer, alg none, HS256 or another issuer is UNAUTHENTICATED', () => {
+    const claimsOf = {
+      iss: ISS,
+      sub: 'usr-auditor',
+      azp: 'admin-console',
+      aud: [service],
+      roles: ['auditor'],
+      iat: NOW,
+      exp: NOW + 300,
+    };
+    const segment = (value: unknown): string =>
+      Buffer.from(JSON.stringify(value)).toString('base64url');
+    const none = `${segment({ alg: 'none', kid: KID })}.${segment(claimsOf)}.`;
+    const hsHeader = segment({ alg: 'HS256', typ: 'JWT', kid: KID });
+    const hs = `${hsHeader}.${segment(claimsOf)}.${createHmac(
+      'sha256',
+      pair.publicKey.export({ type: 'spki', format: 'pem' }),
+    )
+      .update(`${hsHeader}.${segment(claimsOf)}`)
+      .digest('base64url')}`;
+    const attempts: [string, string][] = [
+      [
+        humanToken('admin-console', 'auditor', [service], {}).replace(/\.[^.]+$/, '.AAAA'),
+        'signature',
+      ],
+      [mint({ ...claimsOf, sub: 'usr-auditor' }, stranger.privateKey), 'signature'],
+      [none, 'alg'],
+      [hs, 'alg'],
+      [humanToken('admin-console', 'auditor', [service], { iss: 'someone-else' }), 'issuer'],
+    ];
+    for (const [actor, category] of attempts) {
+      expect(failure({ authorization: caller(), 'x-actor-token': actor }, options(service))).toBe(
+        `UNAUTHENTICATED:${category}`,
+      );
     }
   });
 
@@ -450,4 +535,36 @@ describe('M1-02 the actor token (X-Actor-Token) carries a person, never a servic
       ),
     ).toBe('FORBIDDEN_ROLE');
   });
+});
+
+describe('M1-02 K-03 the receiver checks the role against its own path, not only the aud the issuer wrote', () => {
+  const services = [
+    'api-gateway',
+    'privacy-service',
+    'transaction-service',
+    'reconciliation-service',
+    'fraud-service',
+    'notification-service',
+  ];
+  const roles = ['admin', 'auditor', 'fraud_analyst'] as const;
+  const cases = roles.flatMap((role) => services.map((service) => [role, service] as const));
+
+  it.each(cases)(
+    'M1-02 a %s person token that names every service is accepted at %s only on its path',
+    (role, service) => {
+      // The token lists every service in aud, as an issuer with a bug would write it.
+      const everywhere = humanToken('admin-console', role, services);
+      const onPath = ROLE_SERVICES[role].includes(service);
+      const asPrincipal = failure({ authorization: bearer(everywhere) }, options(service));
+      expect(asPrincipal).toBe(onPath ? 'accepted' : 'FORBIDDEN_ROLE:role_not_here');
+      const viaService = failure(
+        {
+          authorization: bearer(serviceToken('api-gateway', services)),
+          'x-actor-token': everywhere,
+        },
+        options(service),
+      );
+      expect(viaService).toBe(onPath ? 'accepted' : 'FORBIDDEN_ROLE:role_not_here');
+    },
+  );
 });

@@ -6,3 +6,5 @@ export const same = (clientSecret: Buffer, expected: Buffer): boolean =>
 
 export const present = (secret: string | undefined): boolean =>
   secret !== undefined && secret !== '';
+
+export const absent = (secret: string | undefined): boolean => secret === void 0;

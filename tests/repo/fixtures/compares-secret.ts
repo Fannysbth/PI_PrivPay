@@ -12,5 +12,9 @@ export function check(
     request.client_secret == expected,
     hmac.equals(other),
     expected === request.client_secret,
+    // The secret as the argument instead of the receiver, a string key, and Buffer.compare.
+    other.equals(hmac),
+    Buffer.compare(other, hmac) === 0,
+    request['client_secret'] === expected,
   ];
 }

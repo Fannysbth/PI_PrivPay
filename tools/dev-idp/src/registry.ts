@@ -1,6 +1,8 @@
 // Who the dev IdP knows and what it may put in a token (ADR-0007). Keycloak takes this over in the Docker phase
 // (DK-04); until then these tables are the single place that says which client may ask for which audience.
 
+import { ROLE_SERVICES } from '@privpay/common';
+
 export const ISSUER = 'privpay-dev-idp';
 /** The audience of tokens meant for the dev IdP's own admin API. */
 export const DEV_IDP_AUDIENCE = 'dev-idp';
@@ -53,9 +55,10 @@ export const CLIENT_ROLES: Readonly<Record<HumanClient, readonly Role[]>> = {
 export const ROLE_AUDIENCES: Readonly<Record<Role, readonly string[]>> = {
   customer: ['api-gateway'],
   bank: ['api-gateway'],
-  admin: ['api-gateway', 'privacy-service'],
-  auditor: ['api-gateway', 'reconciliation-service', 'privacy-service'],
-  fraud_analyst: ['api-gateway', 'transaction-service'],
+  // The same table the receiving services check against (K-03): one source, in @privpay/common.
+  admin: ROLE_SERVICES.admin,
+  auditor: ROLE_SERVICES.auditor,
+  fraud_analyst: ROLE_SERVICES.fraud_analyst,
 };
 
 export interface Registry {

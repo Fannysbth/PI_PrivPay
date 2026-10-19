@@ -58,7 +58,7 @@ describe('M0-01 the lint configuration enforces the project conventions', () => 
 
   it('M1-02 reports === , !== , == and .equals between secrets (Phase 2 requirement: safeEqual only)', async () => {
     const rules = await rulesReportedFor('compares-secret.ts');
-    expect(rules.filter((rule) => rule === 'no-restricted-syntax')).toHaveLength(5);
+    expect(rules.filter((rule) => rule === 'no-restricted-syntax')).toHaveLength(8);
   });
 
   it('M1-02 accepts timingSafeEqual, a length check and presence checks on secrets', async () => {

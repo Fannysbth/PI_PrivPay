@@ -1,6 +1,7 @@
 import { createHash, generateKeyPairSync, randomUUID, type KeyObject } from 'node:crypto';
 import {
   DomainError,
+  parseBearer,
   safeEqual,
   signJwt,
   verifyJwt,
@@ -59,7 +60,6 @@ export interface IdentityProviderOptions {
 
 const MAX_TTL_SECONDS = 300;
 const CUSTOMER_ID = /^CUST-([0-9]{6})$/;
-const BEARER = /^Bearer ([A-Za-z0-9._-]+)$/;
 const CUSTOMER_CLIENT: HumanClient = 'customer-app';
 const GATEWAY: ServiceClient = 'api-gateway';
 
@@ -148,9 +148,8 @@ export class IdentityProvider {
    * somehow granted to it.
    */
   authenticateAdmin(authorization: string | undefined): { client: ServiceClient } {
-    const token = authorization === undefined ? null : BEARER.exec(authorization)?.[1];
-    if (token === null || token === undefined)
-      throw new DomainError('UNAUTHENTICATED', 'no_bearer');
+    const token = parseBearer(authorization);
+    if (token === undefined) throw new DomainError('UNAUTHENTICATED', 'no_bearer');
     let claims: Record<string, unknown>;
     try {
       claims = verifyJwt(token, {

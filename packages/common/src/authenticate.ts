@@ -17,13 +17,26 @@ export type RequestingService =
 export const HUMAN_ROLES = ['admin', 'auditor', 'fraud_analyst'] as const;
 export type HumanRole = (typeof HUMAN_ROLES)[number];
 
+/**
+ * The services each role's operations pass through (platform spec 7 item 6, K-03). The issuer writes `aud` from this
+ * table; the receiver checks it again, so a token with a too-wide `aud` still cannot be used off its path.
+ */
+export const ROLE_SERVICES: Readonly<Record<HumanRole, readonly string[]>> = {
+  auditor: ['api-gateway', 'reconciliation-service', 'privacy-service'],
+  fraud_analyst: ['api-gateway', 'transaction-service'],
+  admin: ['api-gateway', 'privacy-service'],
+};
+
+/** The gateway is the only service that takes customer tokens (ADR-0007 item 4). */
+const GATEWAY_SERVICE = 'api-gateway';
+
 export interface AuthenticateOptions {
   readonly clock: Clock;
   readonly issuer: string;
   /** This service: both tokens must have been made for it (`aud`). */
   readonly service: string;
   readonly resolveKey: (kid: string | undefined) => KeyObject | undefined;
-  /** Only the gateway sets this: customer tokens are accepted nowhere else (ADR-0007 item 4). */
+  /** Set by the gateway only; every other service refuses customer tokens whatever this says. */
   readonly acceptCustomerToken?: boolean;
 }
 
@@ -40,9 +53,23 @@ export interface Authenticated {
   readonly customerId?: string;
 }
 
+/** Which rule refused the call. It is the only thing that travels with the error: never a token, never a claim. */
+export type AuthFailure =
+  | JwtFailure
+  | 'no_bearer'
+  | 'repeated_header'
+  | 'claims'
+  | 'azp'
+  | 'customer_token'
+  | 'double_identity'
+  | 'actor_not_allowed'
+  | 'not_a_person'
+  | 'role_not_here';
+
 // Tokens live at most five minutes (NFR-21); a longer one is refused even when its signature is good.
 const MAX_LIFETIME_SECONDS = 300;
-const BEARER = /^Bearer ([A-Za-z0-9._-]+)$/;
+// RFC 7235: the scheme name is case-insensitive; the token after it is not.
+const BEARER = /^bearer ([A-Za-z0-9._-]+)$/i;
 const CUSTOMER_ID = /^CUST-[0-9]{6}$/;
 
 /** `azp` of a service account -> the name Privacy Service and the others use. */
@@ -54,14 +81,22 @@ const SERVICE_AZP: Readonly<Record<string, RequestingService>> = {
   reconciliation: 'RECONCILIATION',
 };
 
-const fail = (reason: 'UNAUTHENTICATED' | 'FORBIDDEN_ROLE', category: string): never => {
-  // The category says which rule refused the call; it is the only thing that may travel with the error.
+const refuse = (reason: 'UNAUTHENTICATED' | 'FORBIDDEN_ROLE', category: AuthFailure): never => {
   throw new DomainError(reason, category);
 };
 
-/** One header value, exactly once: a repeated header could hide a second token from the check. */
+/** The token in an `Authorization: Bearer <token>` value, or undefined when it is not that. */
+export function parseBearer(value: string | undefined): string | undefined {
+  return value === undefined ? undefined : BEARER.exec(value)?.[1];
+}
+
+/**
+ * One header value, exactly once. Node already keeps only the first of a repeated `authorization` header and joins a
+ * repeated `x-actor-token` with a comma (which then fails as a token); the array case is for other adapters, so a
+ * repeated header can never hide a second token from the check.
+ */
 function single(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) return fail('UNAUTHENTICATED', 'repeated_header');
+  if (Array.isArray(value)) return refuse('UNAUTHENTICATED', 'repeated_header');
   return value;
 }
 
@@ -77,7 +112,7 @@ function verified(token: string, options: AuthenticateOptions): Record<string, u
   } catch (error) {
     // A genuine token made for another service is a caller that may not be here (403), not a forged one (401).
     if (error instanceof DomainError && error.cause === ('audience' satisfies JwtFailure)) {
-      return fail('FORBIDDEN_ROLE', 'audience');
+      return refuse('FORBIDDEN_ROLE', 'audience');
     }
     throw error;
   }
@@ -99,39 +134,49 @@ interface Principal {
   readonly customerId?: string;
 }
 
-/** Reads who the Authorization token says it is, and refuses a token whose claims do not fit that kind of caller. */
+/**
+ * Who a verified token says it is, by its `azp`, and a refusal for a token whose claims do not fit that kind of
+ * caller. Used for the Authorization token and for the actor token alike, so both are held to the same rules.
+ */
 function principalOf(claims: Record<string, unknown>): Principal {
   const subject = claims['sub'];
   const azp = claims['azp'];
   if (typeof subject !== 'string' || subject === '' || typeof azp !== 'string') {
-    return fail('UNAUTHENTICATED', 'claims');
+    return refuse('UNAUTHENTICATED', 'claims');
   }
   const roles = rolesOf(claims);
   const hasCustomerId = claims['customer_id'] !== undefined;
 
   if (Object.hasOwn(SERVICE_AZP, azp)) {
     // A service account has no person's claims: roles or customer_id on it would be a forged mix.
-    if (claims['roles'] !== undefined || hasCustomerId) return fail('UNAUTHENTICATED', 'claims');
+    if (claims['roles'] !== undefined || hasCustomerId) return refuse('UNAUTHENTICATED', 'claims');
     return { requestingService: SERVICE_AZP[azp] as RequestingService, subject };
   }
   if (azp === 'bank-simulator') {
-    if (roles?.length !== 1 || roles[0] !== 'bank' || hasCustomerId)
-      return fail('UNAUTHENTICATED', 'claims');
+    if (roles?.length !== 1 || roles[0] !== 'bank' || hasCustomerId) {
+      return refuse('UNAUTHENTICATED', 'claims');
+    }
     return { requestingService: 'BANK', subject };
   }
   if (azp === 'admin-console') {
     const role = humanRole(claims);
-    if (role === undefined || hasCustomerId) return fail('UNAUTHENTICATED', 'claims');
+    if (role === undefined || hasCustomerId) return refuse('UNAUTHENTICATED', 'claims');
     return { requestingService: 'ADMIN_CONSOLE', subject, role };
   }
   if (azp === 'customer-app') {
     const customerId = claims['customer_id'];
-    if (roles?.length !== 1 || roles[0] !== 'customer') return fail('UNAUTHENTICATED', 'claims');
-    if (typeof customerId !== 'string' || !CUSTOMER_ID.test(customerId))
-      return fail('UNAUTHENTICATED', 'claims');
+    if (roles?.length !== 1 || roles[0] !== 'customer') return refuse('UNAUTHENTICATED', 'claims');
+    if (typeof customerId !== 'string' || !CUSTOMER_ID.test(customerId)) {
+      return refuse('UNAUTHENTICATED', 'claims');
+    }
     return { requestingService: 'CUSTOMER', subject, customerId };
   }
-  return fail('UNAUTHENTICATED', 'azp');
+  return refuse('UNAUTHENTICATED', 'azp');
+}
+
+/** A person may only act where their role's operations pass (K-03), whatever `aud` the issuer wrote. */
+function assertRoleHere(role: HumanRole, options: AuthenticateOptions): void {
+  if (!ROLE_SERVICES[role].includes(options.service)) refuse('FORBIDDEN_ROLE', 'role_not_here');
 }
 
 /** The person in an X-Actor-Token: a person of the admin console with exactly one role, never anything else. */
@@ -139,46 +184,41 @@ function actorOf(
   token: string,
   options: AuthenticateOptions,
 ): { actorId: string; role: HumanRole } {
-  const claims = verified(token, options);
-  const role = humanRole(claims);
-  const subject = claims['sub'];
-  if (
-    claims['azp'] !== 'admin-console' ||
-    role === undefined ||
-    claims['customer_id'] !== undefined
-  ) {
-    return fail('FORBIDDEN_ROLE', 'not_a_person');
+  const principal = principalOf(verified(token, options));
+  if (principal.requestingService !== 'ADMIN_CONSOLE' || principal.role === undefined) {
+    return refuse('FORBIDDEN_ROLE', 'not_a_person');
   }
-  if (typeof subject !== 'string' || subject === '') return fail('UNAUTHENTICATED', 'claims');
-  return { actorId: subject, role };
+  assertRoleHere(principal.role, options);
+  return { actorId: principal.subject, role: principal.role };
 }
 
 /**
  * Who is calling and on whose behalf (ADR-0007, platform spec 7). The caller is the `azp` of the Authorization token,
  * mapped through a fixed allowlist: no body field, claim, or other header can change it (D-16). A person may be
  * carried in X-Actor-Token by a service account; a token that already is a person takes none, and neither do the bank
- * and customers. `aud` of both tokens must name this service, which is how an actor token is limited to the services
- * on its role's path (K-03). Throws UNAUTHENTICATED (no or invalid proof) or FORBIDDEN_ROLE (a genuine caller that may
- * not do this), each with a short category and never a token.
+ * and customers. `aud` of both tokens must name this service, and a person's role must pass through it (K-03).
+ * Throws UNAUTHENTICATED (no or invalid proof) or FORBIDDEN_ROLE (a genuine caller that may not do this), each with a
+ * short category as `cause`, never a token.
  */
 export function authenticate(headers: AuthHeaders, options: AuthenticateOptions): Authenticated {
-  const authorization = single(headers['authorization']);
-  const token = authorization === undefined ? undefined : BEARER.exec(authorization)?.[1];
-  if (token === undefined) return fail('UNAUTHENTICATED', 'no_bearer');
+  const token = parseBearer(single(headers['authorization']));
+  if (token === undefined) return refuse('UNAUTHENTICATED', 'no_bearer');
 
   const principal = principalOf(verified(token, options));
   if (principal.requestingService === 'CUSTOMER') {
-    if (options.acceptCustomerToken !== true || options.service !== 'api-gateway') {
-      return fail('FORBIDDEN_ROLE', 'customer_token');
+    if (options.acceptCustomerToken !== true || options.service !== GATEWAY_SERVICE) {
+      return refuse('FORBIDDEN_ROLE', 'customer_token');
     }
   }
+  if (principal.role !== undefined) assertRoleHere(principal.role, options);
 
   const actorToken = single(headers['x-actor-token']);
   if (actorToken !== undefined) {
-    if (principal.requestingService === 'ADMIN_CONSOLE')
-      return fail('FORBIDDEN_ROLE', 'double_identity');
+    if (principal.requestingService === 'ADMIN_CONSOLE') {
+      return refuse('FORBIDDEN_ROLE', 'double_identity');
+    }
     if (principal.requestingService === 'BANK' || principal.requestingService === 'CUSTOMER') {
-      return fail('FORBIDDEN_ROLE', 'actor_not_allowed');
+      return refuse('FORBIDDEN_ROLE', 'actor_not_allowed');
     }
     return {
       requestingService: principal.requestingService,
