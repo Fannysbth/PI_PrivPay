@@ -30,10 +30,13 @@ pnpm test                         # unit
 pnpm test:integration             # butuh PostgreSQL lokal (`scripts/db/bootstrap.ps1` sekali); DB tes dibuat ulang bersih tiap run (ADR-0004)
 pnpm test:security                # kasus TK-xx
 pnpm audit --prod --audit-level high
+gitleaks detect --log-opts="--all" --redact -v --config .gitleaks.toml   # secret scan; v8.30.1, sama dengan CI dan pre-commit
 docker compose up -d --build      # seluruh sistem (NFR-19); DITUNDA sampai M4 stabil (ADR-0004), belum ada
 pnpm newman                       # koleksi Postman, kedua mode
 pnpm pii-scan                     # pemindai nilai kenari (payload, DB, log)
 ```
+
+gitleaks di Windows: `winget install Gitleaks.Gitleaks`. Bila shell belum memuat `%LOCALAPPDATA%\Microsoft\WinGet\Links` di PATH, panggil dengan path lengkap `"$LOCALAPPDATA/Microsoft/WinGet/Links/gitleaks.exe"`. Allowlist PSEU-token dan UUID contoh hanya berlaku di `docs/` dan `tests/`, tidak di `services/` atau `packages/`.
 
 Gerbang lokal sebelum menyatakan tiket selesai: lint, typecheck, test, test:integration, audit, dan pemindaian secret (`gitleaks detect`). Tampilkan keluarannya.
 
