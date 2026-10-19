@@ -1,0 +1,12 @@
+# Extends gitleaks default rules. Keep allowlists narrow and justified.
+title = "PrivPay gitleaks"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Example files only contain placeholders"
+paths = [
+  '''(^|/)\.env\.example$''',
+  '''(^|/)secrets/README\.md$''',
+]
