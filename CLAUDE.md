@@ -47,6 +47,7 @@ Gerbang lokal sebelum menyatakan tiket selesai: lint, typecheck, test, test:inte
 ```
 services/{gateway,auth,privacy-service,transaction-service,fraud-service,
           notification-service,reconciliation-service,bank-simulator,sms-simulator}
+tools/dev-idp           # penerbit JWT tiruan fase lokal (ADR-0004); diganti Keycloak di fase Docker
 packages/common        # tipe, error, logger berredaksi, klien HTTP (timeout/retry), zod schema bersama
 tests/{functional,security,pii-scan,performance}
 deploy/                # compose, konfigurasi Kong/Keycloak/Prometheus
