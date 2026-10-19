@@ -1,0 +1,32 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "packages/common/tsconfig.build.json"
+    },
+    {
+      "path": "services/gateway/tsconfig.build.json"
+    },
+    {
+      "path": "services/privacy-service/tsconfig.build.json"
+    },
+    {
+      "path": "services/transaction-service/tsconfig.build.json"
+    },
+    {
+      "path": "services/fraud-service/tsconfig.build.json"
+    },
+    {
+      "path": "services/notification-service/tsconfig.build.json"
+    },
+    {
+      "path": "services/reconciliation-service/tsconfig.build.json"
+    },
+    {
+      "path": "services/bank-simulator/tsconfig.build.json"
+    },
+    {
+      "path": "services/sms-simulator/tsconfig.build.json"
+    }
+  ]
+}

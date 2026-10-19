@@ -129,6 +129,8 @@ describe('M0-07 each gate of the local check runs in CI (platform spec 14)', () 
       'pnpm lint',
       'pnpm typecheck',
       'pnpm test',
+      // N-04: the built services must start as real processes (also proves the SIGTERM shutdown on Linux).
+      'pnpm test:smoke',
     ]) {
       expect(commands).toContain(command);
     }

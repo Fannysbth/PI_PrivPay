@@ -5,5 +5,8 @@
   "description": "PrivPay notification-service (skeleton: the shared service bootstrap only)",
   "dependencies": {
     "@privpay/common": "workspace:*"
+  },
+  "scripts": {
+    "start": "node dist/main.js"
   }
 }

@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M1-01 (bagian 1) N-04: layanan dibangun dengan `tsc` dan dijalankan dengan `node dist`
+
+- Ditambah: `pnpm build` (`tsc -b tsconfig.build.json`, referensi proyek: `@privpay/common` lebih dulu, lalu delapan layanan) dan `pnpm test:smoke` (build, lalu tiap layanan hasil build dijalankan sebagai proses: `/health` di loopback, SIGTERM keluar dengan kode 0 di Linux, tanpa `PRIVACY_MODE` keluar dengan kode 1 dan hanya menyebut nama variabel). Tiap layanan punya `tsconfig.build.json` dan skrip `start` (`node dist/main.js`). Keputusan Fanny (N-04): `tsx` hanya untuk pengembangan.
+- Diubah: `exports` `@privpay/common` kini `{source, default}`: kondisi `source` (TypeScript) dipakai typecheck (`customConditions` di `tsconfig.json`) dan Jest (`customExportConditions`); `default` (hasil build) dipakai `node`. Konfigurasi build tidak memuat `customConditions`, sehingga layanan dikompilasi terhadap `dist` paket. CI: langkah `pnpm test:smoke` di job `quality`.
+- Batas yang diketahui: Windows tidak mengirim SIGTERM ke proses anak, jadi tes asap hanya memastikan proses berhenti; penutupan anggun sungguhan terbukti di Linux (CI), yang belum pernah dijalankan (N-07).
+- Tes: 16 tes asap, 18 tes struktur build, 1 tes CI. Tes struktur dan konfigurasi dibuat sebelum tes asap lulus, tetapi tes asap dijalankan merah dulu (`tsconfig.build.json` belum ada).
+
 ### Pembersihan `.gitignore`
 
 - Diubah: `.gitignore` tidak lagi memuat sisa perintah PowerShell (`@' ... '@ | Set-Content`) di awal berkas dan pola yang berulang. Pola `secrets/` (yang mengabaikan seluruh direktori sehingga `!secrets/README.md` dan `!secrets/.gitkeep` tidak pernah berlaku) dihapus; yang tersisa `secrets/*` dengan dua pengecualian itu. `PROMPT_AWAL.md` dan `PROMPT_TAMBAHAN.md` tetap diabaikan.

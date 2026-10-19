@@ -25,6 +25,57 @@ describe.each(SERVICE_IDS)('M0-06 %s is only the shared bootstrap', (id) => {
   });
 });
 
+describe.each(SERVICE_IDS)('N-04 %s is built with tsc and started with node dist/main.js', (id) => {
+  const read = (file: string): unknown =>
+    JSON.parse(readFileSync(join(root, 'services', id, file), 'utf8'));
+
+  it('N-04 its build config emits src to dist and builds @privpay/common first', () => {
+    expect(read('tsconfig.build.json')).toEqual({
+      extends: '../../tsconfig.build-base.json',
+      compilerOptions: { rootDir: 'src', outDir: 'dist' },
+      include: ['src'],
+      references: [{ path: '../../packages/common/tsconfig.build.json' }],
+    });
+  });
+
+  it('N-04 the start script runs the built main.js and nothing else', () => {
+    expect((read('package.json') as { scripts: unknown }).scripts).toEqual({
+      start: 'node dist/main.js',
+    });
+  });
+});
+
+describe('N-04 the root build covers every service and the shared package', () => {
+  it('N-04 tsconfig.build.json references @privpay/common and each service, and customConditions stay out of builds', () => {
+    const build = JSON.parse(readFileSync(join(root, 'tsconfig.build.json'), 'utf8')) as {
+      references: { path: string }[];
+    };
+    expect(build.references.map((r) => r.path).sort()).toEqual(
+      ['packages/common', ...SERVICE_IDS.map((id) => `services/${id}`)]
+        .map((p) => `${p}/tsconfig.build.json`)
+        .sort(),
+    );
+    // A build resolves workspace packages through their built output; only the root typecheck reads source.
+    expect(readFileSync(join(root, 'tsconfig.build-base.json'), 'utf8')).not.toContain(
+      'customConditions',
+    );
+    expect(readFileSync(join(root, 'tsconfig.json'), 'utf8')).toContain('customConditions');
+  });
+
+  it('N-04 @privpay/common exposes source to tests and typecheck and built output to node', () => {
+    const exportsMap = (
+      JSON.parse(readFileSync(join(root, 'packages', 'common', 'package.json'), 'utf8')) as {
+        exports: Record<string, { source: string; default: string }>;
+      }
+    ).exports;
+    for (const entry of Object.values(exportsMap)) {
+      expect(entry.source).toMatch(/^\.\/src\/.+\.ts$/);
+      expect(entry.default).toMatch(/^\.\/dist\/.+\.js$/);
+    }
+    expect(Object.keys(exportsMap).sort()).toEqual(['.', './nest', './testing']);
+  });
+});
+
 describe('M0-06 the service list matches the repository', () => {
   it('M0-06 the services that have a main.ts are exactly the known service ids', () => {
     const withMain = readdirSync(join(root, 'services'), { withFileTypes: true })
