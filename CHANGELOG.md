@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Pembersihan `.gitignore`
+
+- Diubah: `.gitignore` tidak lagi memuat sisa perintah PowerShell (`@' ... '@ | Set-Content`) di awal berkas dan pola yang berulang. Pola `secrets/` (yang mengabaikan seluruh direktori sehingga `!secrets/README.md` dan `!secrets/.gitkeep` tidak pernah berlaku) dihapus; yang tersisa `secrets/*` dengan dua pengecualian itu. `PROMPT_AWAL.md` dan `PROMPT_TAMBAHAN.md` tetap diabaikan.
+- Tes: `tests/repo/gitignore.spec.ts` (21 tes) memakai `git check-ignore --no-index`: `secrets/README.md`, `secrets/.gitkeep`, `.env.example`, `.env.test.example` tidak diabaikan; `secrets/*` lain, `.env*`, kunci, `dist/`, laporan gitleaks, dan berkas PROMPT diabaikan; hanya `secrets/README.md` yang terlacak. Tes merah (5 gagal) sebelum perbaikan.
+
 ### M0-07 CI: gerbang lokal di GitHub Actions, Action dipin ke SHA
 
 - Diubah: `.github/workflows/ci.yml`. Semua Action dipin ke SHA commit dengan versi di komentar (checkout v7.0.1, setup-node v7.1.0, pnpm/action-setup v6.1.0, codeql-action v4.39.0, dependency-review-action v4.9.0, trivy-action v0.36.0, upload-artifact v7.0.2; SHA diambil dari tag di repositori masing-masing lewat `git ls-remote`), semua image dipin dengan digest (`postgres:16`, `semgrep/semgrep:1.181.0`, `hadolint/hadolint:v2.15.1`; digest dari Docker Hub), `persist-credentials: false` pada setiap checkout, izin bawaan `contents: read` dan hanya job CodeQL yang menulis `security-events`. Penjaga `hashFiles(...)` pada job `quality`, `integration`, `sast`, `semgrep`, dan `dependencies` dihapus karena `pnpm-lock.yaml` kini ada; job `lua` dan `containers` tetap bersyarat dan job `e2e` tetap mati sampai ada berkas compose (DK-01).

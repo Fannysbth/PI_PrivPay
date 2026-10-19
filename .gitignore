@@ -1,28 +1,14 @@
-@'
-# Environment variables and local secrets
-.env
-.env.*
-!.env.example
-!.env.test.example
-secrets/
-
-# Local credentials and key material
-*.pem
-*.key
-*.p12
-*.pfx
-
-# Dependencies and generated files
-node_modules/
-'@ | Set-Content -Path .gitignore -Encoding utf8
 # Secrets and local env — never commit (SECURITY.md section 3)
 .env
 .env.*
 !.env.example
 !.env.test.example
+# secrets/* and not secrets/: ignoring the directory itself would make the two exceptions below impossible.
 secrets/*
 !secrets/README.md
 !secrets/.gitkeep
+
+# Local credentials and key material
 *.pem
 *.key
 *.p12
