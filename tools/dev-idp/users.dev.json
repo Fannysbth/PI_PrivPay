@@ -1,0 +1,50 @@
+[
+  {
+    "id": "usr-cust-000101",
+    "username": "nasabah.uji.101",
+    "role": "customer",
+    "customer_id": "CUST-000101"
+  },
+  {
+    "id": "usr-cust-000102",
+    "username": "nasabah.uji.102",
+    "role": "customer",
+    "customer_id": "CUST-000102"
+  },
+  {
+    "id": "usr-cust-000103",
+    "username": "nasabah.uji.103",
+    "role": "customer",
+    "customer_id": "CUST-000103"
+  },
+  {
+    "id": "usr-admin-01",
+    "username": "admin.uji.1",
+    "role": "admin"
+  },
+  {
+    "id": "usr-admin-02",
+    "username": "admin.uji.2",
+    "role": "admin"
+  },
+  {
+    "id": "usr-auditor-01",
+    "username": "auditor.uji.1",
+    "role": "auditor"
+  },
+  {
+    "id": "usr-auditor-02",
+    "username": "auditor.uji.2",
+    "role": "auditor"
+  },
+  {
+    "id": "usr-fraud-01",
+    "username": "analis.uji.1",
+    "role": "fraud_analyst"
+  },
+  {
+    "id": "usr-bank-01",
+    "username": "bank.uji.1",
+    "role": "bank"
+  }
+]
