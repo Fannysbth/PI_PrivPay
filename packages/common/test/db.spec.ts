@@ -77,8 +77,18 @@ describe('M0-05 role passwords are read from files and never echoed', () => {
 
   it('M0-05 fails without printing the secret when the file is missing or empty', () => {
     writeFileSync(join(dir, 'privpay_fraud_app_password'), '\n');
+    writeFileSync(join(dir, 'privpay_notification_app_password'), `${CANARY}\n`);
+    // A sibling file holds the canary: its value must not leak into the error about another role.
     for (const role of ['privpay_missing_app', 'privpay_fraud_app']) {
-      expect(() => readRolePassword(dir, role)).toThrow(ConfigError);
+      let message = '';
+      try {
+        readRolePassword(dir, role);
+      } catch (error) {
+        expect(error).toBeInstanceOf(ConfigError);
+        message = (error as ConfigError).message;
+      }
+      expect(message).not.toBe('');
+      expect(message).not.toContain(CANARY);
     }
   });
 

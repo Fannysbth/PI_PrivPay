@@ -32,3 +32,9 @@ final line says so (`admin membership in the privpay_*_owner roles revoked`). If
 
 `pnpm test:integration` needs the roles above. Copy `.env.test.example` to `.env.test` (host, port, secrets directory;
 no passwords) or export `PG_HOST`, `PG_PORT`, `PG_SECRETS_DIR`.
+
+## What the admin keeps
+
+PostgreSQL 16+ gives the role that runs `CREATE ROLE` the ADMIN option on it. The script cannot remove that as a
+non-superuser, so the admin stays listed in `pg_auth_members` for the owner roles, but without `SET` or `INHERIT`: it
+can use an owner role only by first granting itself that right again. The integration test checks `SET`/`INHERIT`.

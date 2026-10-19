@@ -26,7 +26,7 @@ export interface TestDb {
 
 /** The test admin's maintenance connection (database `postgres`), for checks that span databases. */
 export function createAdminPool(config: PgConfig): Pool {
-  return new Pool({
+  const pool = new Pool({
     host: config.PG_HOST,
     port: config.PG_PORT,
     user: TEST_ADMIN_ROLE,
@@ -34,6 +34,9 @@ export function createAdminPool(config: PgConfig): Pool {
     database: 'postgres',
     max: 2,
   });
+  // Same reason as in createPool: an idle error must not crash the test process.
+  pool.on('error', () => undefined);
+  return pool;
 }
 
 /** `privpay_<service>_test_<suffix>`: one database per test file, so files can run side by side. */
@@ -44,8 +47,8 @@ export function testDatabaseName(service: ServiceName, suffix: string): string {
 }
 
 /**
- * Recreates a clean test database owned by the service's schema owner (by `privpay_test_admin`, which is neither a
- * superuser nor able to touch anything outside the privpay_ namespace), optionally applies `schema` as the owner,
+ * Recreates a clean test database owned by the service's schema owner (by `privpay_test_admin`, which is not a
+ * superuser; it may create databases, so the privpay_ guard above is the only limit), optionally applies `schema` as the owner,
  * and returns pools that connect as the real roles, so grants and revokes are tested for real.
  */
 export async function createTestDb(
@@ -64,16 +67,18 @@ export async function createTestDb(
     password: readRolePassword(config.PG_SECRETS_DIR, TEST_ADMIN_ROLE),
     database: 'postgres',
   });
+  // An idle-connection error would otherwise be an unhandled 'error' event; the query that follows reports it.
+  admin.on('error', () => undefined);
   await admin.connect();
+  let runtimeList: string;
   try {
     // DDL cannot take bind parameters: the names are validated above and quoted here.
     const quoted = admin.escapeIdentifier(database);
+    runtimeList = runtimeRoles.map((r) => admin.escapeIdentifier(r)).join(', ');
     await admin.query(`DROP DATABASE IF EXISTS ${quoted} WITH (FORCE)`);
     await admin.query(`CREATE DATABASE ${quoted} OWNER ${admin.escapeIdentifier(owner)}`);
     await admin.query(`REVOKE ALL ON DATABASE ${quoted} FROM PUBLIC`);
-    await admin.query(
-      `GRANT CONNECT ON DATABASE ${quoted} TO ${runtimeRoles.map((r) => admin.escapeIdentifier(r)).join(', ')}`,
-    );
+    await admin.query(`GRANT CONNECT ON DATABASE ${quoted} TO ${runtimeList}`);
   } finally {
     await admin.end();
   }
@@ -84,22 +89,20 @@ export async function createTestDb(
     pools.push(pool);
     return pool;
   };
-  const ownerPool = open(owner, 4);
   const close = async (): Promise<void> => {
     await Promise.all(pools.map((pool) => pool.end()));
   };
 
+  // Every pool is opened inside the try, so a failure at any step (missing password file, bad schema) ends them all.
   try {
+    const ownerPool = open(owner, 4);
     await ownerPool.query('REVOKE ALL ON SCHEMA public FROM PUBLIC');
-    await ownerPool.query(
-      `GRANT USAGE ON SCHEMA public TO ${runtimeRoles.map((r) => `"${r}"`).join(', ')}`,
-    );
+    await ownerPool.query(`GRANT USAGE ON SCHEMA public TO ${runtimeList}`);
     if (options.schema !== undefined) await ownerPool.query(options.schema);
+    const result = { database, owner: ownerPool, app: open(app, 10), close };
+    return auditor === undefined ? result : { ...result, auditor: open(auditor, 4) };
   } catch (error) {
     await close();
     throw error;
   }
-
-  const result = { database, owner: ownerPool, app: open(app, 10), close };
-  return auditor === undefined ? result : { ...result, auditor: open(auditor, 4) };
 }

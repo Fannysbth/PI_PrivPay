@@ -64,6 +64,22 @@ describe('M0-05 the bootstrap created every role and database (ADR-0004, NFR-09)
     );
     expect(rows).toEqual([{ rolsuper: false, rolcreatedb: true }]);
   });
+
+  // ADR-0004: after the bootstrap only the test admin can SET ROLE to (or inherit) a schema owner. The admin who ran it
+  // keeps at most the ADMIN option PostgreSQL 16+ gives a role's creator; that grants no privilege until it re-grants itself.
+  it('M0-05 only the test admin can use the schema owner roles after the bootstrap', async () => {
+    const owners = SERVICES.map((service) => SERVICE_DBS[service].owner);
+    const { rows } = await admin.query<{ owner: string; member: string }>(
+      `SELECT o.rolname AS owner, m.rolname AS member
+         FROM pg_auth_members am
+         JOIN pg_roles o ON o.oid = am.roleid
+         JOIN pg_roles m ON m.oid = am.member
+        WHERE o.rolname = ANY($1) AND (am.set_option OR am.inherit_option)
+        ORDER BY 1, 2`,
+      [owners],
+    );
+    expect(rows).toEqual([...owners].sort().map((owner) => ({ owner, member: TEST_ADMIN_ROLE })));
+  });
 });
 
 describe('M0-05 the harness hands out the real roles of a clean database', () => {
@@ -82,8 +98,11 @@ describe('M0-05 the harness hands out the real roles of a clean database', () =>
 
   it('M0-05 recreates the database from scratch on every run', async () => {
     const first = await createTestDb(config, { service: 'fraud', suffix: 'm005b' });
-    await first.owner.query('CREATE TABLE leftover (id int)');
-    await first.close();
+    try {
+      await first.owner.query('CREATE TABLE leftover (id int)');
+    } finally {
+      await first.close();
+    }
     const second = await createTestDb(config, { service: 'fraud', suffix: 'm005b' });
     try {
       const { rows } = await second.owner.query('SELECT 1 FROM pg_tables WHERE tablename = $1', [
@@ -121,7 +140,7 @@ describe('M0-05 the harness hands out the real roles of a clean database', () =>
     }
   });
 
-  it('M0-05 closing the harness drops no database it does not own', async () => {
+  it('M0-05 creating and closing a test database leaves the service database in place', async () => {
     const db = await createTestDb(config, { service: 'notification', suffix: 'm005e' });
     await db.close();
     const admin = createAdminPool(config);
