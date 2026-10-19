@@ -54,11 +54,12 @@ SELECT format('ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEROLE NOREPLICATION %
 -- The test admin recreates the test DB owned by the schema owner, so it must be a member of that role.
 GRANT privpay_privacy_owner TO privpay_test_admin;
 
--- The connecting admin must be a member of the owner role to create a database owned by it (unless superuser).
-SELECT format('GRANT privpay_privacy_owner TO %I', current_user)
- WHERE NOT (SELECT rolsuper FROM pg_roles WHERE rolname = current_user)
-   AND NOT pg_has_role(current_user, 'privpay_privacy_owner', 'MEMBER')
-\gexec
+-- The connecting admin must be able to SET ROLE to the owner role to create a database owned by it and to run the
+-- schema grants below (unless superuser). The membership is temporary: it is revoked at the end of this script.
+SELECT NOT rolsuper AS needs_membership FROM pg_roles WHERE rolname = current_user \gset
+\if :needs_membership
+  GRANT privpay_privacy_owner TO CURRENT_USER;
+\endif
 
 SELECT 'CREATE DATABASE privpay_privacy OWNER privpay_privacy_owner'
  WHERE NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'privpay_privacy')
@@ -73,5 +74,15 @@ REVOKE ALL ON SCHEMA public FROM PUBLIC;
 GRANT USAGE ON SCHEMA public TO privpay_app, privpay_auditor;
 RESET ROLE;
 
+\if :needs_membership
+  REVOKE privpay_privacy_owner FROM CURRENT_USER;
+\endif
+
 \set QUIET off
+SELECT CASE
+         WHEN rolsuper THEN 'admin is a superuser: no membership change was made'
+         WHEN pg_has_role(current_user, 'privpay_privacy_owner', 'SET') THEN 'WARNING: admin can still SET ROLE privpay_privacy_owner'
+         ELSE 'admin membership in privpay_privacy_owner revoked'
+       END AS admin_membership
+  FROM pg_roles WHERE rolname = current_user;
 \echo 'privpay bootstrap done: database privpay_privacy; roles privpay_privacy_owner, privpay_app, privpay_auditor, privpay_test_admin'
