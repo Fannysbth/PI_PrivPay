@@ -66,8 +66,9 @@ export function isReason(value: unknown): value is Reason {
 export class DomainError extends Error {
   readonly reason: Reason;
 
-  constructor(reason: Reason) {
-    super(reason);
+  /** `cause` is a short category such as `timeout`, never a value (it may end up in logs). */
+  constructor(reason: Reason, cause?: string) {
+    super(reason, cause === undefined ? undefined : { cause });
     this.name = 'DomainError';
     this.reason = reason;
   }

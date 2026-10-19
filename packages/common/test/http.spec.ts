@@ -6,10 +6,22 @@ import { fakeFetch, json, type Step } from './fake-fetch';
 const GENERATED_ID = '11111111-1111-4111-8111-111111111111';
 const GIVEN_ID = '3f2b9c1e-6d1a-4e55-9a40-0c1d8e7a2b11';
 const CANARY = 'canary-body-3273015501900001';
+const BEARER = 'Bearer aaaa.bbbb.cccc';
+
+const neverAborts = (): AbortSignal => new AbortController().signal;
+/** A timeout that fires right after the request starts, so tests need no real time. */
+const abortsSoon = (): AbortSignal => {
+  const controller = new AbortController();
+  queueMicrotask(() => {
+    controller.abort(new Error('timeout'));
+  });
+  return controller.signal;
+};
 
 function setup(script: Step[], overrides: Partial<Parameters<typeof createHttpClient>[0]> = {}) {
   const scripted = fakeFetch(script);
   const delay = new FakeDelay();
+  const timeouts: number[] = [];
   const client = createHttpClient({
     baseUrls: { privacy: 'http://privacy.internal:3001' },
     timeoutMs: 30,
@@ -19,9 +31,13 @@ function setup(script: Step[], overrides: Partial<Parameters<typeof createHttpCl
     fetch: scripted.fetch,
     backoffBaseMs: 100,
     newRequestId: () => GENERATED_ID,
+    timeoutSignal: (ms) => {
+      timeouts.push(ms);
+      return neverAborts();
+    },
     ...overrides,
   });
-  return { client, delay, calls: scripted.calls };
+  return { client, delay, timeouts, calls: scripted.calls };
 }
 
 const get = (over: Partial<HttpRequest> = {}): HttpRequest => ({
@@ -32,11 +48,12 @@ const get = (over: Partial<HttpRequest> = {}): HttpRequest => ({
   ...over,
 });
 
-async function failure(promise: Promise<unknown>): Promise<unknown> {
+async function failure(promise: Promise<unknown>): Promise<DomainError> {
   try {
     await promise;
   } catch (error) {
-    return error;
+    if (error instanceof DomainError) return error;
+    throw error;
   }
   throw new Error('expected the request to fail');
 }
@@ -60,20 +77,74 @@ describe('M0-03 requests carry a correlation id and a JSON body (NFR-16)', () =>
     expect(call?.init.body).toBe(JSON.stringify({ purpose: 'PAYMENT_PROCESSING' }));
   });
 
-  it('M0-03 forwards the request id and caller headers', async () => {
+  it('M0-03 forwards a UUID request id', async () => {
     const { client, calls } = setup([json(200)]);
-    await client.request(
-      get({ requestId: GIVEN_ID, headers: { Authorization: 'Bearer token-1' } }),
-    );
-    const headers = new Headers(calls[0]?.init.headers);
-    expect(headers.get('x-request-id')).toBe(GIVEN_ID);
-    expect(headers.get('authorization')).toBe('Bearer token-1');
+    await client.request(get({ requestId: GIVEN_ID }));
+    expect(new Headers(calls[0]?.init.headers).get('x-request-id')).toBe(GIVEN_ID);
   });
 
   it('M0-03 replaces a request id that is not a UUID instead of forwarding it', async () => {
     const { client, calls } = setup([json(200)]);
     await client.request(get({ requestId: `<script>${CANARY}` }));
     expect(new Headers(calls[0]?.init.headers).get('x-request-id')).toBe(GENERATED_ID);
+  });
+});
+
+describe('M0-03 authentication headers are set by the client only (ADR-0007)', () => {
+  it('M0-03 attaches the cached service token as the Authorization header', async () => {
+    const { client, calls } = setup([json(200)], {
+      serviceToken: { get: () => Promise.resolve('aaaa.bbbb.cccc') },
+    });
+    await client.request(get());
+    expect(new Headers(calls[0]?.init.headers).get('authorization')).toBe(BEARER);
+  });
+
+  it('M0-03 lets a request carry its own Authorization (a human token forwarded as is)', async () => {
+    const { client, calls } = setup([json(200)], {
+      serviceToken: { get: () => Promise.resolve('service-token') },
+    });
+    await client.request(get({ authorization: 'Bearer human.token.value' }));
+    expect(new Headers(calls[0]?.init.headers).get('authorization')).toBe(
+      'Bearer human.token.value',
+    );
+  });
+
+  it('M0-03 sends the actor token in X-Actor-Token when one is given', async () => {
+    const { client, calls } = setup([json(200)]);
+    await client.request(get({ actorToken: 'actor.token.value' }));
+    const headers = new Headers(calls[0]?.init.headers);
+    expect(headers.get('x-actor-token')).toBe('actor.token.value');
+    expect(headers.get('authorization')).toBeNull();
+  });
+
+  it('M0-03 sends no authentication headers when none are configured or given', async () => {
+    const { client, calls } = setup([json(200)]);
+    await client.request(get());
+    const headers = new Headers(calls[0]?.init.headers);
+    expect(headers.get('authorization')).toBeNull();
+    expect(headers.get('x-actor-token')).toBeNull();
+  });
+
+  it.each([
+    ['authorization', { authorization: `Bearer abc\r\nX-Injected: ${CANARY}` }],
+    ['authorization', { authorization: `Basic ${CANARY}` }],
+    ['actorToken', { actorToken: `abc\ndef-${CANARY}` }],
+    ['actorToken', { actorToken: 'x'.repeat(5000) }],
+  ])('M0-03 refuses a malformed %s without sending anything or echoing it', async (_name, over) => {
+    const { client, calls } = setup([json(200)]);
+    const error = await failure(client.request(get(over)));
+    expect(error.reason).toBe('INTERNAL_ERROR');
+    expect(error.message).not.toContain(CANARY);
+    expect(calls).toHaveLength(0);
+  });
+
+  it('M0-03 fails with SERVICE_UNAVAILABLE and sends nothing when the token cannot be obtained', async () => {
+    const { client, calls } = setup([json(200)], {
+      serviceToken: { get: () => Promise.reject(new DomainError('SERVICE_UNAVAILABLE')) },
+    });
+    const error = await failure(client.request(get()));
+    expect(error.reason).toBe('SERVICE_UNAVAILABLE');
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -99,9 +170,15 @@ describe('M0-03 retries only idempotent requests, with backoff and jitter (NFR-1
   it('M0-03 gives up after HTTP_MAX_RETRY retries with SERVICE_UNAVAILABLE', async () => {
     const { client, calls } = setup([json(503), json(502), json(504)]);
     const error = await failure(client.request(get()));
-    expect(error).toBeInstanceOf(DomainError);
-    expect((error as DomainError).reason).toBe('SERVICE_UNAVAILABLE');
+    expect(error.reason).toBe('SERVICE_UNAVAILABLE');
     expect(calls).toHaveLength(3);
+  });
+
+  it('M0-03 makes a single attempt when no retries are allowed', async () => {
+    const { client, calls } = setup([json(503), json(200)], { maxRetries: 0 });
+    const error = await failure(client.request(get()));
+    expect(error.reason).toBe('SERVICE_UNAVAILABLE');
+    expect(calls).toHaveLength(1);
   });
 
   it('M0-03 retries a network failure of an idempotent request', async () => {
@@ -114,7 +191,7 @@ describe('M0-03 retries only idempotent requests, with backoff and jitter (NFR-1
     for (const step of [json(503), new TypeError('fetch failed')]) {
       const { client, calls } = setup([step, json(200)]);
       const error = await failure(client.request(get({ method: 'POST', idempotent: false })));
-      expect((error as DomainError).reason).toBe('SERVICE_UNAVAILABLE');
+      expect(error.reason).toBe('SERVICE_UNAVAILABLE');
       expect(calls).toHaveLength(1);
     }
   });
@@ -135,25 +212,74 @@ describe('M0-03 retries only idempotent requests, with backoff and jitter (NFR-1
 });
 
 describe('M0-03 timeouts end the request and count as a failed attempt (NFR-12)', () => {
+  it('M0-03 asks for a timeout signal of the configured length for every attempt', async () => {
+    const { client, timeouts } = setup([json(503), json(200)]);
+    await client.request(get());
+    expect(timeouts).toEqual([30, 30]);
+  });
+
   it('M0-03 aborts a request that does not answer and retries an idempotent one', async () => {
-    const { client, calls } = setup(['hang', json(200)]);
+    const { client, calls } = setup(['hang', json(200)], { timeoutSignal: abortsSoon });
+    // The second attempt gets a signal that also fires, but a scripted answer arrives first.
     expect((await client.request(get())).status).toBe(200);
     expect(calls).toHaveLength(2);
     expect((calls[0]?.init.signal as AbortSignal).aborted).toBe(true);
   });
 
-  it('M0-03 fails with SERVICE_UNAVAILABLE when every attempt times out', async () => {
-    const { client, calls } = setup(['hang', 'hang', 'hang']);
+  it('M0-03 fails with SERVICE_UNAVAILABLE and cause timeout when every attempt times out', async () => {
+    const { client, calls } = setup(['hang', 'hang', 'hang'], { timeoutSignal: abortsSoon });
     const error = await failure(client.request(get()));
-    expect((error as DomainError).reason).toBe('SERVICE_UNAVAILABLE');
+    expect(error.reason).toBe('SERVICE_UNAVAILABLE');
+    expect(error.cause).toBe('timeout');
     expect(calls).toHaveLength(3);
   });
 
   it('M0-03 does not retry a non-idempotent request that timed out', async () => {
-    const { client, calls } = setup(['hang', json(200)]);
+    const { client, calls } = setup(['hang', json(200)], { timeoutSignal: abortsSoon });
     const error = await failure(client.request(get({ method: 'POST', idempotent: false })));
-    expect((error as DomainError).reason).toBe('SERVICE_UNAVAILABLE');
+    expect(error.reason).toBe('SERVICE_UNAVAILABLE');
     expect(calls).toHaveLength(1);
+  });
+});
+
+describe('M0-03 a failed call reports why, without values, so a bug is not mistaken for an outage', () => {
+  it('M0-03 labels a network failure and an unavailable status', async () => {
+    const network = setup([new TypeError('fetch failed')], { maxRetries: 0 });
+    expect((await failure(network.client.request(get()))).cause).toBe('network');
+    const status = setup([json(503)], { maxRetries: 0 });
+    expect((await failure(status.client.request(get()))).cause).toBe('unavailable');
+  });
+
+  it('M0-03 labels an oversized response and does not retry it', async () => {
+    const huge = new Response('{}', {
+      status: 200,
+      headers: { 'content-type': 'application/json', 'content-length': '5000000' },
+    });
+    const { client, calls } = setup([huge, json(200)]);
+    const error = await failure(client.request(get()));
+    expect(error.reason).toBe('SERVICE_UNAVAILABLE');
+    expect(error.cause).toBe('too_large');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('M0-03 labels a 2xx answer with a broken JSON body and does not retry it', async () => {
+    const broken = new Response('{not json', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+    const { client, calls } = setup([broken, json(200)]);
+    const error = await failure(client.request(get()));
+    expect(error.cause).toBe('parse');
+    expect(calls).toHaveLength(1);
+  });
+
+  it('M0-03 treats a body that cannot be serialised as a caller bug, not an outage', async () => {
+    const circular: Record<string, unknown> = {};
+    circular.self = circular;
+    const { client, calls } = setup([json(200)]);
+    const error = await failure(client.request(get({ method: 'POST', body: circular })));
+    expect(error.reason).toBe('INTERNAL_ERROR');
+    expect(calls).toHaveLength(0);
   });
 });
 
@@ -165,16 +291,34 @@ describe('M0-03 only configured services and plain paths are reachable (API7)', 
     '/health with space',
     '/a\\b',
     '/ok\r\nX-Injected: 1',
+    '/a/../b',
+    '/a/%2e%2e/b',
+    '/a/%2E/b',
+    '/..',
+    '/a/./b',
   ])('M0-03 refuses the path %j without sending anything', async (path) => {
     const { client, calls } = setup([json(200)]);
-    await expect(client.request(get({ path }))).rejects.toThrow();
+    const error = await failure(client.request(get({ path })));
+    expect(error.reason).toBe('INTERNAL_ERROR');
     expect(calls).toHaveLength(0);
   });
 
-  it('M0-03 refuses a service that is not in the configuration', async () => {
+  it.each(['unknown', '__proto__', 'constructor', 'toString'])(
+    'M0-03 refuses the service %s that is not in the configuration',
+    async (service) => {
+      const { client, calls } = setup([json(200)]);
+      const error = await failure(client.request(get({ service })));
+      expect(error.reason).toBe('INTERNAL_ERROR');
+      expect(calls).toHaveLength(0);
+    },
+  );
+
+  it('M0-03 accepts a query string and percent-encoded data', async () => {
     const { client, calls } = setup([json(200)]);
-    await expect(client.request(get({ service: 'unknown' }))).rejects.toThrow();
-    expect(calls).toHaveLength(0);
+    await client.request(get({ path: '/audit-log?limit=50&from=2026-10-05T00%3A00%3A00Z' }));
+    expect(calls[0]?.url).toBe(
+      'http://privacy.internal:3001/audit-log?limit=50&from=2026-10-05T00%3A00%3A00Z',
+    );
   });
 
   it('M0-03 asks fetch not to follow redirects', async () => {
@@ -185,21 +329,11 @@ describe('M0-03 only configured services and plain paths are reachable (API7)', 
 });
 
 describe('M0-03 failures never echo response content', () => {
-  it('M0-03 does not put a downstream body or header value into the error', async () => {
+  it('M0-03 does not put a downstream body or a token into the error', async () => {
     const { client } = setup([json(503, { detail: CANARY }), json(503), json(503)]);
-    const error = await failure(client.request(get({ headers: { Authorization: CANARY } })));
-    expect((error as Error).message).not.toContain(CANARY);
+    const error = await failure(client.request(get({ authorization: `Bearer ${CANARY}` })));
+    expect(error.message).not.toContain(CANARY);
     expect(JSON.stringify(error)).not.toContain(CANARY);
-  });
-
-  it('M0-03 refuses an oversized response', async () => {
-    const huge = new Response('{}', {
-      status: 200,
-      headers: { 'content-type': 'application/json', 'content-length': '5000000' },
-    });
-    const { client } = setup([huge]);
-    const error = await failure(client.request(get()));
-    expect((error as DomainError).reason).toBe('SERVICE_UNAVAILABLE');
   });
 
   it('M0-03 returns text bodies as strings', async () => {

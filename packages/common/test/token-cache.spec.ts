@@ -1,4 +1,5 @@
 import { FakeClock } from '../src/clock';
+import type { DomainError } from '../src/errors';
 import { createTokenCache, type IssuedToken } from '../src/token-cache';
 
 const CANARY = 'canary-jwt-eyJhbGciOiJSUzI1NiJ9.canary.signature';
@@ -68,9 +69,31 @@ describe('M0-03 the service token is cached until 30 seconds before it expires (
     expect(calls()).toBe(2);
   });
 
-  it('M0-03 refuses a token that is already expired or about to', async () => {
+  it('M0-03 hands out a token that expires within the skew but does not cache it', async () => {
     const base = new FakeClock('2026-10-05T12:00:00Z');
-    const { cache } = setup([{ token: 'token-1', expiresAt: expiresIn(base, 10) }]);
-    await expect(cache.get()).rejects.toThrow();
+    const { cache, calls } = setup([
+      { token: 'short-1', expiresAt: expiresIn(base, 10) },
+      { token: 'short-2', expiresAt: expiresIn(base, 10) },
+    ]);
+    expect(await cache.get()).toBe('short-1');
+    expect(await cache.get()).toBe('short-2');
+    expect(calls()).toBe(2);
+  });
+
+  it('M0-03 refuses a token that has already expired', async () => {
+    const base = new FakeClock('2026-10-05T12:00:00Z');
+    const { cache } = setup([{ token: 'token-1', expiresAt: expiresIn(base, -1) }]);
+    const error = await cache.get().then(
+      () => undefined,
+      (caught: unknown) => caught as DomainError,
+    );
+    expect(error?.reason).toBe('INTERNAL_ERROR');
+  });
+
+  it('M0-03 shares one failure with every concurrent caller', async () => {
+    const { cache, calls } = setup([new Error('provider down')]);
+    const results = await Promise.allSettled([cache.get(), cache.get(), cache.get()]);
+    expect(results.map((result) => result.status)).toEqual(['rejected', 'rejected', 'rejected']);
+    expect(calls()).toBe(1);
   });
 });

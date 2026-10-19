@@ -37,7 +37,10 @@ export function createTokenCache(options: TokenCacheOptions): TokenCache {
       // The provider's message could quote a token; callers only learn that the provider is unavailable.
       throw new DomainError('SERVICE_UNAVAILABLE');
     }
-    if (!isFresh(issued)) throw new DomainError('INTERNAL_ERROR');
+    if (issued.expiresAt.getTime() <= options.clock.now().getTime()) {
+      throw new DomainError('INTERNAL_ERROR', 'token_already_expired');
+    }
+    // A token that lives less than the skew is still handed out; get() treats it as stale and fetches again.
     cached = issued;
     return issued.token;
   }
