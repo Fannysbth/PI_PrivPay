@@ -1,0 +1,16 @@
+@'
+# Environment variables and local secrets
+.env
+.env.*
+!.env.example
+secrets/
+
+# Local credentials and key material
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Dependencies and generated files
+node_modules/
+'@ | Set-Content -Path .gitignore -Encoding utf8
