@@ -7,7 +7,6 @@ describe('M0-02 clock is injectable and always UTC (NFR-20)', () => {
     expect(now).toBeInstanceOf(Date);
     expect(now.getTime()).toBeGreaterThanOrEqual(before);
     expect(now.getTime()).toBeLessThanOrEqual(Date.now());
-    expect(now.toISOString().endsWith('Z')).toBe(true);
   });
 
   it('M0-02 FakeClock starts at the given instant and advances by exact seconds', () => {
@@ -26,6 +25,21 @@ describe('M0-02 clock is injectable and always UTC (NFR-20)', () => {
   it('M0-02 FakeClock hands out copies so callers cannot move time by mutating a Date', () => {
     const clock = new FakeClock('2026-10-05T12:00:00Z');
     clock.now().setFullYear(1999);
+    expect(clock.now().toISOString()).toBe('2026-10-05T12:00:00.000Z');
+  });
+
+  it('M0-02 FakeClock refuses an instant without a time zone because it would be read as local time', () => {
+    expect(() => new FakeClock('2026-01-01T00:00:00')).toThrow(RangeError);
+    expect(new FakeClock('2026-01-01T00:00:00+07:00').now().toISOString()).toBe(
+      '2025-12-31T17:00:00.000Z',
+    );
+  });
+
+  it('M0-02 FakeClock refuses to advance by a non-finite amount', () => {
+    const clock = new FakeClock('2026-10-05T12:00:00Z');
+    expect(() => {
+      clock.advance(Number.NaN);
+    }).toThrow(RangeError);
     expect(clock.now().toISOString()).toBe('2026-10-05T12:00:00.000Z');
   });
 

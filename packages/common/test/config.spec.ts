@@ -67,6 +67,19 @@ describe('M0-02 loadConfig (E-09, NFR-22)', () => {
   });
 });
 
+describe('M0-02 loadConfig never fails open (E-09)', () => {
+  it('M0-02 reports a failing schema-level refinement instead of returning nothing', () => {
+    const refined = z.object({ PRIVACY_MODE: z.string() }).refine(() => false);
+    const error = catchConfigError(() => loadConfig(refined, { PRIVACY_MODE: 'proposed' }));
+    expect(error.issues).toEqual([{ name: '(config)', problem: 'invalid' }]);
+  });
+
+  it('M0-02 ignores undeclared variables unless a prefix is declared strict', () => {
+    const env = { PRIVACY_MODE: 'proposed', HTTP_TIMEOUT_MS: '3000', HTTP_TIMEOUT_MSS: '1' };
+    expect(loadConfig(schema, env).HTTP_TIMEOUT_MS).toBe(3000);
+  });
+});
+
 describe('M0-02 readSecret and readKey read secrets from files, never raw env (NFR-22)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'privpay-config-'));
   const file = (name: string, content: string): string => {
@@ -108,6 +121,13 @@ describe('M0-02 readSecret and readKey read secrets from files, never raw env (N
     );
     expect(error.issues).toEqual([{ name: 'SECRET_A', problem: 'raw_secret_forbidden' }]);
     expect(error.message).not.toContain(CANARY);
+  });
+
+  it('M0-02 rejects a secret file larger than 4 KiB', () => {
+    const error = catchConfigError(() =>
+      readSecret({ SECRET_A_FILE: file('big', 'a'.repeat(5000)) }, 'SECRET_A'),
+    );
+    expect(error.issues).toEqual([{ name: 'SECRET_A_FILE', problem: 'invalid' }]);
   });
 
   it('M0-02 decodes a hex key of the required length', () => {

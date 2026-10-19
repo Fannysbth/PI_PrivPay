@@ -18,6 +18,12 @@ Modul dasar bersama: konfigurasi tervalidasi dengan `*_FILE`, `Clock` yang bisa 
 - [ ] `errors`: `DomainError(code, reason, httpStatus)`, `toClientError` menghasilkan tepat delapan kode klien tanpa `reason`; bentuk `{error:{code,reason,message,request_id}}`; kegagalan tak dikenal menjadi 500 `INTERNAL_ERROR` (NFR-10, NFR-25, ADR-0008).
 - [ ] `logger`: hanya field pada tipe `LogFields`; nilai kenari pada field terlarang (`phone`, `nik`, `nama`, `email`, `rekening`, `customer_id`, `subject_id`, `authorization`) tidak muncul pada keluaran (NFR-15, NFR-16).
 
+## Catatan hasil implementasi
+
+- `DomainError(reason)`: kode, status, dan pesan diturunkan dari tabel `REASONS` (lebih ketat daripada `DomainError(code, reason, httpStatus)` di spec awal); `toWireError`/`toClientError` menerima `requestId`. Respons klien tidak memuat `reason`, respons antar-layanan memuatnya.
+- `strictPrefixes` bersifat opt-in per layanan; pemeriksaan `TZ=UTC` proses dan penutupan anggun ada di M0-06; pemeriksaan tiga kunci berbeda (FR-30) ada di M2-02 (`readKey` hanya memeriksa panjang dan heks).
+- Lapis `redact` pino dibuang (lihat `platform-dan-ci.md` bagian 5).
+
 ## Tes dulu (tdd)
 
 Seam yang diuji disepakati sebelum tes ditulis; tiap tes ditulis lebih dulu, terbukti gagal dengan alasan yang benar, lalu implementasi minimal. Nama tes memuat ID kriteria.

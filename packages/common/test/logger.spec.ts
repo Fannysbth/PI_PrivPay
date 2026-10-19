@@ -1,4 +1,5 @@
 import { createLogger, type LogFields } from '../src/logger';
+import { capture, lastEntry } from './log-capture';
 
 // Pseudonym-shaped value built at run time, so no token-shaped literal is committed under packages/.
 const fakeToken = (n: number): string => `PSEU-${n.toString(16).toUpperCase().padStart(8, '0')}`;
@@ -6,22 +7,6 @@ const fakeToken = (n: number): string => `PSEU-${n.toString(16).toUpperCase().pa
 const CANARY_NIK = '9999123456789012';
 const CANARY_PHONE = '08999123456';
 const CANARY_NAME = 'Kenari Uji 0001';
-
-function capture(): { lines: string[]; destination: { write(line: string): void } } {
-  const lines: string[] = [];
-  return {
-    lines,
-    destination: {
-      write(line: string): void {
-        lines.push(line);
-      },
-    },
-  };
-}
-
-function lastEntry(lines: string[]): Record<string, unknown> {
-  return JSON.parse(lines[lines.length - 1] ?? '{}') as Record<string, unknown>;
-}
 
 describe('M0-02 the logger can only emit tokens, ids, and operational fields (NFR-15, NFR-16)', () => {
   it('M0-02 emits one JSON line with an ISO UTC time, the service and the event', () => {

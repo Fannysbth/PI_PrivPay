@@ -25,10 +25,10 @@ Prinsip desain (skill `codebase-design`): modul dalam dengan interface kecil, se
 
 | Modul | Interface (yang harus diketahui pemanggil) | Catatan |
 | --- | --- | --- |
-| `config` | `loadConfig(zodSchema, env)` mengembalikan objek bertipe; gagal cepat dengan daftar nama variabel bermasalah, tanpa nilai | Tolak field tak dikenal pada kelompok variabel layanan; rahasia lewat `readSecret(env, 'NAME')` yang membaca berkas dari `NAME_FILE` |
-| `clock` | `interface Clock { now(): Date }`, `SystemClock`, `FakeClock(advance(seconds))` | Selalu UTC (NFR-20); tes tidak memakai `sleep` nyata |
-| `errors` | `DomainError(code, reason, httpStatus, message)`, daftar `Reason`, `toClientError(err)` | Bagian 4 |
-| `logger` | `createLogger({service})`; `logger.info(event, fields)` | pino dengan `redact`; lihat bagian 5; `console.*` dilarang (ESLint + pre-commit) |
+| `config` | `loadConfig(zodObject, env, {strictPrefixes?})` mengembalikan objek bertipe; gagal cepat dengan daftar nama variabel bermasalah (`missing`, `empty`, `invalid`, `unknown`), tanpa nilai; tidak pernah gagal-terbuka (kegagalan tingkat skema dilaporkan sebagai `(config)`) | Variabel tak dikenal ditolak untuk prefiks yang dinyatakan ketat oleh layanan (`strictPrefixes`, opt-in agar variabel lingkungan lain tidak ditolak); rahasia lewat `readSecret(env, 'NAME')` dan `readKey(env, 'NAME', bytes)` yang membaca berkas dari `NAME_FILE` (maks 4 KiB), menolak `NAME` mentah di env |
+| `clock` | `interface Clock { now(): Date }`, `SystemClock`, `FakeClock(start)` dengan `advance(seconds)` dan `set(instant)` | Selalu UTC (NFR-20); instant berbentuk teks wajib memuat `Z` atau offset; tes tidak memakai `sleep` nyata; pemeriksaan `TZ=UTC` proses ada di M0-06 |
+| `errors` | `DomainError(reason)`; `REASONS` (status antar-layanan dan kode klien per reason); `toWireError(err, requestId)` dan `toClientError(err, requestId)` | Bagian 4. Kode, status, dan pesan diturunkan dari tabel `REASONS` sehingga pemanggil tidak dapat menyetel status atau pesan sendiri; `requestId` yang bukan UUID diganti `[INVALID]`; reason tak dikenal menjadi 500 |
+| `logger` | `createLogger({service, level?, destination?})`; `logger.info(event, fields)` | pino; hanya field `LogFields` (daftar putih); lihat bagian 5; `console.*` dilarang (ESLint + pre-commit) |
 | `http` | `HttpClient.request({method, url, headers, body, idempotent})` | Bagian 6 |
 | `auth` | `verifyServiceToken(authorization)` mengembalikan `{requestingService}`; `verifyActorToken(token)` mengembalikan `{actorId, role}`; `authenticate(headers)` | ADR-0007; bagian 7 |
 | `safeEqual` | `safeEqual(a, b)` pembungkus `timingSafeEqual` dengan pemeriksaan panjang (hasil `false` bila panjang beda) | Wajib untuk setiap perbandingan nilai rahasia |
@@ -72,8 +72,8 @@ Aturan: kegagalan yang tidak dikenal menjadi 500 `INTERNAL_ERROR`; detail hanya 
 
 ## 5. Logging
 
-- pino, level dari env `LOG_LEVEL`. Hanya field berikut yang boleh dicatat: `request_id`, `transaction_id`, token (`PSEU-...`), `service`, `route`, `status`, `latency_ms`, nama kejadian. Fungsi `logger` menerima objek bertipe `LogFields` (bukan `Record<string, unknown>`); field di luar daftar tidak dapat dikompilasi.
-- `redact` pino untuk `authorization`, `x-actor-token`, `*.password`, `*.secret`, `*.token` yang bukan pseudonim, `phone`, `nik`, `nama`, `email`, `rekening`, `customer_id`, `subject_id`. Redaksi adalah lapis kedua; lapis pertama adalah tipe `LogFields`.
+- pino, level dari env `LOG_LEVEL`. Hanya field berikut yang boleh dicatat: `request_id`, `transaction_id`, token (`PSEU-...`), `route`, `status`, `latency_ms`, `reason`, nama kejadian; `service` ditetapkan saat logger dibuat dan tidak dapat ditimpa. Fungsi `logger` menerima objek bertipe `LogFields` (bukan `Record<string, unknown>`); field di luar daftar tidak dapat dikompilasi dan, bila lolos lewat cast, dibuang saat berjalan (nama kunci yang mirip data dicatat sebagai `[invalid_key]`). Nilai tiap field diperiksa polanya (UUID, `TX-` + angka, `PSEU-` + 8 heks, templat rute tanpa deretan angka panjang, status 100..599, latensi ≤ 1 jam, `reason` dari `REASONS`); yang tidak cocok menjadi `[INVALID]`. Nama kejadian harus berpola `^[a-z][a-z0-9_.-]{0,63}$`.
+- Tidak ada lapis `redact` pino: daftar putih membuang semua kunci lain sehingga `redact` tidak akan pernah terpicu dan tidak dapat diuji. Lapis kedua adalah validasi pola nilai (di atas). **[Δ spec: PRD NFR-15 tidak menyebut `redact`; ADR-0002 menyebutnya sebagai alat, dan dibuang karena tidak berfungsi pada rancangan daftar putih.]**
 - Body permintaan tidak pernah dicatat, juga bukan pada tingkat `debug` (NFR-15).
 - Pesan error untuk validasi env tidak memuat nilai (E-09).
 

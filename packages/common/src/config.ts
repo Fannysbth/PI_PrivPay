@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { readFileSync, statSync } from 'node:fs';
 import type { z } from 'zod';
+
+const MAX_SECRET_BYTES = 4096;
 
 export type EnvSource = Readonly<Record<string, string | undefined>>;
 
@@ -60,9 +62,10 @@ export function loadConfig<S extends z.ZodObject>(
     }
   }
 
-  if (issues.length > 0) throw new ConfigError(issues);
-  // The failure branch above is exhausted, so parsing succeeded.
-  return (parsed as { data: z.output<S> }).data;
+  // A failure with no variable to blame (for example a schema-level refinement) must still stop the service.
+  if (!parsed.success && issues.length === 0) issues.push({ name: '(config)', problem: 'invalid' });
+  if (issues.length > 0 || !parsed.success) throw new ConfigError(issues);
+  return parsed.data;
 }
 
 /**
@@ -82,8 +85,13 @@ export function readSecret(env: EnvSource, name: string): string {
 
   let content: string;
   try {
+    // A secret is a short string; refusing large files avoids reading something that is not a secret.
+    if (statSync(path).size > MAX_SECRET_BYTES) {
+      throw new ConfigError([{ name: fileVariable, problem: 'invalid' }]);
+    }
     content = readFileSync(path, 'utf8');
-  } catch {
+  } catch (error) {
+    if (error instanceof ConfigError) throw error;
     throw new ConfigError([{ name: fileVariable, problem: 'unreadable' }]);
   }
 

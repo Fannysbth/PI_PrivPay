@@ -2,17 +2,24 @@
  * One error shape for every service (NFR-25) and the eight codes an external client may see (ADR-0008).
  * Between services the detailed `reason` is kept; towards clients it is dropped (NFR-10).
  */
-export const CLIENT_CODES = [
-  'UNAUTHENTICATED',
-  'ACCESS_DENIED',
-  'VALIDATION_ERROR',
-  'RATE_LIMITED',
-  'SERVICE_UNAVAILABLE',
-  'INTERNAL_ERROR',
-  'IDEMPOTENCY_CONFLICT',
-  'NOT_HELD',
-] as const;
-export type ClientCode = (typeof CLIENT_CODES)[number];
+
+/** What an external client sees for each code: HTTP status and a message that never carries values. */
+const CLIENTS = {
+  UNAUTHENTICATED: { status: 401, message: 'Tidak terautentikasi' },
+  ACCESS_DENIED: { status: 403, message: 'Akses ditolak' },
+  VALIDATION_ERROR: { status: 422, message: 'Permintaan tidak valid' },
+  RATE_LIMITED: { status: 429, message: 'Terlalu banyak permintaan' },
+  SERVICE_UNAVAILABLE: { status: 503, message: 'Layanan tidak tersedia' },
+  INTERNAL_ERROR: { status: 500, message: 'Terjadi kesalahan' },
+  IDEMPOTENCY_CONFLICT: {
+    status: 409,
+    message: 'Kunci idempotensi bertentangan dengan permintaan sebelumnya',
+  },
+  NOT_HELD: { status: 409, message: 'Transaksi tidak berstatus ditahan' },
+} as const;
+
+export type ClientCode = keyof typeof CLIENTS;
+export const CLIENT_CODES = Object.keys(CLIENTS) as ClientCode[];
 
 interface ReasonInfo {
   /** HTTP status between services. */
@@ -52,29 +59,9 @@ export const REASONS = {
 } as const satisfies Record<string, ReasonInfo>;
 export type Reason = keyof typeof REASONS;
 
-/** HTTP status an external client receives for each code. */
-const CLIENT_STATUS: Record<ClientCode, number> = {
-  UNAUTHENTICATED: 401,
-  ACCESS_DENIED: 403,
-  VALIDATION_ERROR: 422,
-  RATE_LIMITED: 429,
-  SERVICE_UNAVAILABLE: 503,
-  INTERNAL_ERROR: 500,
-  IDEMPOTENCY_CONFLICT: 409,
-  NOT_HELD: 409,
-};
-
-/** Generic on purpose: messages never carry identifiers or values. */
-const MESSAGES: Record<ClientCode, string> = {
-  UNAUTHENTICATED: 'Tidak terautentikasi',
-  ACCESS_DENIED: 'Akses ditolak',
-  VALIDATION_ERROR: 'Permintaan tidak valid',
-  RATE_LIMITED: 'Terlalu banyak permintaan',
-  SERVICE_UNAVAILABLE: 'Layanan tidak tersedia',
-  INTERNAL_ERROR: 'Terjadi kesalahan',
-  IDEMPOTENCY_CONFLICT: 'Kunci idempotensi bertentangan dengan permintaan sebelumnya',
-  NOT_HELD: 'Transaksi tidak berstatus ditahan',
-};
+export function isReason(value: unknown): value is Reason {
+  return typeof value === 'string' && Object.hasOwn(REASONS, value);
+}
 
 export class DomainError extends Error {
   readonly reason: Reason;
@@ -98,9 +85,16 @@ export interface ErrorResponse {
   readonly body: { readonly error: ErrorBody };
 }
 
-/** Anything that is not a DomainError is unexpected: it becomes a generic 500 and its text is never forwarded. */
+const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The request id is echoed back, so anything that is not a UUID is replaced rather than reflected. */
+function safeRequestId(requestId: string): string {
+  return REQUEST_ID.test(requestId) ? requestId : '[INVALID]';
+}
+
+/** Anything that is not a DomainError with a known reason is unexpected: a generic 500, its text never forwarded. */
 function reasonOf(error: unknown): Reason {
-  return error instanceof DomainError ? error.reason : 'INTERNAL_ERROR';
+  return error instanceof DomainError && isReason(error.reason) ? error.reason : 'INTERNAL_ERROR';
 }
 
 /** Response between services: carries the detailed reason. */
@@ -109,15 +103,15 @@ export function toWireError(error: unknown, requestId: string): ErrorResponse {
   const { wireStatus, code } = REASONS[reason];
   return {
     status: wireStatus,
-    body: { error: { code, reason, message: MESSAGES[code], request_id: requestId } },
+    body: {
+      error: { code, reason, message: CLIENTS[code].message, request_id: safeRequestId(requestId) },
+    },
   };
 }
 
 /** Response for an external client: only the eight codes, never the reason. */
 export function toClientError(error: unknown, requestId: string): ErrorResponse {
   const { code } = REASONS[reasonOf(error)];
-  return {
-    status: CLIENT_STATUS[code],
-    body: { error: { code, message: MESSAGES[code], request_id: requestId } },
-  };
+  const { status, message } = CLIENTS[code];
+  return { status, body: { error: { code, message, request_id: safeRequestId(requestId) } } };
 }
