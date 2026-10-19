@@ -75,7 +75,7 @@ Spesifikasi: `platform-dan-ci.md` (PL), `data-dan-migrasi.md` (DM), `privacy-ser
 | FR-10 | PV 7.7; TX 5 | M2-07, M4-02 | TF-04 |
 | FR-11 | PV 7.7 | M2-07 | TK-09 |
 | FR-12 | PV 4.5 | M3-02 | TK-04 |
-| FR-13 | PV 9 | M2-04 dan tiap operasi | hitung baris audit vs panggilan; TK |
+| FR-13 | PV 9 | M2-04 dan tiap tiket operasi (M2-05..M3-05) | tes `FR-13 writes exactly one audit row per operation` (SUCCESS dan DENIED) di tiap operasi; jumlah baris audit = jumlah panggilan pada skenario TF |
 | FR-14 | PV 4.8 | M3-03 | FR-14 (kueri gabungan) |
 | FR-15 | PV 9.2; DM 4 | M2-01, M2-10 | `chk_attribute_names`; pindai `audit_log` |
 | FR-16 | TX 6; DM 5 | M4-01 | inspeksi skema (S-38) |
@@ -162,7 +162,38 @@ Spesifikasi: `platform-dan-ci.md` (PL), `data-dan-migrasi.md` (DM), `privacy-ser
 
 ## 5. TK
 
-Skenario, harapan per lapis, dan tiket: `pengujian-dan-pengukuran.md` bagian 4. Ringkasan tiket: TK-01..06, 13..15 → M3-06; TK-07 → M2-06; TK-08, 21, 23, 26, 28 → M3-05; TK-09 → M2-07; TK-10 → M2-01; TK-11, 12, 19 → M1-03 (+ M6-01); TK-16 → M6-04 (+ M2-11); TK-17 → M3-02; TK-18 → M0-07 (image: DK-01); TK-20 → M2-08; TK-22 → M4-07; TK-24, 25, 27 → M3-04.
+Skenario dan harapan per lapis (layanan dan Gateway): `pengujian-dan-pengukuran.md` bagian 4. Dua lapis: lapis layanan (Jest + Supertest, reason rinci, tepat satu baris audit `DENIED`) dan lapis Gateway (Newman, delapan kode klien).
+
+| TK | Spec | Tiket | Tes (lapis) |
+| --- | --- | --- | --- |
+| TK-01 | PV 7.5 | M3-06 | `TK-01 rejects Notification using a FRAUD token` (layanan, Gateway) |
+| TK-02 | PV 7.8 | M3-06 | `TK-02 rejects a purpose different from issuance` (layanan, Gateway) |
+| TK-03 | PV 7.1, 7.8 | M3-06 | `TK-03 rejects a token after TTL and grace` dengan `FakeClock` (layanan, Gateway) |
+| TK-04 | PV 4.5 | M3-02, M3-06 | `TK-04 rejects a revoked token` (layanan, Gateway) |
+| TK-05 | PV 7.8 | M3-06 | `TK-05 rejects a token that was never issued` (layanan, Gateway) |
+| TK-06 | PV 6 | M3-06 | `TK-06 rejects a purpose outside the whitelist` tanpa baris mapping (layanan, Gateway) |
+| TK-07 | PV 4.1 | M2-06 | `TK-07 rejects raw subject_id from TRANSACTION` (layanan, Gateway) |
+| TK-08 | PV 7.8 | M3-05 | `TK-08 rejects de-pseudonymize without the auditor role` (layanan, Gateway) |
+| TK-09 | PV 7.7 | M2-07 | `TK-09 rejects re-issue on a COMPLETED transaction` (layanan, Gateway) |
+| TK-10 | DM 4 | M2-01 | `TK-10 audit_log is append-only for privpay_app` pada koneksi peran asli (layanan) |
+| TK-11 | GW 7 | M1-03 | `TK-11 returns 429 above the quota` dengan `FakeClock` (Gateway) |
+| TK-12 | PL 4 | M1-03, M6-01 | `TK-12 returns identical responses for an existing and an unknown token` (Gateway) |
+| TK-13 | PV 7.5 | M3-06 | `TK-13 rejects FRAUD exchanging to NOTIFICATION` (layanan, Gateway) |
+| TK-14 | PV 6 | M3-06 | `TK-14 rejects FRAUD requesting an ACCOUNT token` (layanan, Gateway) |
+| TK-15 | PV 6, 7.8 | M3-06 | `TK-15 rejects FRAUD opening its own token` (layanan, Gateway) |
+| TK-16 | GW 4; PP 7 | M6-04 (+ M2-11) | `TK-16 returns 503 and forwards nothing when Privacy is down` + pemindai kenari (Gateway) |
+| TK-17 | PV 4.6 | M3-02 | `TK-17 revokes every token of a subject and purges the vault` (layanan, Gateway) |
+| TK-18 | PL 14 | M0-07 (image: DK-01) | gitleaks nol temuan |
+| TK-19 | GW 3 | M1-03 | `TK-19 returns 401 for a missing or expired JWT` (Gateway) |
+| TK-20 | PV 4.9 | M2-08 | `TK-20 rejects /identity from TRANSACTION and writes no vault row` (layanan, Gateway) |
+| TK-21 | PV 7.8 | M3-05 | `TK-21 returns only the approved attribute` (layanan, Gateway) |
+| TK-22 | RC 3.3 | M4-07 | `TK-22 audit-request returns no identity` + pemindai kenari (layanan, Gateway) |
+| TK-23 | PV 7.8 | M3-05 | `TK-23 rejects de-pseudonymize without an approved disclosure` (layanan, Gateway) |
+| TK-24 | PV 4.10 | M3-04 | `TK-24 rejects self approval` dan `chk_four_eyes` (layanan, Gateway) |
+| TK-25 | PV 4.10 | M3-04 | `TK-25 rejects approval without the admin role` (layanan, Gateway) |
+| TK-26 | PV 7.8 | M3-05 | `TK-26 rejects a second use and a use after 600 seconds` (layanan, Gateway) |
+| TK-27 | PV 4.10 | M3-04 | `TK-27 rejects a basis or attribute outside the tables` tanpa baris (layanan, Gateway) |
+| TK-28 | PV 7.8 | M3-05 | `TK-28 rejects another auditor using an approved request` (layanan, Gateway) |
 
 ## 6. Temuan keterlacakan
 

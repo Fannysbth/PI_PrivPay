@@ -74,7 +74,7 @@ Nilai bawaan dipakai spec sampai diputuskan. "Dampak" menunjukkan spec yang beru
 | K-09 | status transaksi terminal di Privacy tidak dapat kembali ke non-terminal (409 `TX_TERMINAL`) | PV 4.7 | USULAN |
 | K-10 | `POST /identity` idempoten (201 lalu 200) | PV 4.9 | USULAN |
 | K-11 | token `expired` dapat dicabut; pencabutan ulang idempoten | PV 4.5 | USULAN |
-| K-12 | batas body 16 KiB, pola `case_ref`, jam job retensi dari env | PV 4, 7.11 | USULAN |
+| K-12 | batas body 16 KiB, pola `case_ref`, batas 20 percobaan tabrakan nilai pseudonym | PV 4, 7.2 | USULAN |
 | K-13 | brankas hilang saat pembukaan → `TOKEN_NOT_FOUND` 404 | PV 7.8 | USULAN |
 | K-14 | rute `POST /register` di Gateway dan pembatasan laju per alamat sumber untuk rute itu | GW 3, 6, 7 | USULAN (E-26) |
 | K-15 | rute `POST /reconciliation/disclosure` | RC 3.4, GW 3 | USULAN (E-25) |
@@ -82,8 +82,10 @@ Nilai bawaan dipakai spec sampai diputuskan. "Dampak" menunjukkan spec yang beru
 | K-17 | `transaction_id` = `TX-` + epoch milidetik + penghitung 3 digit | GW 4 | USULAN |
 | K-18 | endpoint Transaction untuk Reconciliation: `GET /transaction/completed`, `GET /transaction/{id}` | TX 3.4, RC 3.2/3.3 | USULAN (E-23, E-24) |
 | K-19 | env baru `TX_SWEEP_INTERVAL_SECONDS` (30) | TX 5 | USULAN (E-28) |
-| K-20 | env baru `FRAUD_HOLD_THRESHOLD`/`FRAUD_BLOCK_THRESHOLD`; bobot dan pengali dari `risk_rules`, ambang uang/jam dari env | FR 4 | USULAN (E-28) |
+| K-20 | env baru `FRAUD_HOLD_THRESHOLD`/`FRAUD_BLOCK_THRESHOLD`; bobot dan pengali dari `risk_rules` (dibaca runtime, `active=false` dilewati), ambang uang/jam dari env | FR 4 | USULAN (E-28) |
 | K-21 | teks templat SMS dan env `SMS_SIMULATOR_TEST_ENDPOINTS`/`SMS_SIMULATOR_FAIL` | NT 3.2, 4 | USULAN |
 | K-22 | status batch: `unmatched = (#item − matched) + (#transaksi − matched)`; satu laporan per tanggal; perilaku bila laporan atau Privacy tidak ada | RC 3.1, 3.2 | USULAN |
 | K-23 | env baru `RECON_DAILY_RUN_UTC` (`00:10`) | RC 3.2 | USULAN (E-28) |
 | K-24 | format nilai kenari dan lokasi `tests/pii-scan` untuk proxy pengamat | PP 6 | USULAN |
+| K-25 | pemenang idempotensi yang masih `PENDING`: penantian hingga `HTTP_TIMEOUT_MS` lewat `Delay`, lalu 200 atau 409 | TX 5 | USULAN |
+| K-26 | env baru `RETENTION_JOB_RUN_UTC` (`01:00`) untuk job retensi harian | PV 7.11 | USULAN (E-28) |

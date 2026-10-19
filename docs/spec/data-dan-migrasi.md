@@ -105,7 +105,7 @@ Aturan: kolom tambahan khusus baseline tidak boleh dimuat pada migrasi `common`.
 | --- | --- | --- |
 | M2-01 | Migrasi privacy-db sesuai bagian 4; tes SQL dengan peran asli untuk `REVOKE/GRANT`, `chk_*`, indeks unik parsial, `chk_attribute_names` | TK-10, S-34, S-35, S-22, FR-15, FR-25 |
 | M2-01 | `EXPLAIN` pada 20.000 baris tanpa `Seq Scan` untuk pencarian `subject_lookup`+layanan+purpose+status dan `pseudonym` | NFR-04 |
-| M0-05 | peran dan database tiap layanan terbentuk idempoten; peran runtime tidak dapat mengubah skema | NFR-09 |
+| M0-05 | peran dan database tiap layanan terbentuk idempoten; peran runtime tidak dapat mengubah skema; keanggotaan admin pada peran pemilik dicabut di akhir skrip dan statusnya dicetak (diuji dengan menjalankan skrip dua kali dan memeriksa `pg_auth_members`; kegagalan di tengah skrip diperbaiki dengan menjalankan ulang) | NFR-09, ADR-0004 |
 | M4-01, M4-04, M4-05, M4-06 | migrasi tiap layanan bisnis (proposed); inspeksi skema: tidak ada kolom identitas | FR-16, FR-21, S-38, NFR-17 |
 | M5-01 | migrasi baseline tiap layanan dan repositori baseline | FR-23, US-09 |
 | semua | tes migrasi dijalankan di PostgreSQL 18 sekarang dan **diulang di 16** pada fase Docker (DK-05) | ADR-0004 |

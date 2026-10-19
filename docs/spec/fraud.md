@@ -54,4 +54,4 @@ Model ML, profil di luar riwayat asesmen, peninjauan analis (ada di Transaction)
 
 ## 8. Keputusan spec yang menunggu konfirmasi
 
-K-20 env baru `FRAUD_HOLD_THRESHOLD`/`FRAUD_BLOCK_THRESHOLD` dan pembagian sumber parameter antara env dan `risk_rules`.
+K-20 env baru `FRAUD_HOLD_THRESHOLD`/`FRAUD_BLOCK_THRESHOLD`, pembagian sumber parameter antara env dan `risk_rules`, dan pembacaan `risk_rules` saat runtime dengan `active=false` dilewati (PRD 11 menyediakan kolom `active` tetapi tidak menetapkan perilakunya).

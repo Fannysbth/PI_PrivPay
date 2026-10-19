@@ -32,7 +32,7 @@ Env (validasi zod saat start, nilai dari `.env.example`): `PRIVACY_MODE`, `GRACE
 
 Konvensi: JSON UTF-8, ISO 8601 UTC, `X-Request-Id`, `Authorization: Bearer <service JWT>` (+ `X-Actor-Token` bila disebut), error seragam (`platform-dan-ci.md` bagian 4), validasi zod yang **menolak field tak dikenal**, batas ukuran body 16 KiB (K-12). Format:
 
-- `Pseudonym`: `^PSEU-[0-9A-F]{8}$`. `TransactionId`: `^TX-[0-9]{1,29}$`. `CustomerId`: `^CUST-[0-9]{6}$`. `AccountNumber`: `^[0-9]{8,20}$` (K-06). `purpose` dan `target_service` dari enum Tabel 1.
+- Tipe bersama (`Pseudonym`, `TransactionId`, `CustomerId`, `AccountNumber`) didefinisikan sekali di `platform-dan-ci.md` bagian 3.1. `purpose` dan `target_service` dari enum Tabel 1.
 
 ### 4.1 `POST /pseudonymize`
 
@@ -64,7 +64,7 @@ Tanpa body; pemanggil `ADMIN_CONSOLE` dengan peran `admin`. 200 `{pseudonym, sta
 
 ### 4.6 `POST /subject/revoke`
 
-`{subject_type, subject_id}` → 200 `{revoked_count}`. `ADMIN_CONSOLE`, peran `admin`. Audit: satu baris `REVOKE_SUBJECT` per token yang dicabut (dengan `mapping_id`) dan, bila subjek `CUSTOMER` dan baris brankas ada, satu baris `PURGE_IDENTITY`. Bila tidak ada token dan tidak ada brankas: satu baris `REVOKE_SUBJECT` DENIED `TOKEN_NOT_FOUND` dan `revoked_count: 0`.
+`{subject_type, subject_id}` → 200 `{revoked_count}`. `ADMIN_CONSOLE`, peran `admin`. Audit: satu baris `REVOKE_SUBJECT` per token yang dicabut (dengan `mapping_id`) dan, bila subjek `CUSTOMER` dan baris brankas ada, satu baris `PURGE_IDENTITY`. Bila tidak ada token dan tidak ada brankas: satu baris `REVOKE_SUBJECT` DENIED `TOKEN_NOT_FOUND` dan `revoked_count: 0`. ADR-0005 menyerahkan perilaku ini ke spec (contohnya "tanpa baris audit palsu"): satu baris DENIED dipilih, sesuai katalog PRD 12, agar "satu baris audit per operasi" tetap berlaku; itu bukan baris palsu karena operasinya memang ditolak.
 
 ### 4.7 `PATCH /transaction-status`
 
@@ -72,7 +72,7 @@ Tanpa body; pemanggil `ADMIN_CONSOLE` dengan peran `admin`. 200 `{pseudonym, sta
 
 ### 4.8 `GET /audit-log`, `/audit-log/timeline/{pseudonym}`, `/audit-log/summary`
 
-Peran: `auditor` atau `admin` untuk daftar; `auditor` untuk timeline dan summary; `ADMIN_CONSOLE` sebagai pemanggil. Filter daftar: `service`, `status`, `reason`, `pseudonym`, `transaction_id`, `from`, `to`; **[Δ PRD, K-08]** ditambah `action` dan `disclosure_id` supaya admin menemukan permintaan pembukaan yang menunggu tanpa endpoint daftar baru. Paginasi `limit` (50, maks 200) + `cursor` (opak: `created_at` dan `id` terakhir, urutan `created_at DESC, id DESC`); timeline naik menurut waktu. Respons daftar sesuai PRD 10; baris memuat `disclosure_id` dan `attribute_names` bila ada. `summary`: `{total, denied: [{reason, count}], alerts: [{requesting_service, reason, count, window_start}]}`; `alerts` memuat tiga `DENIED` `SERVICE_MISMATCH` atau `TOKEN_NOT_FOUND` dari satu layanan dalam lima menit (mitigasi Q-11). Setiap pembacaan menulis satu baris `VIEW_AUDIT_LOG` (SUCCESS) lewat pool `app`. Dibaca lewat pool `auditor`.
+Peran: `auditor` atau `admin` untuk daftar; `auditor` untuk timeline dan summary; `ADMIN_CONSOLE` sebagai pemanggil. Filter daftar: `service`, `status`, `reason`, `pseudonym`, `transaction_id`, `from`, `to`; **[Δ PRD, K-08]** ditambah `action` dan `disclosure_id` supaya admin menemukan permintaan pembukaan yang menunggu tanpa endpoint daftar baru. Paginasi `limit` (50, maks 200) + `cursor` (opak: `created_at` dan `id` terakhir, urutan `created_at DESC, id DESC`); timeline naik menurut waktu. Respons daftar sesuai PRD 10; baris memuat `disclosure_id` dan `attribute_names` bila ada. `summary`: `{total, denied: [{reason, count}], alerts: [{requesting_service, reason, count, window_start}]}`; `alerts` memuat tiga `DENIED` `SERVICE_MISMATCH` atau `TOKEN_NOT_FOUND` dari satu layanan dalam lima menit (komponen opsional "Peringatan sederhana" pada PRD 12, diterima sebagai mitigasi Q-11). Setiap pembacaan menulis satu baris `VIEW_AUDIT_LOG` (SUCCESS) lewat pool `app`. Dibaca lewat pool `auditor`.
 
 ### 4.9 `POST /identity`
 
@@ -126,7 +126,7 @@ Satu transaksi dengan langkah (urutan wajib):
 3. **Penandaan kedaluwarsa:** `UPDATE ... SET status='expired' WHERE subject_lookup=… AND service_id=… AND purpose=… AND status='active' AND expires_at < now`. Tanpanya, INSERT setelah TTL melanggar `uq_mapping_active` (T-06, FR-33).
 4. Cari baris aktif; bila ada, kembalikan `{reused: true}`.
 5. `id = uuid v4`; `enc = FieldCipher.encrypt(subject_id, AAD(mapping, subject_type, id))`.
-6. Ulangi sampai 20 kali: `nonce`, `pseudonym`, `INSERT ... ON CONFLICT (pseudonym) DO NOTHING RETURNING id`; bila 0 baris, ulang dari nonce baru (INSERT biasa yang gagal unique membatalkan seluruh transaksi PostgreSQL, sehingga "ulangi dari STEP 2" PRD tidak dapat berjalan tanpa `ON CONFLICT`). Lebih dari 20 kali: 500.
+6. Ulangi sampai 20 kali (batas dipilih spec, K-12; pada tabrakan yang dipaksa prototipe memerlukan 4 percobaan): `nonce`, `pseudonym`, `INSERT ... ON CONFLICT (pseudonym) DO NOTHING RETURNING id`; bila 0 baris, ulang dari nonce baru ("ulangi dari STEP 2" pada ADR-0010 berarti langkah pembangkitan nonce dan nilai pseudonym; INSERT biasa yang gagal unique membatalkan seluruh transaksi PostgreSQL, sehingga "ulangi dari STEP 2" PRD tidak dapat berjalan tanpa `ON CONFLICT`). Lebih dari 20 kali: 500.
 7. `expires_at = now + TTL(purpose)`; sisipkan baris audit; commit.
 
 **Alternatif tercatat (strategi B):** ulang seluruh transaksi bila `uq_mapping_active` dilanggar. Dipakai hanya bila kunci advisory tidak dapat dipakai (mis. pooler mode transaksi).
@@ -169,7 +169,7 @@ Seperti 4.5 dan 4.6 dan PRD 6.2: `revoke_subject` menghitung `lookup`, menandai 
 
 ### 7.11 Retensi (`RetentionJob`)
 
-Harian (jam dari env, K-12) dan dapat dipicu di tes. Langkah 1: tandai `expired` baris aktif dengan `expires_at + GRACE < now`. Langkah 2: kosongkan `subject_id_enc`, `subject_lookup`, isi `purged_at` pada baris `expired`/`revoked` yang `COALESCE(revoked_at, expires_at) < now − RETENTION_DAYS`; satu audit `PURGE_IDENTITY` per baris, `actor_id='SYSTEM'`. Brankas tidak ikut job. Satu transaksi per batch.
+Harian (`RETENTION_JOB_RUN_UTC`, bawaan `01:00`, K-26) dan dapat dipicu di tes. Langkah 1: tandai `expired` baris aktif dengan `expires_at + GRACE < now`. Langkah 2: kosongkan `subject_id_enc`, `subject_lookup`, isi `purged_at` pada baris `expired`/`revoked` yang `COALESCE(revoked_at, expires_at) < now − RETENTION_DAYS`; satu audit `PURGE_IDENTITY` per baris, `actor_id='SYSTEM'`. Brankas tidak ikut job. Satu transaksi per batch.
 
 ## 8. Mesin status
 
@@ -244,4 +244,4 @@ Implementasi rantai hash, rotasi kunci (hanya `key_version` dan prosedur tertuli
 
 ## 14. Keputusan spec yang menunggu konfirmasi
 
-K-06 pola `AccountNumber` `^[0-9]{8,20}$`. K-07 `INVALID_BASIS`/`ATTRIBUTE_NOT_ALLOWED` ditulis sebagai audit DENIED. K-08 filter `action` dan `disclosure_id` pada `GET /audit-log`. K-09 status transaksi terminal tidak dapat kembali. K-10 `/identity` idempoten (201 lalu 200). K-11 token `expired` dapat dicabut dan pencabutan ulang idempoten. K-12 batas body 16 KiB, pola `case_ref`, jam job retensi. K-13 brankas hilang saat pembukaan → `TOKEN_NOT_FOUND`.
+K-06 pola `AccountNumber` `^[0-9]{8,20}$`. K-07 `INVALID_BASIS`/`ATTRIBUTE_NOT_ALLOWED` ditulis sebagai audit DENIED. K-08 filter `action` dan `disclosure_id` pada `GET /audit-log`. K-09 status transaksi terminal tidak dapat kembali. K-10 `/identity` idempoten (201 lalu 200). K-11 token `expired` dapat dicabut dan pencabutan ulang idempoten. K-12 batas body 16 KiB, pola `case_ref`, batas 20 percobaan tabrakan nilai pseudonym. K-26 jam job retensi (`RETENTION_JOB_RUN_UTC`). K-13 brankas hilang saat pembukaan → `TOKEN_NOT_FOUND`.

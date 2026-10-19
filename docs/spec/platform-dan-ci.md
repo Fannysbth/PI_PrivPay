@@ -38,6 +38,12 @@ Prinsip desain (skill `codebase-design`): modul dalam dengan interface kecil, se
 
 Kriteria interface: modul `errors`, `config`, dan `auth` diuji lewat interface publiknya, bukan internalnya.
 
+### 3.1 Tipe bersama dan katalog env (satu sumber)
+
+Spec lain merujuk ke sini dan tidak mengulang pola. Tipe bersama (zod di `packages/common`, menolak field tak dikenal): `Pseudonym` `^PSEU-[0-9A-F]{8}$`; `TransactionId` `^TX-[0-9]{1,29}$`; `CustomerId` `^CUST-[0-9]{6}$`; `AccountNumber` `^[0-9]{8,20}$` (K-06); `Amount` bilangan bulat rupiah ≥ 1 (K-16); `Geohash` `^[0-9b-hjkmnp-z]{1,12}$`; `MerchantId` `^MRC-[0-9]{3,}$`; `Phone` `^08[0-9]{8,12}$`; `Nik` `^[0-9]{16}$`; `BankReference` `^[A-Z0-9-]{1,32}$`; `IdempotencyKey` UUID.
+
+Env: yang sudah ada di `.env.example` tetap berlaku (`PRIVACY_MODE`, `GRACE_PERIOD_SECONDS`, `TTL_*`, `DISCLOSURE_APPROVAL_TTL_SECONDS`, `PSEUDONYM_KEY_VERSION`, `RETENTION_DAYS`, `FRAUD_AMOUNT_THRESHOLD`, `FRAUD_ODD_HOUR_START/END`, `HTTP_TIMEOUT_MS`, `HTTP_MAX_RETRY`, `TX_PENDING_TIMEOUT_SECONDS`, `RATE_LIMIT_ENABLED`, `RATE_LIMIT_PER_MINUTE`, `ACCESS_TOKEN_TTL_SECONDS`, `PG_HOST`, `PG_PORT`, `PG_SECRETS_DIR`, `LOG_LEVEL`, `TZ`). **Usulan baru, belum ada di `.env.example` dan ditambahkan di tiket yang memakainya setelah disetujui (E-28):** `FRAUD_HOLD_THRESHOLD` (50) dan `FRAUD_BLOCK_THRESHOLD` (90) [K-20]; `TX_SWEEP_INTERVAL_SECONDS` (30) [K-19]; `RECON_DAILY_RUN_UTC` (`00:10`) [K-23]; `RETENTION_JOB_RUN_UTC` (`01:00`) [K-26]; `SMS_SIMULATOR_TEST_ENDPOINTS`, `SMS_SIMULATOR_FAIL` [K-21]; `DEV_IDP_ENABLED`; berkas rahasia `<NAMA>_FILE` per layanan.
+
 ## 4. Format error dan kode **[Δ PRD]**
 
 Bentuk tunggal (NFR-25): `{ "error": { "code", "reason", "message", "request_id" } }`.

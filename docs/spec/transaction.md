@@ -100,4 +100,4 @@ Model saldo/ledger, verifikasi kepemilikan rekening, pengiriman ulang notifikasi
 
 ## 10. Keputusan spec yang menunggu konfirmasi
 
-K-18 endpoint 3.4 (PRD 10 tidak mendaftarkannya). K-19 `TX_SWEEP_INTERVAL_SECONDS` (env baru, bawaan 30). Selain itu K-02 dan K-16 pada spec lain berlaku di sini.
+K-18 endpoint 3.4 (PRD 10 tidak mendaftarkannya). K-19 `TX_SWEEP_INTERVAL_SECONDS` (env baru, bawaan 30). K-25 penantian pemenang yang masih `PENDING` hingga `HTTP_TIMEOUT_MS` lewat `Delay` sebelum menjawab 200 atau 409 (ADR-0009 hanya menyebut respons akhirnya). Selain itu K-02 dan K-16 pada spec lain berlaku di sini.

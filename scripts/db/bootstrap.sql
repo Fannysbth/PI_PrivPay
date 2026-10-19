@@ -55,7 +55,10 @@ SELECT format('ALTER ROLE %I WITH LOGIN NOSUPERUSER NOCREATEROLE NOREPLICATION %
 GRANT privpay_privacy_owner TO privpay_test_admin;
 
 -- The connecting admin must be able to SET ROLE to the owner role to create a database owned by it and to run the
--- schema grants below (unless superuser). The membership is temporary: it is revoked at the end of this script.
+-- schema grants below (unless superuser). The membership is temporary: it is revoked at the end of this script,
+-- also when an earlier run left it behind (the owner role is created by this project, so the admin has no other
+-- reason to be a member). If the script fails between the GRANT and the final REVOKE, the membership stays:
+-- run the script again (it is idempotent) or run REVOKE privpay_privacy_owner FROM <admin> by hand.
 SELECT NOT rolsuper AS needs_membership FROM pg_roles WHERE rolname = current_user \gset
 \if :needs_membership
   GRANT privpay_privacy_owner TO CURRENT_USER;
