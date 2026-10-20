@@ -1,0 +1,145 @@
+import type { Clock } from '@privpay/common';
+import type { Pool } from 'pg';
+import { AuditWriter } from '../audit';
+
+/** Every value is a bind parameter (CLAUDE.md). The predicates are those of PRD 6.2. */
+export const RETENTION_SQL = {
+  // Step 1: an active row past its TTL and grace period. $1 is now minus the grace period.
+  markExpired: `UPDATE pseudonym_mapping SET status = 'expired' WHERE status = 'active' AND expires_at < $1`,
+  // Step 2, one batch: SKIP LOCKED leaves a row that an exchange, a re-issue or a revocation holds at this moment for the
+  // next run, instead of waiting for it. $1 is now minus RETENTION_DAYS, $2 the batch size, $3 now. The identity columns
+  // go together (chk_purged); the row stays, so audit_log.mapping_id stays valid; nothing is deleted.
+  purgeBatch: `WITH picked AS (
+       SELECT id FROM pseudonym_mapping
+        WHERE purged_at IS NULL AND status IN ('expired', 'revoked') AND COALESCE(revoked_at, expires_at) < $1
+        ORDER BY id LIMIT $2 FOR UPDATE SKIP LOCKED)
+     UPDATE pseudonym_mapping m
+        SET subject_id_enc = NULL, subject_lookup = NULL, purged_at = $3
+       FROM picked WHERE m.id = picked.id
+     RETURNING m.id, m.pseudonym, m.purpose, m.key_version`,
+  // The check of PRD 6.2 (TF-14): no row that stopped being valid long ago still holds an identity.
+  overdue: `SELECT count(*) AS n FROM pseudonym_mapping
+     WHERE subject_id_enc IS NOT NULL AND status IN ('expired', 'revoked') AND COALESCE(revoked_at, expires_at) < $1`,
+} as const;
+
+const DEFAULT_BATCH_SIZE = 500;
+const DAY_MS = 86_400_000;
+
+export interface RetentionJobDeps {
+  readonly pool: Pick<Pool, 'connect' | 'query'>;
+  readonly clock: Clock;
+  /** GRACE_PERIOD_SECONDS (spec 7.1). */
+  readonly graceSeconds: number;
+  /** RETENTION_DAYS (PRD 17; 90, set for this research). */
+  readonly retentionDays: number;
+  /** Rows per transaction (spec 7.11: one transaction per batch). */
+  readonly batchSize?: number;
+}
+
+export interface RetentionResult {
+  readonly expired: number;
+  readonly purged: number;
+}
+
+interface PurgedRow {
+  id: string;
+  pseudonym: string;
+  purpose: string;
+  key_version: number;
+}
+
+/**
+ * The retention job (spec privacy 7.11, PRD 6.2): mark the rows that expired, then empty the identity of the rows that
+ * stopped being valid at least RETENTION_DAYS ago, one audit row PURGE_IDENTITY per row (by SYSTEM, naming the mapping
+ * and never an identity), in one transaction per batch. The vault is not part of it, and nothing is deleted.
+ */
+export class RetentionJob {
+  private readonly batchSize: number;
+  private readonly writer = new AuditWriter();
+
+  constructor(private readonly deps: RetentionJobDeps) {
+    const { graceSeconds, retentionDays } = deps;
+    if (
+      typeof retentionDays !== 'number' ||
+      !Number.isSafeInteger(retentionDays) ||
+      retentionDays < 1
+    ) {
+      throw new RangeError('retentionDays must be a positive whole number of days');
+    }
+    if (typeof graceSeconds !== 'number' || !Number.isFinite(graceSeconds) || graceSeconds < 0) {
+      throw new RangeError('graceSeconds must be a non-negative number');
+    }
+    this.batchSize = deps.batchSize ?? DEFAULT_BATCH_SIZE;
+    if (!Number.isSafeInteger(this.batchSize) || this.batchSize < 1) {
+      throw new RangeError('batchSize must be a positive whole number');
+    }
+  }
+
+  async run(): Promise<RetentionResult> {
+    const now = this.deps.clock.now();
+    // Marking by time is not audited (spec 9.1).
+    const marked = await this.deps.pool.query(RETENTION_SQL.markExpired, [
+      new Date(now.getTime() - this.deps.graceSeconds * 1000),
+    ]);
+    let purged = 0;
+    for (;;) {
+      const batch = await this.purgeBatch(now);
+      purged += batch;
+      if (batch < this.batchSize) break;
+    }
+    return { expired: marked.rowCount ?? 0, purged };
+  }
+
+  /** The rows that the check of PRD 6.2 would still find: zero after a run that was not interrupted by locks. */
+  async overdueCount(): Promise<number> {
+    const { rows } = await this.deps.pool.query<{ n: string }>(RETENTION_SQL.overdue, [
+      this.cutoff(this.deps.clock.now()),
+    ]);
+    return Number(rows[0]?.n);
+  }
+
+  private cutoff(now: Date): Date {
+    return new Date(now.getTime() - this.deps.retentionDays * DAY_MS);
+  }
+
+  /** One transaction: the rows and their audit rows commit together or not at all (FR-13). */
+  private async purgeBatch(now: Date): Promise<number> {
+    const client = await this.deps.pool.connect();
+    let broken: Error | undefined;
+    try {
+      await client.query('BEGIN');
+      try {
+        const { rows } = await client.query<PurgedRow>(RETENTION_SQL.purgeBatch, [
+          this.cutoff(now),
+          this.batchSize,
+          now,
+        ]);
+        for (const row of rows) {
+          await this.writer.record(
+            {
+              action: 'PURGE_IDENTITY',
+              status: 'SUCCESS',
+              reason: 'OK',
+              requestingService: 'PRIVACY_SERVICE',
+              actorId: 'SYSTEM',
+              pseudonym: row.pseudonym,
+              purpose: row.purpose,
+              mappingId: row.id,
+              keyVersion: row.key_version,
+            },
+            client,
+          );
+        }
+        await client.query('COMMIT');
+        return rows.length;
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {
+          broken = new Error('connection unusable');
+        });
+        throw error;
+      }
+    } finally {
+      client.release(broken);
+    }
+  }
+}
