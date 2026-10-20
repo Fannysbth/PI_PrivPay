@@ -33,6 +33,23 @@ final line says so (`admin membership in the privpay_*_owner roles revoked`). If
 `pnpm test:integration` needs the roles above. Copy `.env.test.example` to `.env.test` (host, port, secrets directory;
 no passwords) or export `PG_HOST`, `PG_PORT`, `PG_SECRETS_DIR`.
 
+## Test databases left on the server
+
+`createTestDb` recreates `privpay_<service>_test_<suffix>` at the start of each test and **does not drop it afterwards**
+(so a failed test can be inspected). The number is bounded by the distinct suffixes in the test files (about thirty,
+roughly 8 MB each), not by the number of runs. To see them, and to remove them:
+
+```
+pnpm db:test-databases          # list: service databases and test leftovers, with open sessions; touches nothing
+pnpm db:test-databases drop     # shows the test leftovers, then needs the typed answer "DROP <count>"
+```
+
+Only names of the form `privpay_<one of the five services>_test_<[a-z0-9]{1,20}>` can be dropped, never a service
+database or another project's database; there is no flag that skips the confirmation, and without a terminal the
+prompt is never answered. A database that still has a session of a role the test admin may not end (a superuser such
+as **pgAdmin** browsing it) is reported as `42501` and stays; disconnect that session and run it again. The same
+sessions make `createTestDb` fail with "permission denied to terminate process" after five seconds.
+
 ## What the admin keeps
 
 PostgreSQL 16+ gives the role that runs `CREATE ROLE` the ADMIN option on it. The script cannot remove that as a

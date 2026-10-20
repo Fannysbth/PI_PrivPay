@@ -1,5 +1,5 @@
 import { Client, Pool } from 'pg';
-import { RealDelay } from '../delay';
+import { RealDelay, type Delay } from '../delay';
 import {
   assertPrivpayName,
   createPool,
@@ -45,20 +45,47 @@ const DROP_ATTEMPTS = 50;
 const DROP_PAUSE_MS = 100;
 
 /**
+ * A session the test admin may not end still holds the database after the wait. It is a superuser's (pgAdmin, psql,
+ * an IDE) rather than a runtime role's, because those close within milliseconds; `code` stays the SQLSTATE so callers
+ * can tell it from other failures.
+ */
+export class TestDatabaseBusyError extends Error {
+  readonly code = NOT_PERMITTED_TO_TERMINATE;
+  readonly database: string;
+
+  constructor(database: string) {
+    super(
+      `database ${database} is held by a session that the test admin may not end (for example pgAdmin or psql ` +
+        'connected as a superuser): disconnect it from privpay_* databases and run again',
+    );
+    this.name = 'TestDatabaseBusyError';
+    this.database = database;
+  }
+}
+
+/**
  * DROP ... WITH (FORCE) ends the sessions of the previous run, but the test admin may only end those of the owner
  * roles. A runtime-role session that `pool.end()` has already closed can still be listed by the server for a few
  * milliseconds, and then FORCE fails with "permission denied to terminate process". That is waited out (at most five
- * seconds) instead of being a test that fails now and then; a session that really stays is reported as it was.
+ * seconds) instead of being a test that fails now and then; a session that really stays becomes a
+ * `TestDatabaseBusyError` that says so, and any other failure is passed on as it was.
  */
-async function dropWhenFree(admin: Client, quotedDatabase: string): Promise<void> {
+export async function dropWhenFree(
+  admin: Client,
+  database: string,
+  delay: Delay = new RealDelay(),
+): Promise<void> {
+  // DDL cannot take bind parameters: the name is quoted here, callers pass privpay_ names only.
+  const quoted = admin.escapeIdentifier(database);
   for (let attempt = 1; ; attempt += 1) {
     try {
-      await admin.query(`DROP DATABASE IF EXISTS ${quotedDatabase} WITH (FORCE)`);
+      await admin.query(`DROP DATABASE IF EXISTS ${quoted} WITH (FORCE)`);
       return;
     } catch (error) {
       const retryable = (error as { code?: string }).code === NOT_PERMITTED_TO_TERMINATE;
-      if (!retryable || attempt === DROP_ATTEMPTS) throw error;
-      await new RealDelay().wait(DROP_PAUSE_MS);
+      if (!retryable) throw error;
+      if (attempt === DROP_ATTEMPTS) throw new TestDatabaseBusyError(database);
+      await delay.wait(DROP_PAUSE_MS);
     }
   }
 }
@@ -99,7 +126,7 @@ export async function createTestDb(
     // DDL cannot take bind parameters: the names are validated above and quoted here.
     const quoted = admin.escapeIdentifier(database);
     runtimeList = runtimeRoles.map((r) => admin.escapeIdentifier(r)).join(', ');
-    await dropWhenFree(admin, quoted);
+    await dropWhenFree(admin, database);
     await admin.query(`CREATE DATABASE ${quoted} OWNER ${admin.escapeIdentifier(owner)}`);
     await admin.query(`REVOKE ALL ON DATABASE ${quoted} FROM PUBLIC`);
     await admin.query(`GRANT CONNECT ON DATABASE ${quoted} TO ${runtimeList}`);
@@ -113,8 +140,12 @@ export async function createTestDb(
     pools.push(pool);
     return pool;
   };
-  const close = async (): Promise<void> => {
-    await Promise.all(pools.map((pool) => pool.end()));
+  // One end() per pool however often close is called: a second pool.end() throws and would hide the failure that
+  // led to the second call.
+  let closing: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    closing ??= Promise.all(pools.map((pool) => pool.end())).then(() => undefined);
+    return closing;
   };
 
   // Every pool is opened inside the try, so a failure at any step (missing password file, bad schema) ends them all.
