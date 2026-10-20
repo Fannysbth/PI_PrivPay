@@ -28,6 +28,7 @@ const baseEnv = {
   PRIVACY_MODE: 'proposed',
   PORT: '0',
   DEV_IDP_ENABLED: 'true',
+  NODE_ENV: 'test',
   DEV_IDP_SECRETS_DIR: secretsDir,
 };
 

@@ -1,7 +1,7 @@
 # dev-idp
 
 A fake JWT issuer for the **local phase only** (ADR-0004, ADR-0007). It stands in for Keycloak until the Docker phase
-(DK-04) and must never run anywhere real tokens are expected: it refuses to start when `NODE_ENV=production` or when
+(DK-04) and must never run anywhere real tokens are expected: it refuses to start unless `NODE_ENV` is `development` or `test`, or when
 `DEV_IDP_ENABLED` is not exactly `true`, and it only binds to `127.0.0.1`.
 
 ## Run
@@ -9,7 +9,7 @@ A fake JWT issuer for the **local phase only** (ADR-0004, ADR-0007). It stands i
 ```
 corepack pnpm --filter @privpay/dev-idp run make-secrets   # once: one random secret per service account in secrets/
 corepack pnpm build
-DEV_IDP_ENABLED=true PRIVACY_MODE=proposed PORT=<port> node tools/dev-idp/dist/main.js
+NODE_ENV=development DEV_IDP_ENABLED=true PRIVACY_MODE=proposed PORT=<port> node tools/dev-idp/dist/main.js
 ```
 
 `make-secrets` writes `secrets/<client>_client_secret` (never overwrites, prints file names only). The secrets directory
@@ -19,6 +19,7 @@ anywhere; every restart publishes a new key and forgets the customers created th
 | Variable | Meaning |
 | --- | --- |
 | `DEV_IDP_ENABLED` | must be `true` |
+| `NODE_ENV` | must be `development` or `test`; unset or anything else (including `production`) stops the start |
 | `ACCESS_TOKEN_TTL_SECONDS` | token lifetime, 1 to 300 (default 300) |
 | `DEV_IDP_SECRETS_DIR` | where the client secrets are read from |
 | `PRIVACY_MODE`, `PORT`, `BIND_HOST`, `LOG_LEVEL` | the shared service bootstrap |

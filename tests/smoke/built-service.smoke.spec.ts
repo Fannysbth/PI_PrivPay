@@ -122,6 +122,7 @@ describe('M1-01 the built dev-idp runs as a process, with secrets made by its sc
     PRIVACY_MODE: 'baseline',
     PORT: String(port),
     DEV_IDP_ENABLED: 'true',
+    NODE_ENV: 'development',
     DEV_IDP_SECRETS_DIR: secretsDir,
     ...extra,
   });

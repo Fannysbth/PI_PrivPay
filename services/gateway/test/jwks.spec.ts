@@ -17,11 +17,14 @@ describe('M1-03 JwksKeys finds the public key of a token and refreshes at most o
   let published: unknown;
   let calls: number;
   let failing: boolean;
+  /** When set, a fetch waits for it: a slow IdP. */
+  let hold: Promise<void> | undefined;
   const source: JwksSource = {
-    fetch: () => {
+    fetch: async () => {
       calls += 1;
-      if (failing) return Promise.reject(new Error('idp down at http://127.0.0.1:1'));
-      return Promise.resolve(published);
+      if (hold !== undefined) await hold;
+      if (failing) throw new Error('idp down at http://127.0.0.1:1');
+      return published;
     },
   };
   beforeEach(() => {
@@ -29,6 +32,7 @@ describe('M1-03 JwksKeys finds the public key of a token and refreshes at most o
     published = { keys: [jwk(a, 'k1')] };
     calls = 0;
     failing = false;
+    hold = undefined;
   });
   const keys = (): JwksKeys =>
     new JwksKeys({ source, clock, cooldownSeconds: 30, maxAgeSeconds: 300 });
@@ -146,6 +150,33 @@ describe('M1-03 JwksKeys finds the public key of a token and refreshes at most o
     failing = false;
     clock.advance(30);
     await store.ensure('k1');
+    expect(store.resolveKey('k1')).toBeDefined();
+  });
+
+  it('M1-03 a request with a known key id is not held up, or failed, by a reload that an unknown key id started', async () => {
+    const store = keys();
+    await store.ensure('k1');
+    let release: () => void = () => undefined;
+    hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    failing = true;
+    // An attacker's random key id starts a reload at a slow, failing IdP.
+    const reload = store.ensure('random-kid').catch((e: unknown) => e);
+    // A legitimate caller with a key we hold must be answered at once, without waiting for that reload.
+    const settled = await Promise.race([
+      store.ensure('k1').then(() => 'answered'),
+      new Promise<string>((resolve) => {
+        setImmediate(() => {
+          resolve('still waiting');
+        });
+      }),
+    ]);
+    expect(settled).toBe('answered');
+    expect(store.resolveKey('k1')).toBeDefined();
+    release();
+    expect(await reload).toBeInstanceOf(DomainError);
+    // The failed reload did not take away the keys we already trusted.
     expect(store.resolveKey('k1')).toBeDefined();
   });
 });

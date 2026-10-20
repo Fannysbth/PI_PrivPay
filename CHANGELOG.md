@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Tinjauan keamanan M1
+
+- `docs/security/review-M1.md`: status dan bukti per butir checklist yang jatuh tempo sampai M1 (15 lulus, 7 belum teruji karena butuh CI di GitHub, Docker, atau pengaturan repositori, 2 n/a) dan temuan di luar checklist dari tinjauan independen. Tidak ada Critical atau High.
+- Diperbaiki (tes lebih dulu): reload JWKS tidak lagi menahan atau menggagalkan permintaan ber-`kid` yang sudah dikenal (IdP lambat atau mati, banjir `kid` palsu); `NODE_ENV` dev-idp wajib `development` atau `test` (kosong atau lain ditolak); badan non-JSON dari hilir tidak diteruskan ke klien; `X-Content-Type-Options: nosniff` pada semua jawaban dan `x-powered-by` dimatikan. Sisa temuan di N-23.
+
 ### M1-03 inti Gateway: JWT, laju, rute, penyamaran error
 
 - Ditambah di `services/gateway`: `RouteTable` (13 rute operasi manusia AZ-04..08 dan AZ-10..17, satu daftar; parameter jalur diperiksa bentuknya; metode atau path lain tidak ada), `RateLimiter` (jendela tetap semenit per `azp+sub` dengan `Clock`, `RATE_LIMIT_ENABLED`, `RATE_LIMIT_PER_MINUTE`, `Retry-After`), `ErrorMasker` (setiap reason antar-layanan menjadi satu dari delapan kode, `reason` dan teks hilir tidak pernah sampai ke klien; token ada dan tidak ada identik kecuali `request_id`), `JwksKeys` (kunci IdP per `kid`, muat ulang berjeda, JWKS cacat ditolak), dan `Gateway.handle`: rute -> `authenticate` -> laju -> peran -> skema ketat body/query per rute -> teruskan dengan kredensial rute (`gateway-token+actor`: token layanan `api-gateway` per hilir, di-cache sampai `exp - 30 detik`, ditambah `X-Actor-Token` = token orang; `human-token`: token orang apa adanya). Hanya `Authorization` klien yang dibaca; header lain dan `X-Actor-Token` dari klien tidak diteruskan; body dan query dibangun ulang dari bagian yang lolos skema; token nasabah tidak pernah diteruskan. `main.ts` memakai `gatewayModules()`.

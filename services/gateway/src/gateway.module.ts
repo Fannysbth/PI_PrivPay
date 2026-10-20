@@ -61,10 +61,14 @@ class GatewayController {
     } finally {
       named();
     }
+    const empty = answer.body === undefined || answer.body === null || answer.body === '';
+    // The services answer JSON. Anything else is a fault upstream and is not passed on to a client (it could be
+    // rendered as a page).
+    if (!empty && typeof answer.body !== 'object')
+      throw new DomainError('INTERNAL_ERROR', 'non_json_upstream');
     res.status(answer.status);
-    if (answer.body === undefined || answer.body === null || answer.body === '') res.end();
-    else if (typeof answer.body === 'object') res.json(answer.body);
-    else res.send(typeof answer.body === 'string' ? answer.body : JSON.stringify(answer.body));
+    if (empty) res.end();
+    else res.json(answer.body);
   }
 }
 

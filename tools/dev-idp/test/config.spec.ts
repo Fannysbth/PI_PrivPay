@@ -5,7 +5,7 @@ import { ConfigError } from '@privpay/common';
 import { loadDevIdpConfig, readServiceSecrets } from '../src/config';
 import { SERVICE_CLIENTS } from '../src/registry';
 
-const enabled = { DEV_IDP_ENABLED: 'true' };
+const enabled = { DEV_IDP_ENABLED: 'true', NODE_ENV: 'development' };
 const problem = (env: Record<string, string | undefined>): string => {
   try {
     loadDevIdpConfig(env);
@@ -23,6 +23,17 @@ describe('M1-01 the dev IdP refuses to start outside the local phase (ADR-0004, 
       expect(problem({ DEV_IDP_ENABLED: value })).toContain('DEV_IDP_ENABLED (invalid)');
     }
     expect(problem(enabled)).toBe('accepted');
+  });
+
+  it('M1-01 NODE_ENV must be named and be development or test: an unset or unknown environment is not local', () => {
+    const withoutNodeEnv: Record<string, string> = { ...enabled };
+    Reflect.deleteProperty(withoutNodeEnv, 'NODE_ENV');
+    expect(problem(withoutNodeEnv)).toContain('NODE_ENV (missing)');
+    for (const value of ['staging', 'prod', 'live', 'local', 'devel']) {
+      expect(problem({ ...enabled, NODE_ENV: value })).toContain('NODE_ENV (invalid)');
+    }
+    expect(problem({ ...enabled, NODE_ENV: 'Development' })).toBe('accepted');
+    expect(problem({ ...enabled, NODE_ENV: ' TEST ' })).toBe('accepted');
   });
 
   it('M1-01 refuses NODE_ENV=production even when it is enabled', () => {

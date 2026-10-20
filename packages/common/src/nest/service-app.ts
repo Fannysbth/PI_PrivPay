@@ -169,6 +169,8 @@ export async function createServiceApp(
     bodyParser: false,
   });
   app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
+  // No answer names the framework.
+  app.disable('x-powered-by');
 
   // Request id and timing come first so that even errors raised by the body parser carry them.
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -176,6 +178,8 @@ export async function createServiceApp(
     const requestId = supplied !== undefined && UUID.test(supplied) ? supplied : randomUUID();
     res.locals['requestId'] = requestId;
     res.setHeader('x-request-id', requestId);
+    // Every answer is JSON or Prometheus text; a browser must not guess another type from it.
+    res.setHeader('x-content-type-options', 'nosniff');
     // A connection that outlives the shutdown would keep the server from draining.
     if (closing) res.setHeader('connection', 'close');
 

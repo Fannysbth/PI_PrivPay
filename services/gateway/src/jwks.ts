@@ -53,11 +53,12 @@ export class JwksKeys {
 
   /** Makes sure `resolveKey(kid)` has had its chance: loads, reloads for an unknown id, and renews old keys. */
   async ensure(kid: string | undefined): Promise<void> {
-    if (this.inFlight !== undefined) return this.inFlight;
-
     const now = this.options.clock.now().getTime();
     const stale = this.loaded && now - this.loadedAt >= this.options.maxAgeSeconds * 1000;
+    // A key we hold and trust is answered from memory, whatever reload is under way: a slow or failing IdP, or a flood
+    // of made-up key ids, must not hold up or fail the callers whose keys are fine.
     if (this.loaded && !stale && (kid === undefined || this.keys.has(kid))) return;
+    if (this.inFlight !== undefined) return this.inFlight;
 
     const cooldownMs = this.options.cooldownSeconds * 1000;
     if (this.lastFailure !== undefined && now - this.lastFailure < cooldownMs) {

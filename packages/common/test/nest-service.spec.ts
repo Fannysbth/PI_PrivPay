@@ -217,6 +217,15 @@ describe('M0-06 every failure has the same shape and leaks nothing (NFR-25, S-42
     expect(metrics).not.toContain('12345678901234');
   });
 
+  it('M1-03 S-nn every answer says nosniff and none names the framework', async () => {
+    const { service } = await start('transaction-service', { modules: [ProbeModule] });
+    for (const path of ['/health', '/metrics', '/probe/domain', '/nope']) {
+      const response = await request(service.httpServer).get(path);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-powered-by']).toBeUndefined();
+    }
+  });
+
   it('M1-03 a RateLimitedError is a 429 that says how long to wait (Retry-After)', async () => {
     const { service } = await start('gateway', { modules: [ProbeModule] });
     const response = await request(service.httpServer).get('/probe/limited');

@@ -457,6 +457,17 @@ describe('M1-03 errors from downstream are masked to the eight codes (TK-12, NFR
     expect(response.body).toMatchObject({ error: { code: 'SERVICE_UNAVAILABLE' } });
   });
 
+  it('M1-03 a downstream answer that is not JSON is never passed on to the client: 500, no text', async () => {
+    gateway.network.respond(HOSTS['privacy-service'], () => ({
+      status: 200,
+      body: '<script>alert(1)</script>',
+    }));
+    const response = await asAuditor();
+    expect(response.status).toBe(500);
+    expect(response.body).toMatchObject({ error: { code: 'INTERNAL_ERROR' } });
+    expect(response.text).not.toContain('script');
+  });
+
   it('M1-03 a success is passed on as it came, and an empty answer stays empty', async () => {
     answerWith(200, { pseudonym: PSEUDONYM, status: 'revoked' });
     const ok = await asAuditor();

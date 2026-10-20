@@ -16,11 +16,11 @@ import { SERVICE_CLIENTS, type ServiceClient } from './registry';
  */
 export const devIdpConfigSchema = z.object({
   DEV_IDP_ENABLED: z.literal('true'),
+  // Named, and local: an unset or unknown NODE_ENV is not proof of a local phase, so only development and test pass
+  // (case and spaces ignored: 'Production' is production). A deployment that forgot to set it fails instead of running.
   NODE_ENV: z
     .string()
-    // Case and spaces are ignored: 'Production' is production.
-    .refine((value) => value.trim().toLowerCase() !== 'production')
-    .optional(),
+    .refine((value) => ['development', 'test'].includes(value.trim().toLowerCase())),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(1).max(300).default(300),
   DEV_IDP_SECRETS_DIR: z.string().min(1).default('./secrets'),
 });
