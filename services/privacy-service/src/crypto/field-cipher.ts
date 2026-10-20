@@ -1,17 +1,19 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { CryptoError } from './errors';
 import { keyMaterial, type PrivacyKeys } from './keys';
-import { isIssuedBinding, type RowBinding } from './parts';
+import { assertWellFormed, issuedBytes, type RowBinding } from './parts';
 
 const VERSION_BYTES = 2;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 
 // The type already forbids a hand-made AAD; this stops a cast or a caller without types from encrypting with none (T-16).
-function assertIssued(binding: RowBinding): void {
-  if (!isIssuedBinding(binding)) {
+function aadOf(binding: RowBinding): Buffer {
+  const bytes = issuedBytes(binding);
+  if (bytes === undefined) {
     throw new CryptoError('malformed', 'the AAD was not made by mappingBinding or vaultBinding');
   }
+  return bytes;
 }
 
 /**
@@ -23,13 +25,14 @@ export class FieldCipher {
   constructor(private readonly keys: PrivacyKeys) {}
 
   encrypt(plaintext: string, binding: RowBinding): Buffer {
-    assertIssued(binding);
+    const aad = aadOf(binding);
+    assertWellFormed(plaintext);
     const { field, fieldVersion } = keyMaterial(this.keys);
     const key = field.get(fieldVersion);
     if (key === undefined) throw new CryptoError('bad_key', 'the current key version has no key');
     const iv = randomBytes(IV_BYTES);
     const cipher = createCipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
-    cipher.setAAD(binding);
+    cipher.setAAD(aad);
     const body = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
     const version = Buffer.alloc(VERSION_BYTES);
     version.writeUInt16BE(fieldVersion);
@@ -37,7 +40,7 @@ export class FieldCipher {
   }
 
   decrypt(blob: Buffer, binding: RowBinding): string {
-    assertIssued(binding);
+    const aad = aadOf(binding);
     if (!Buffer.isBuffer(blob) || blob.length < VERSION_BYTES + IV_BYTES + TAG_BYTES) {
       throw new CryptoError('malformed', 'the blob is too short');
     }
@@ -48,7 +51,7 @@ export class FieldCipher {
     const tag = blob.subarray(blob.length - TAG_BYTES);
     const body = blob.subarray(VERSION_BYTES + IV_BYTES, blob.length - TAG_BYTES);
     const decipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: TAG_BYTES });
-    decipher.setAAD(binding);
+    decipher.setAAD(aad);
     decipher.setAuthTag(tag);
     try {
       return Buffer.concat([decipher.update(body), decipher.final()]).toString('utf8');

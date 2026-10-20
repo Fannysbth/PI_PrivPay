@@ -191,6 +191,40 @@ describe('M2-02 T-16 a ciphertext is bound to its row, its kind and its column',
     }
   });
 
+  it('M2-02 T-16 a binding changed by the caller after it was issued does not change what is encrypted', () => {
+    const issuedBinding = mappingBinding('CUSTOMER', ROW_A);
+    const blob = cipher.encrypt(PLAIN, issuedBinding);
+    issuedBinding.fill(0);
+    expect(cipher.decrypt(blob, issuedBinding)).toBe(PLAIN);
+    expect(cipher.decrypt(blob, mappingBinding('CUSTOMER', ROW_A))).toBe(PLAIN);
+  });
+
+  it('M2-02 T-16 text with a lone surrogate is refused, because it would be stored as U+FFFD and collide', () => {
+    // Built from the code unit: a lone surrogate cannot survive being written to a UTF-8 source file.
+    const lone = `CUST-${String.fromCharCode(0xd800)}`;
+    expect(reasonOf(() => encodeParts(lone))).toBe('malformed');
+    expect(reasonOf(() => new BlindIndex(keys()).lookup('CUSTOMER', lone))).toBe('malformed');
+    expect(reasonOf(() => cipher.encrypt(lone, mappingBinding('CUSTOMER', ROW_A)))).toBe(
+      'malformed',
+    );
+  });
+
+  it('M2-02 T-16 an empty subject id, service or purpose is refused for the lookup and the token', () => {
+    expect(reasonOf(() => new BlindIndex(keys()).lookup('CUSTOMER', ''))).toBe('malformed');
+    const base = {
+      subjectType: 'CUSTOMER',
+      subjectId: 'CUST-000101',
+      serviceId: 'TRANSACTION',
+      purpose: 'PAYMENT_PROCESSING',
+      nonce: '33333333-3333-4333-8333-333333333333',
+    };
+    for (const empty of ['subjectId', 'serviceId', 'purpose']) {
+      expect(reasonOf(() => new TokenMint(keys()).mint({ ...base, [empty]: '' }))).toBe(
+        'malformed',
+      );
+    }
+  });
+
   it('M2-02 T-16 the row id must be a UUID v4: a v1 or v7 id is refused too', () => {
     expect(reasonOf(() => mappingBinding('CUSTOMER', '11111111-1111-1111-8111-111111111111'))).toBe(
       'malformed',

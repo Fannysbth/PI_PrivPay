@@ -1,7 +1,7 @@
 import { createHmac } from 'node:crypto';
 import { CryptoError } from './errors';
 import { keyMaterial, type PrivacyKeys } from './keys';
-import { encodeParts, isSubjectType, isUuid } from './parts';
+import { assertPresent, encodeParts, isSubjectType, isUuid } from './parts';
 
 function assertSubjectType(subjectType: string): void {
   if (!isSubjectType(subjectType)) throw new CryptoError('malformed', 'unknown subject type');
@@ -16,6 +16,7 @@ export class BlindIndex {
 
   lookup(subjectType: string, subjectId: string): Buffer {
     assertSubjectType(subjectType);
+    assertPresent('subject id', subjectId);
     return createHmac('sha256', keyMaterial(this.keys).index)
       .update(encodeParts(subjectType, subjectId))
       .digest();
@@ -37,6 +38,9 @@ export class TokenMint {
 
   mint(input: MintInput): string {
     assertSubjectType(input.subjectType);
+    assertPresent('subject id', input.subjectId);
+    assertPresent('service id', input.serviceId);
+    assertPresent('purpose', input.purpose);
     if (!isUuid(input.nonce)) throw new CryptoError('malformed', 'the nonce is not a UUID');
     const digest = createHmac('sha256', keyMaterial(this.keys).token)
       .update(

@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2 gerbang 1: tinjauan keamanan
+
+- `docs/security/review-M2-gerbang1.md`: tanpa Critical atau High. Diperbaiki: `RowBinding` kini disalin privat (tidak dapat diubah dari luar), teks dengan surrogate yatim dan bagian kosong ditolak (tiga tes baru, tiga mutan terbunuh). Menunggu keputusan: N-24 (pengetatan CHECK di luar DDL PRD). Diterima: kunci berentropi rendah menjadi tanggung jawab operator.
+
 ### M2-02 modul `Crypto` (ADR-0011)
 
 - `services/privacy-service/src/crypto/`: `FieldCipher` (AES-256-GCM, blob `key_version(uint16) || IV(12) || ciphertext || tag(16)`, kunci dipilih menurut versi di blob), `BlindIndex.lookup`, `TokenMint.mint` (`PSEU-` + 8 heks), `mappingBinding`/`vaultBinding` (AAD terikat jenis, kolom, dan `id` baris), `encodeParts` (awalan panjang 4 byte), `createKeys`/`loadKeys` (tiga kunci 32 byte yang berbeda dari berkas `*_FILE`, kunci mentah di env ditolak). Hanya `node:crypto`; tanpa dependensi baru.
