@@ -1,6 +1,6 @@
 import { DomainError } from '@privpay/common';
 import type { Pool, PoolClient } from 'pg';
-import { AuditEntryError, type AuditEntry } from './audit-entry';
+import { AuditEntryError, type AuditEntry, type SuccessReason } from './audit-entry';
 import type { AuditWriter } from './audit-writer';
 
 /**
@@ -12,7 +12,7 @@ export class DeniedOperation extends DomainError {
   readonly entry: AuditEntry;
 
   constructor(entry: AuditEntry) {
-    if (entry.status !== 'DENIED' || entry.reason === 'OK') {
+    if (entry.status !== 'DENIED' || entry.reason === 'OK' || entry.reason === 'REUSED_ACTIVE') {
       throw new RangeError('a denial needs status DENIED and a reason code');
     }
     super(entry.reason);
@@ -21,10 +21,10 @@ export class DeniedOperation extends DomainError {
   }
 }
 
-/** The row of a committed operation: SUCCESS with the reason OK, so a state change never carries a DENIED row. */
+/** The row of a committed operation: SUCCESS with OK or REUSED_ACTIVE, so a state change never carries a DENIED row. */
 export type SuccessEntry = Omit<AuditEntry, 'status' | 'reason'> & {
   readonly status: 'SUCCESS';
-  readonly reason: 'OK';
+  readonly reason: SuccessReason;
 };
 
 export interface AuditedResult<T> {

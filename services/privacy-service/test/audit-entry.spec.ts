@@ -32,9 +32,14 @@ describe('M2-04 FR-13 a success row is a SUCCESS row', () => {
   it('M2-04 FR-13 AuditedResult refuses a DENIED row or a reason other than OK', () => {
     // @ts-expect-error a committed state change cannot carry a DENIED row
     const denied = committed({ ...base, status: 'DENIED', reason: 'EXPIRED' });
-    // @ts-expect-error a SUCCESS row has the reason OK
+    // @ts-expect-error a SUCCESS row has the reason OK or REUSED_ACTIVE, never a denial reason
     const reasoned = committed({ ...base, reason: 'EXPIRED' });
     const ok = committed({ ...base, status: 'SUCCESS', reason: 'OK' });
     expect([denied, reasoned, ok]).toHaveLength(3);
+  });
+
+  it('M2-05 FR-13 a reused active token is a success with the reason REUSED_ACTIVE (spec privacy 7.3)', () => {
+    const reused = committed({ ...base, status: 'SUCCESS', reason: 'REUSED_ACTIVE' });
+    expect(reused).toMatchObject({ reason: 'REUSED_ACTIVE' });
   });
 });
