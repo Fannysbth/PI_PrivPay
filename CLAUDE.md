@@ -101,6 +101,7 @@ prototypes/            # kode sekali pakai, dihapus setelah ADR; tidak boleh dii
 - Integrasi memakai PostgreSQL asli (lokal pada fase awal, Testcontainers setelah Docker; ADR-0004), bukan mock, untuk apa pun yang menyangkut indeks unik parsial, `FOR UPDATE`, `REVOKE/GRANT`. Tes terhubung sebagai peran sungguhan (`privacy_app`, `auditor_role`); migrasi dijalankan peran pemilik skema.
 - Kriteria yang butuh Docker (NFR-19, fail-closed dengan Privacy Service dimatikan di compose, M7) tidak boleh dinyatakan lulus sebelum diuji. Angka latensi/throughput dari lingkungan lokal tidak masuk laporan.
 - Tes harus deterministik dan mandiri; tidak bergantung urutan.
+- Tes yang menyentuh shell atau jaringan tidak boleh bergantung pada `bash` mana yang ada di PATH atau jumlah antarmuka jaringan aktif: pakai pembantu `tcp-probe` (batas waktu sendiri, serentak), paksa LF lewat `.gitattributes`, dan jalankan gerbang sekali dengan `C:\Windows\System32` di depan PATH (WSL `bash`) sebelum menyatakan tiket yang menyentuh shell/jaringan selesai.
 
 ## Definisi selesai (per tiket)
 

@@ -1,4 +1,5 @@
 import { Client, Pool } from 'pg';
+import { RealDelay } from '../delay';
 import {
   assertPrivpayName,
   createPool,
@@ -39,6 +40,29 @@ export function createAdminPool(config: PgConfig): Pool {
   return pool;
 }
 
+const NOT_PERMITTED_TO_TERMINATE = '42501';
+const DROP_ATTEMPTS = 50;
+const DROP_PAUSE_MS = 100;
+
+/**
+ * DROP ... WITH (FORCE) ends the sessions of the previous run, but the test admin may only end those of the owner
+ * roles. A runtime-role session that `pool.end()` has already closed can still be listed by the server for a few
+ * milliseconds, and then FORCE fails with "permission denied to terminate process". That is waited out (at most five
+ * seconds) instead of being a test that fails now and then; a session that really stays is reported as it was.
+ */
+async function dropWhenFree(admin: Client, quotedDatabase: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await admin.query(`DROP DATABASE IF EXISTS ${quotedDatabase} WITH (FORCE)`);
+      return;
+    } catch (error) {
+      const retryable = (error as { code?: string }).code === NOT_PERMITTED_TO_TERMINATE;
+      if (!retryable || attempt === DROP_ATTEMPTS) throw error;
+      await new RealDelay().wait(DROP_PAUSE_MS);
+    }
+  }
+}
+
 /** `privpay_<service>_test_<suffix>`: one database per test file, so files can run side by side. */
 export function testDatabaseName(service: ServiceName, suffix: string): string {
   if (!SUFFIX.test(suffix))
@@ -75,7 +99,7 @@ export async function createTestDb(
     // DDL cannot take bind parameters: the names are validated above and quoted here.
     const quoted = admin.escapeIdentifier(database);
     runtimeList = runtimeRoles.map((r) => admin.escapeIdentifier(r)).join(', ');
-    await admin.query(`DROP DATABASE IF EXISTS ${quoted} WITH (FORCE)`);
+    await dropWhenFree(admin, quoted);
     await admin.query(`CREATE DATABASE ${quoted} OWNER ${admin.escapeIdentifier(owner)}`);
     await admin.query(`REVOKE ALL ON DATABASE ${quoted} FROM PUBLIC`);
     await admin.query(`GRANT CONNECT ON DATABASE ${quoted} TO ${runtimeList}`);

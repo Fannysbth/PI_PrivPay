@@ -114,6 +114,31 @@ describe('M0-05 the harness hands out the real roles of a clean database', () =>
     }
   });
 
+  it('M0-05 recreating a database waits for a runtime-role connection that is still closing', async () => {
+    // pool.end() returns before the server has removed the backend, so the next test's DROP can meet it. The
+    // test admin may not terminate privpay_app sessions (WITH (FORCE) fails with 42501), so it has to wait.
+    const first = await createTestDb(config, { service: 'fraud', suffix: 'm005f' });
+    const held = await first.app.connect();
+    const closing = setTimeout(() => {
+      held.release(true);
+    }, 300);
+    let second: Awaited<ReturnType<typeof createTestDb>> | undefined;
+    try {
+      second = await createTestDb(config, { service: 'fraud', suffix: 'm005f' });
+      expect(second.database).toBe(first.database);
+    } finally {
+      clearTimeout(closing);
+      // Idempotent for the caller's sake: a pool cannot end while a client is still checked out.
+      try {
+        held.release(true);
+      } catch {
+        // already released by the timer
+      }
+      await second?.close();
+      await first.close();
+    }
+  });
+
   it('M0-05 applies the given schema as the owner, and the runtime role gets nothing it was not granted', async () => {
     const db = await createTestDb(config, {
       service: 'transaction',

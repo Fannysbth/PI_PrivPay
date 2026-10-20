@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-01 skema privacy-db dan hak akses per peran
+
+- `services/privacy-service/migrations/proposed/`: `0001_privacy_tables.sql` (lima tabel PRD 11 dengan perubahan E-06: `audit_log.disclosure_id`, `attribute_names`, `chk_attribute_names`; semua indeks dan `chk_purged`, `chk_vault_purged`, `chk_four_eyes`) dan `0002_privacy_grants.sql` (`privpay_app` hanya `INSERT` pada `audit_log`, tanpa `DELETE` di tabel mana pun; `privpay_auditor` hanya `SELECT audit_log`). Berkas ada di `proposed` karena mode `baseline` tidak menjalankan Privacy (spec data 2).
+- Tes integrasi dengan koneksi per peran (`schema.integration.spec.ts`, 39 tes): TK-10, S-34, S-35, S-22 (tiap kolom brankas diuji untuk `chk_vault_purged`), FR-15, FR-25, NFR-09, NFR-04 (`EXPLAIN` pada 20.000 baris tanpa `Seq Scan`).
+- Mutasi manual pada 13 pengaman (hak akses, indeks unik parsial, setiap `chk_*`, kolom subjek di `audit_log`): 12 terbunuh. Satu selamat awalnya karena tes hanya menguji kolom `nik_enc` pada `chk_vault_purged`; tes diperluas ke enam kolom dan mutan itu terbunuh. `idx_mapping_pseudonym` dapat dihapus tanpa tes merah karena `UNIQUE (pseudonym)` sudah membuat indeks yang sama (redundansi PRD 11, dipertahankan sesuai spec).
+- **Perbaikan harness** (`createTestDb`): `DROP DATABASE ... WITH (FORCE)` kadang gagal `permission denied to terminate process` karena sesi `privpay_app` dari tes sebelumnya masih tercatat di server beberapa milidetik setelah `pool.end()`, dan `privpay_test_admin` hanya boleh mengakhiri sesi peran pemilik. Muncul pertama kali di berkas dengan banyak pembuatan database berturut-turut. Kini `DROP` diulang paling lama lima detik hanya untuk kode `42501`; kegagalan lain atau sesi yang benar-benar menetap tetap dilaporkan apa adanya. Tes: `M0-05 recreating a database waits for a runtime-role connection that is still closing` (merah sebelum perbaikan dengan galat yang sama).
+
 ### Perbaikan: 8 tes gagal di mesin Fanny (akhir baris skrip dan tes loopback)
 
 - **Gejala (laporan Fanny):** `pnpm test` 8 gagal dari 724: satu tes `ci-workflow` (`bootstrap-twice.sh`) dan tujuh tes loopback habis waktu 5 detik. Laporan saya sebelumnya menyebut semua lulus.
