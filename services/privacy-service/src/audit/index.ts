@@ -7,4 +7,10 @@ export {
 } from './audit-entry';
 export { AuditWriter } from './audit-writer';
 export { AuditReader, type AuditFilter, type AuditRow } from './audit-reader';
-export { AuditedOperation, DeniedOperation, type AuditedResult } from './audited-operation';
+export {
+  AuditedOperation,
+  DeniedOperation,
+  type AuditedResult,
+  type OperationTx,
+  type SuccessEntry,
+} from './audited-operation';

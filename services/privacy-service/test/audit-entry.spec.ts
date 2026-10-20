@@ -1,4 +1,4 @@
-import type { AuditEntry } from '../src/audit';
+import type { AuditEntry, AuditedResult } from '../src/audit';
 
 // FR-15, spec privacy 9.2: the type has no place for an identity value. ts-jest type-checks this file, so a
 // `@ts-expect-error` that stops being an error (the type grew a field for values) fails the test run.
@@ -23,5 +23,18 @@ describe('M2-04 FR-15 AuditEntry cannot hold identity values', () => {
   it('M2-04 FR-15 accepts the attribute names that audit_log allows', () => {
     const ok: AuditEntry = { ...base, attributeNames: ['customer_id', 'nik', 'nama'] };
     expect(ok.attributeNames).toEqual(['customer_id', 'nik', 'nama']);
+  });
+});
+
+const committed = (audit: AuditedResult<null>['audit']): unknown => audit;
+
+describe('M2-04 FR-13 a success row is a SUCCESS row', () => {
+  it('M2-04 FR-13 AuditedResult refuses a DENIED row or a reason other than OK', () => {
+    // @ts-expect-error a committed state change cannot carry a DENIED row
+    const denied = committed({ ...base, status: 'DENIED', reason: 'EXPIRED' });
+    // @ts-expect-error a SUCCESS row has the reason OK
+    const reasoned = committed({ ...base, reason: 'EXPIRED' });
+    const ok = committed({ ...base, status: 'SUCCESS', reason: 'OK' });
+    expect([denied, reasoned, ok]).toHaveLength(3);
   });
 });

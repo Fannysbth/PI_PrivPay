@@ -1,5 +1,6 @@
 import { join } from 'node:path';
 import { DomainError, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
+import type { Pool } from 'pg';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
 import {
   AuditReader,
@@ -7,6 +8,7 @@ import {
   AuditedOperation,
   DeniedOperation,
   type AuditEntry,
+  type SuccessEntry,
 } from '../src/audit';
 
 // Seam: AuditWriter, AuditReader and AuditedOperation on the real privacy database, each pool connected as its real
@@ -18,18 +20,20 @@ const migrations = join(__dirname, '..', 'migrations');
 let db: TestDb;
 let operation: AuditedOperation;
 let reader: AuditReader;
+let auditorPool: Pool;
 beforeEach(async () => {
   db = await createTestDb(config, { service: 'privacy', suffix: 'm204' });
   await migrate(db.owner, { root: migrations, mode: 'proposed' });
   if (db.auditor === undefined) throw new Error('the privacy test database has an auditor pool');
+  auditorPool = db.auditor;
   operation = new AuditedOperation(db.app, new AuditWriter());
-  reader = new AuditReader(db.auditor);
+  reader = new AuditReader(auditorPool);
 });
 afterEach(async () => {
   await db.close();
 });
 
-const SUCCESS_ENTRY: AuditEntry = {
+const SUCCESS_ENTRY: SuccessEntry = {
   action: 'GENERATE_TOKEN',
   status: 'SUCCESS',
   reason: 'OK',
@@ -92,12 +96,15 @@ describe('M2-04 FR-13 a successful operation', () => {
 describe('M2-04 FR-13 a failure in the middle of an operation', () => {
   it('M2-04 FR-13 an audit row the database refuses takes the state change down with it', async () => {
     // 'hp' is not an attribute name: chk_attribute_names refuses the audit row after the state change was written.
-    const bad = { ...SUCCESS_ENTRY, attributeNames: ['hp'] } as unknown as AuditEntry;
+    const bad = { ...SUCCESS_ENTRY, attributeNames: ['hp'] } as unknown as SuccessEntry;
     const outcome = operation.run(async (tx) => {
       await setStatus(tx, 'TX-TEST-0002');
       return { result: 'done', audit: bad };
     });
-    await expect(outcome).rejects.toMatchObject({ reason: 'INTERNAL_ERROR' });
+    await expect(outcome).rejects.toMatchObject({
+      reason: 'INTERNAL_ERROR',
+      cause: 'audit_write:23514',
+    });
     await expect(outcome).rejects.toBeInstanceOf(DomainError);
     expect(await stateCount()).toBe(0);
     expect(await auditCount()).toBe(0);
@@ -114,7 +121,10 @@ describe('M2-04 FR-13 a failure in the middle of an operation', () => {
       await setStatus(tx, 'TX-TEST-0005');
       return { result: 'done', audit: SUCCESS_ENTRY };
     });
-    await expect(outcome).rejects.toMatchObject({ reason: 'INTERNAL_ERROR' });
+    await expect(outcome).rejects.toMatchObject({
+      reason: 'INTERNAL_ERROR',
+      cause: 'commit:P0001',
+    });
     expect(await stateCount()).toBe(0);
     expect(await auditCount()).toBe(0);
   });
@@ -163,10 +173,10 @@ describe('M2-04 FR-13 a failure in the middle of an operation', () => {
 
 describe('M2-04 TK-10 the two pools keep their roles', () => {
   it('M2-04 TK-10 AuditWriter on the auditor pool is refused by the database (42501)', async () => {
-    const wrong = new AuditedOperation(db.auditor ?? db.app, new AuditWriter());
+    const wrong = new AuditedOperation(auditorPool, new AuditWriter());
     await expect(
       wrong.run(() => Promise.resolve({ result: null, audit: SUCCESS_ENTRY })),
-    ).rejects.toMatchObject({ reason: 'INTERNAL_ERROR' });
+    ).rejects.toMatchObject({ reason: 'INTERNAL_ERROR', cause: 'audit_write:42501' });
     expect(await auditCount()).toBe(0);
   });
 
