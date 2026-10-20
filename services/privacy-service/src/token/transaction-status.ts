@@ -2,6 +2,7 @@ import { DomainError, type Clock } from '@privpay/common';
 import type { Pool } from 'pg';
 import { AUDIT_FORMATS } from '../audit';
 import type { PolicyEngine } from '../policy';
+import { SERVICE_ID, textMatching } from './token-validation';
 
 export const TRANSACTION_STATUSES = [
   'PENDING',
@@ -49,16 +50,12 @@ interface StatusRow {
   updated_at: Date;
 }
 
-const SERVICE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;
-const invalid = (): DomainError => new DomainError('VALIDATION_ERROR');
-
 function assertShape(request: TransactionStatusRequest): void {
-  const { requestingService, transactionId, status } = request;
-  if (typeof requestingService !== 'string' || !SERVICE_ID.test(requestingService)) throw invalid();
-  if (typeof transactionId !== 'string' || !AUDIT_FORMATS.transactionId.test(transactionId)) {
-    throw invalid();
+  textMatching(request.requestingService, SERVICE_ID);
+  textMatching(request.transactionId, AUDIT_FORMATS.transactionId);
+  if (!(TRANSACTION_STATUSES as readonly unknown[]).includes(request.status)) {
+    throw new DomainError('VALIDATION_ERROR');
   }
-  if (!(TRANSACTION_STATUSES as readonly unknown[]).includes(status)) throw invalid();
 }
 
 const toResult = (row: StatusRow): TransactionStatusResult => ({

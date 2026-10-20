@@ -425,6 +425,46 @@ describe('M2-07 FR-10 re-issue refusals, one audited DENIED row each', () => {
   });
 });
 
+describe('M2-07 NFR-13 re-issues at once', () => {
+  it('M2-07 NFR-13 five rounds of ten parallel re-issues of one token: no deadlock, one new token each round', async () => {
+    for (let round = 1; round <= 5; round += 1) {
+      const old = await issueP1(`TX-62${String(round)}0`, `CUST-00040${String(round)}`);
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () =>
+          tokens.reIssue(reIssue(old, { transactionId: `TX-62${String(round)}0` })),
+        ),
+      );
+      expect(results.filter((r) => !r.reused)).toHaveLength(1);
+      expect(new Set(results.map((r) => r.pseudonym)).size).toBe(1);
+    }
+  });
+
+  it('M2-07 NFR-13 re-issues and issues for the same combination at once: nothing fails, one token stays active, only the old and the new token are ever handed out', async () => {
+    const old = await issueP1();
+    const calls = [
+      ...Array.from({ length: 6 }, () => tokens.reIssue(reIssue(old))),
+      ...Array.from({ length: 6 }, () =>
+        tokens.generate({
+          requestingService: 'API_GATEWAY',
+          subjectType: 'CUSTOMER',
+          subjectId: CUSTOMER,
+          targetService: 'TRANSACTION',
+          purpose: 'PAYMENT_PROCESSING',
+          transactionId: 'TX-6001',
+        }),
+      ),
+    ];
+    const results = await Promise.all(calls);
+    const handedOut = new Set(results.map((r) => r.pseudonym));
+    expect(handedOut.has(old) ? handedOut.size <= 2 : handedOut.size === 1).toBe(true);
+    const { rows } = await db.owner.query<{ n: string }>(
+      `SELECT count(*) AS n FROM pseudonym_mapping WHERE status = 'active'`,
+    );
+    expect(Number(rows[0]?.n)).toBe(1);
+    expect(await count('audit_log')).toBe(13);
+  });
+});
+
 describe('M2-07 FR-13 re-issue is atomic with its audit row and with concurrent changes', () => {
   it('M2-07 FR-13 a commit the database refuses leaves the old token active, no new token, no audit row', async () => {
     const old = await issueP1();
@@ -449,7 +489,7 @@ describe('M2-07 FR-13 re-issue is atomic with its audit row and with concurrent 
     try {
       await holder.query('BEGIN');
       await holder.query(change.sql, change.values);
-      const state = { settled: false };
+      const state = { settled: false, queued: false };
       const pending = run().then(
         (value) => {
           state.settled = true;
@@ -464,8 +504,13 @@ describe('M2-07 FR-13 re-issue is atomic with its audit row and with concurrent 
         const { rows } = await db.owner.query(
           `SELECT 1 FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')`,
         );
-        if (rows.length > 0) break;
+        if (rows.length > 0) {
+          state.queued = true;
+          break;
+        }
       }
+      // Without this, a run that never met the lock would pass without having tested the race.
+      expect(state.queued).toBe(true);
       await holder.query('COMMIT');
       return await pending;
     } finally {

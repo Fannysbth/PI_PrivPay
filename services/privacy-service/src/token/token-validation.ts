@@ -11,12 +11,12 @@ import type {
 // Formats of platform-dan-ci.md 3.1; the shape of a request is checked before anything is decided or audited.
 const CUSTOMER_ID = /^CUST-[0-9]{6}$/;
 const ACCOUNT_NUMBER = /^[0-9]{8,20}$/;
-const SERVICE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;
+export const SERVICE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;
 
 const invalid = (): DomainError => new DomainError('VALIDATION_ERROR');
 const isText = (value: unknown): value is string => typeof value === 'string';
 
-function textMatching(value: unknown, pattern: RegExp): void {
+export function textMatching(value: unknown, pattern: RegExp): void {
   if (!isText(value) || !pattern.test(value)) throw invalid();
 }
 

@@ -5,7 +5,7 @@ import { mappingBinding, type BlindIndex, type FieldCipher, type TokenMint } fro
 import type { PolicyEngine } from '../policy';
 import { effectiveStatus, type StoredStatus } from './status';
 import { TRANSACTION_STATUS_SQL, isTerminal } from './transaction-status';
-import { baseOf, decide, denied, resultOf, successEntry } from './token-audit';
+import { baseOf, decide, denied, resultOf, successEntry, type AuditBase } from './token-audit';
 import type {
   ExchangeRequest,
   FromTransactionRequest,
@@ -45,11 +45,16 @@ export const TOKEN_SQL = {
   // for this transaction, or has already committed and is seen here.
   findSource: `SELECT id, subject_type, subject_id_enc, service_id, purpose, status, expires_at, purged_at
      FROM pseudonym_mapping WHERE pseudonym = $1 FOR SHARE`,
+  // Re-issue STEP 1 (PRD 7.5): the same row, but FOR UPDATE, because this transaction goes on to update it (markExpired).
+  // With FOR SHARE, two re-issues of one token would both hold the share lock and then both wait to update: a deadlock
+  // (40P01). FOR UPDATE queues them instead, and the second finds the old token expired and the new one active.
+  findSourceForUpdate: `SELECT id, subject_type, subject_id_enc, service_id, purpose, status, expires_at, purged_at
+     FROM pseudonym_mapping WHERE pseudonym = $1 FOR UPDATE`,
+  // Re-issue STEP 3 (PRD 7.5): the old token stops being the active one before buat_token looks for an active token.
+  markExpired: `UPDATE pseudonym_mapping SET status = 'expired' WHERE id = $1 AND status = 'active'`,
   // Form 3 STEP 1 (PRD 6.1 generate_from_transaction): the P1/P2 row of the transaction, expired ones included
   // (idx_mapping_tx). Only a row of the service and purpose that Gateway issues from: a token of another service that
   // carries the same transaction id is never a source (invariant 5).
-  // Re-issue STEP 3 (PRD 7.5): the old token stops being the active one before buat_token looks for an active token.
-  markExpired: `UPDATE pseudonym_mapping SET status = 'expired' WHERE id = $1 AND status = 'active'`,
   findByTransaction: `SELECT id, subject_type, subject_id_enc, purged_at FROM pseudonym_mapping
      WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4
      ORDER BY created_at DESC LIMIT 1 FOR SHARE`,
@@ -165,13 +170,13 @@ export class TokenService {
       );
 
       // STEP 1: the token exists, is the caller's, and is usable.
-      const found = await tx.query<SourceRow>(TOKEN_SQL.findSource, [request.sourcePseudonym]);
-      const source = found.rows[0];
-      if (source === undefined) throw denied(base, 'TOKEN_NOT_FOUND', presented);
-      const named = { ...presented, mappingId: source.id };
-      if (source.service_id !== request.requestingService) {
-        throw denied(base, 'SERVICE_MISMATCH', named);
-      }
+      const { source, named } = await this.ownedSource(
+        tx,
+        TOKEN_SQL.findSource,
+        request,
+        base,
+        presented,
+      );
       const status = effectiveStatus(
         { status: source.status, expiresAt: source.expires_at },
         this.deps.clock.now(),
@@ -261,15 +266,15 @@ export class TokenService {
         this.deps.policy.authorizeCaller('RE_ISSUE', request.requestingService);
       });
 
-      // STEP 1: the token exists and is the caller's.
-      const found = await tx.query<SourceRow>(TOKEN_SQL.findSource, [request.pseudonym]);
-      const source = found.rows[0];
-      if (source === undefined) throw denied(base, 'TOKEN_NOT_FOUND', presented);
-      const named = { ...presented, mappingId: source.id };
+      // STEP 1: the token exists and is the caller's. FOR UPDATE: this transaction updates the row.
+      const { source, named } = await this.ownedSource(
+        tx,
+        TOKEN_SQL.findSourceForUpdate,
+        { requestingService: request.requestingService, sourcePseudonym: request.pseudonym },
+        base,
+        presented,
+      );
       const known = { ...base, purpose: source.purpose };
-      if (source.service_id !== request.requestingService) {
-        throw denied(known, 'SERVICE_MISMATCH', named);
-      }
       // Only P1 and P2, and a revoked token is not given a successor. An expired one is exactly what is re-issued.
       const context = decide(known, named, () =>
         this.deps.policy.evaluate({
@@ -313,6 +318,24 @@ export class TokenService {
       });
       return { result: resultOf(issued), audit: successEntry(known, issued) };
     });
+  }
+
+  /** STEP 1 of exchange and re-issue: the presented token exists and belongs to the caller. */
+  private async ownedSource(
+    tx: OperationTx,
+    sql: string,
+    request: { requestingService: string; sourcePseudonym: string },
+    base: AuditBase,
+    presented: { pseudonym: string },
+  ): Promise<{ source: SourceRow; named: { pseudonym: string; mappingId: string } }> {
+    const found = await tx.query<SourceRow>(sql, [request.sourcePseudonym]);
+    const source = found.rows[0];
+    if (source === undefined) throw denied(base, 'TOKEN_NOT_FOUND', presented);
+    const named = { ...presented, mappingId: source.id };
+    if (source.service_id !== request.requestingService) {
+      throw denied(base, 'SERVICE_MISMATCH', named);
+    }
+    return { source, named };
   }
 
   /** Exchange and form 3 issue from the subject of a stored row: decrypt it with the binding of that row, then buat_token. */

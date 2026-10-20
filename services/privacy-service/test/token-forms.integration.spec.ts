@@ -579,7 +579,7 @@ describe('M2-06 a source is read under a share lock: a concurrent revocation or 
     try {
       await holder.query('BEGIN');
       await holder.query(change.sql, change.values);
-      const state = { settled: false };
+      const state = { settled: false, queued: false };
       const pending = run().then(
         (value) => {
           state.settled = true;
@@ -594,8 +594,13 @@ describe('M2-06 a source is read under a share lock: a concurrent revocation or 
         const { rows } = await db.owner.query(
           `SELECT 1 FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')`,
         );
-        if (rows.length > 0) break;
+        if (rows.length > 0) {
+          state.queued = true;
+          break;
+        }
       }
+      // Without this, a run that never met the lock would pass without having tested the race.
+      expect(state.queued).toBe(true);
       await holder.query('COMMIT');
       return await pending;
     } finally {
