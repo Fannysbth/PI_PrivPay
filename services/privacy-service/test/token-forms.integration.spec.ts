@@ -566,6 +566,70 @@ describe('M2-06 AZ-19 AZ-20 FR-04 who may use which form', () => {
   });
 });
 
+describe('M2-06 a source is read under a share lock: a concurrent revocation or purge is not lost', () => {
+  /**
+   * Holds an uncommitted change on a row, starts `run`, waits (polling pg_locks, no sleep) until `run` is queued on the
+   * row, then commits the change. Whatever `run` decided, it decided after the change.
+   */
+  async function whileChangeIsPending(
+    change: { sql: string; values: unknown[] },
+    run: () => Promise<unknown>,
+  ): Promise<{ error?: unknown; value?: unknown }> {
+    const holder = await db.owner.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(change.sql, change.values);
+      const state = { settled: false };
+      const pending = run().then(
+        (value) => {
+          state.settled = true;
+          return { value };
+        },
+        (error: unknown) => {
+          state.settled = true;
+          return { error };
+        },
+      );
+      for (let polls = 0; polls < 5000 && !state.settled; polls += 1) {
+        const { rows } = await db.owner.query(
+          `SELECT 1 FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')`,
+        );
+        if (rows.length > 0) break;
+      }
+      await holder.query('COMMIT');
+      return await pending;
+    } finally {
+      holder.release();
+    }
+  }
+
+  it('M2-06 TK-17 an exchange that meets a revocation still in flight waits for it and is refused REVOKED', async () => {
+    const source = await issueP1();
+    const outcome = await whileChangeIsPending(
+      {
+        sql: `UPDATE pseudonym_mapping SET status = 'revoked', revoked_at = now() WHERE pseudonym = $1`,
+        values: [source],
+      },
+      () => service.exchange(toFraud(source)),
+    );
+    expect((outcome.error as DomainError | undefined)?.reason).toBe('REVOKED');
+    expect(await count('pseudonym_mapping')).toBe(1);
+  });
+
+  it('M2-06 FR-09 a form 3 request that meets a retention purge still in flight waits for it and finds nothing', async () => {
+    const source = await issueP2();
+    const outcome = await whileChangeIsPending(
+      {
+        sql: `UPDATE pseudonym_mapping SET subject_id_enc = NULL, subject_lookup = NULL, purged_at = now(), status = 'expired' WHERE pseudonym = $1`,
+        values: [source],
+      },
+      () => service.generateFromTransaction(p6()),
+    );
+    expect((outcome.error as DomainError | undefined)?.reason).toBe('TOKEN_NOT_FOUND');
+    expect(await count('pseudonym_mapping')).toBe(1);
+  });
+});
+
 describe('M2-06 NFR-04 the statements that read a source use the indexes at 20,000 rows', () => {
   it('M2-06 NFR-04 neither finding a token by its value nor a source by its transaction id scans the table', async () => {
     await db.owner.query(`

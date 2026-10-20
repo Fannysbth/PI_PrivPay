@@ -1,17 +1,18 @@
 import { randomUUID } from 'node:crypto';
-import { DomainError, type Clock, type Reason } from '@privpay/common';
-import {
-  AUDIT_FORMATS,
-  DeniedOperation,
-  type AuditAction,
-  type AuditEntry,
-  type AuditedOperation,
-  type OperationTx,
-  type SuccessEntry,
-} from '../audit';
+import { DomainError, type Clock } from '@privpay/common';
+import type { AuditedOperation, OperationTx } from '../audit';
 import { mappingBinding, type BlindIndex, type FieldCipher, type TokenMint } from '../crypto';
 import type { PolicyEngine } from '../policy';
 import { effectiveStatus, type StoredStatus } from './status';
+import { baseOf, decide, denied, resultOf, successEntry } from './token-audit';
+import type {
+  ExchangeRequest,
+  FromTransactionRequest,
+  GenerateRequest,
+  Issued,
+  TokenResult,
+} from './token-types';
+import { assertExchange, assertFromTransaction, assertGenerate } from './token-validation';
 
 /**
  * The statements of buat_token and of the two forms that read a source row, exported so the tests can ask PostgreSQL
@@ -32,15 +33,17 @@ export const TOKEN_SQL = {
         key_version, created_at, expires_at)
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      ON CONFLICT (pseudonym) DO NOTHING RETURNING id`,
-  // Exchange STEP 1 (PRD 7.2): the token the caller presents, found by its value (UNIQUE on pseudonym).
+  // Exchange STEP 1 (PRD 7.2): the token the caller presents, found by its value (UNIQUE on pseudonym). FOR SHARE keeps
+  // a revocation or a retention purge from committing between the checks of STEP 1 and the insert of STEP 3: it waits
+  // for this transaction, or has already committed and is seen here.
   findSource: `SELECT id, subject_type, subject_id_enc, service_id, purpose, status, expires_at, purged_at
-     FROM pseudonym_mapping WHERE pseudonym = $1`,
+     FROM pseudonym_mapping WHERE pseudonym = $1 FOR SHARE`,
   // Form 3 STEP 1 (PRD 6.1 generate_from_transaction): the P1/P2 row of the transaction, expired ones included
   // (idx_mapping_tx). Only a row of the service and purpose that Gateway issues from: a token of another service that
   // carries the same transaction id is never a source (invariant 5).
   findByTransaction: `SELECT id, subject_type, subject_id_enc, purged_at FROM pseudonym_mapping
      WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4
-     ORDER BY created_at DESC LIMIT 1`,
+     ORDER BY created_at DESC LIMIT 1 FOR SHARE`,
 } as const;
 
 /** Spec privacy 7.2 step 6: the limit chosen by the spec (K-12). */
@@ -49,50 +52,6 @@ const MAX_PSEUDONYM_ATTEMPTS = 20;
 /** The context the Gateway issues P1 and P2 for, the only source of form 3 (PRD Tabel 1). */
 const SOURCE_SERVICE = 'TRANSACTION';
 const SOURCE_PURPOSE = 'PAYMENT_PROCESSING';
-
-// Formats of platform-dan-ci.md 3.1; the shape of a request is checked before anything is decided or audited.
-const CUSTOMER_ID = /^CUST-[0-9]{6}$/;
-const ACCOUNT_NUMBER = /^[0-9]{8,20}$/;
-const SERVICE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;
-
-/** What every form carries. `requestingService` is from the `azp` claim of the service token, never from a body (invariant 7). */
-interface CommonRequest {
-  readonly requestingService: string;
-  readonly actorId?: string;
-}
-
-/** Form 1: from identity (the Gateway only). */
-export interface GenerateRequest extends CommonRequest {
-  readonly subjectType: string;
-  readonly subjectId: string;
-  readonly targetService: string;
-  readonly purpose: string;
-  readonly transactionId?: string;
-}
-
-/** Form 2: the caller trades a token of its own for one of another service (TRANSACTION only; Tabel 2). */
-export interface ExchangeRequest extends CommonRequest {
-  readonly sourcePseudonym: string;
-  readonly targetService: string;
-  readonly purpose: string;
-  readonly transactionId: string;
-}
-
-/** Form 3: Reconciliation asks for P6 or P7 by transaction id; for P7 the actor must be an auditor. */
-export interface FromTransactionRequest extends CommonRequest {
-  readonly transactionId: string;
-  readonly targetService: string;
-  readonly purpose: string;
-  readonly subjectType: string;
-  /** From the actor token (`X-Actor-Token`); only P7 looks at it. */
-  readonly actorRole?: string;
-}
-
-export interface TokenResult {
-  readonly pseudonym: string;
-  readonly expiresAt: Date;
-  readonly reused: boolean;
-}
 
 export interface TokenServiceDeps {
   readonly operation: AuditedOperation;
@@ -107,54 +66,6 @@ export interface TokenServiceDeps {
   readonly keyVersion: number;
   /** UUID v4 for row ids and nonces; replaceable so a collision can be forced in a test. */
   readonly newId?: () => string;
-}
-
-const invalid = (): DomainError => new DomainError('VALIDATION_ERROR');
-const isText = (value: unknown): value is string => typeof value === 'string';
-
-function textMatching(value: unknown, pattern: RegExp): void {
-  if (!isText(value) || !pattern.test(value)) throw invalid();
-}
-
-/** The text fields are checked as text first: the type says string, but the data comes from outside (CLAUDE.md). */
-function assertCommon(request: CommonRequest): void {
-  textMatching(request.requestingService, SERVICE_ID);
-  if (request.actorId !== undefined) textMatching(request.actorId, AUDIT_FORMATS.actorId);
-}
-
-function assertTarget(request: { targetService: string; purpose: string }): void {
-  textMatching(request.targetService, SERVICE_ID);
-  textMatching(request.purpose, AUDIT_FORMATS.purpose);
-}
-
-function assertSubjectType(subjectType: unknown): 'CUSTOMER' | 'ACCOUNT' {
-  if (subjectType !== 'CUSTOMER' && subjectType !== 'ACCOUNT') throw invalid();
-  return subjectType;
-}
-
-function assertGenerate(request: GenerateRequest): void {
-  assertCommon(request);
-  assertTarget(request);
-  const subjectType = assertSubjectType(request.subjectType);
-  textMatching(request.subjectId, subjectType === 'CUSTOMER' ? CUSTOMER_ID : ACCOUNT_NUMBER);
-  if (request.transactionId !== undefined) {
-    textMatching(request.transactionId, AUDIT_FORMATS.transactionId);
-  }
-}
-
-function assertExchange(request: ExchangeRequest): void {
-  assertCommon(request);
-  assertTarget(request);
-  textMatching(request.sourcePseudonym, AUDIT_FORMATS.pseudonym);
-  textMatching(request.transactionId, AUDIT_FORMATS.transactionId);
-}
-
-function assertFromTransaction(request: FromTransactionRequest): void {
-  assertCommon(request);
-  assertTarget(request);
-  assertSubjectType(request.subjectType);
-  textMatching(request.transactionId, AUDIT_FORMATS.transactionId);
-  if (request.actorRole !== undefined && !isText(request.actorRole)) throw invalid();
 }
 
 interface ActiveRow {
@@ -181,79 +92,6 @@ interface TransactionSourceRow {
   subject_id_enc: Buffer | null;
   purged_at: Date | null;
 }
-
-/** What `issue` made or found, in the terms the audit row and the result need. */
-interface Issued extends TokenResult {
-  readonly mappingId: string;
-  readonly keyVersion: number;
-}
-
-/** The fields of an audit row that do not depend on the outcome. */
-interface AuditBase {
-  readonly action: Extract<AuditAction, 'GENERATE_TOKEN' | 'EXCHANGE_TOKEN'>;
-  readonly requestingService: string;
-  readonly purpose: string;
-  readonly transactionId?: string;
-  readonly actorId?: string;
-}
-
-function baseOf(
-  action: AuditBase['action'],
-  request: CommonRequest & { purpose: string; transactionId?: string },
-): AuditBase {
-  return {
-    action,
-    requestingService: request.requestingService,
-    purpose: request.purpose,
-    ...(request.transactionId === undefined ? {} : { transactionId: request.transactionId }),
-    ...(request.actorId === undefined ? {} : { actorId: request.actorId }),
-  };
-}
-
-/** A refusal that is a decision, audited as DENIED (spec privacy 9.4). `mapping` and `pseudonym` name what was presented. */
-function denied(
-  base: AuditBase,
-  reason: Reason,
-  presented: { pseudonym?: string; mappingId?: string } = {},
-): DeniedOperation {
-  const entry: AuditEntry = { ...base, status: 'DENIED', reason, ...presented };
-  return new DeniedOperation(entry);
-}
-
-/**
- * The policy answers with POLICY_NOT_ALLOWED or FORBIDDEN_ROLE: those two are decisions and are audited; any other
- * failure is not a decision and propagates as it is.
- */
-function decide<T>(base: AuditBase, presented: { pseudonym?: string }, ask: () => T): T {
-  try {
-    return ask();
-  } catch (error) {
-    if (
-      error instanceof DomainError &&
-      (error.reason === 'POLICY_NOT_ALLOWED' || error.reason === 'FORBIDDEN_ROLE')
-    ) {
-      throw denied(base, error.reason, presented);
-    }
-    throw error;
-  }
-}
-
-function successEntry(base: AuditBase, issued: Issued): SuccessEntry {
-  return {
-    ...base,
-    status: 'SUCCESS',
-    reason: issued.reused ? 'REUSED_ACTIVE' : 'OK',
-    pseudonym: issued.pseudonym,
-    mappingId: issued.mappingId,
-    keyVersion: issued.keyVersion,
-  };
-}
-
-const resultOf = ({ pseudonym, expiresAt, reused }: Issued): TokenResult => ({
-  pseudonym,
-  expiresAt,
-  reused,
-});
 
 /**
  * Issues tokens in the three forms of POST /pseudonymize (spec privacy 4.1, 7.2 to 7.5). One operation, one
@@ -334,7 +172,9 @@ export class TokenService {
         throw denied(base, 'TOKEN_NOT_FOUND', named);
       }
 
-      // STEP 2: the exact source context, now that the token is proved to be the caller's.
+      // STEP 2: the exact source context, now that the token is proved to be the caller's. PRD 7.2 also names
+      // policy_evaluate here; with the target built from the source's subject type, exchangeAllowed and the target of
+      // STEP 0 (whose TTL is used) decide the same thing, so it is not asked twice.
       const subjectType = { subjectType: source.subject_type };
       const allowed = this.deps.policy.exchangeAllowed(
         { serviceId: source.service_id, purpose: source.purpose, ...subjectType },
@@ -343,14 +183,8 @@ export class TokenService {
       );
       if (!allowed) throw denied(base, 'POLICY_NOT_ALLOWED', named);
 
-      // STEP 3: the subject is decrypted here and never leaves.
-      const subjectId = this.deps.cipher.decrypt(
-        source.subject_id_enc,
-        mappingBinding(source.subject_type, source.id),
-      );
-      const issued = await this.issue(tx, {
-        subjectType: source.subject_type,
-        subjectId,
+      // STEP 3: the subject is decrypted inside and never leaves.
+      const issued = await this.issueFromSource(tx, source, source.subject_id_enc, {
         targetService: request.targetService,
         purpose: request.purpose,
         transactionId: request.transactionId,
@@ -392,14 +226,8 @@ export class TokenService {
         throw denied(base, 'TOKEN_NOT_FOUND', { mappingId: source.id });
       }
 
-      // STEP 2 and 3: the subject is decrypted here and never leaves.
-      const subjectId = this.deps.cipher.decrypt(
-        source.subject_id_enc,
-        mappingBinding(source.subject_type, source.id),
-      );
-      const issued = await this.issue(tx, {
-        subjectType: source.subject_type,
-        subjectId,
+      // STEP 2 (the subject is decrypted inside and never leaves) and STEP 3 (buat_token), PRD 6.1.
+      const issued = await this.issueFromSource(tx, source, source.subject_id_enc, {
         targetService: request.targetService,
         purpose: request.purpose,
         transactionId: request.transactionId,
@@ -407,6 +235,25 @@ export class TokenService {
       });
       return { result: resultOf(issued), audit: successEntry(base, issued) };
     });
+  }
+
+  /** Exchange and form 3 issue from the subject of a stored row: decrypt it with the binding of that row, then buat_token. */
+  private async issueFromSource(
+    tx: OperationTx,
+    source: { id: string; subject_type: string },
+    encrypted: Buffer,
+    target: {
+      targetService: string;
+      purpose: string;
+      transactionId: string;
+      ttlSeconds: number;
+    },
+  ): Promise<Issued> {
+    const subjectId = this.deps.cipher.decrypt(
+      encrypted,
+      mappingBinding(source.subject_type, source.id),
+    );
+    return this.issue(tx, { subjectType: source.subject_type, subjectId, ...target });
   }
 
   /**
