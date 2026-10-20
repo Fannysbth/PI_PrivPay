@@ -13,6 +13,7 @@ import {
   type MintInput,
 } from '../src/crypto';
 import { PolicyEngine } from '../src/policy';
+// (type-only use below: the broken stand-in for the engine)
 import { TOKEN_SQL, TokenService, type GenerateRequest } from '../src/token';
 
 // Seam: TokenService.generate on the real privacy database, as the real runtime roles (privpay_app writes,
@@ -409,10 +410,98 @@ describe('M2-05 a request of the wrong shape is a validation error: refused, not
     ['a transaction id of the wrong shape', p1({ transactionId: 'TX-12 34' })],
     ['a purpose that is not an identifier', p1({ purpose: 'marketing campaign' })],
     ['a target service that is not an identifier', p1({ targetService: 'trans action' })],
+    ['a transaction id that is not text', p1({ transactionId: 123 as never })],
+    ['an actor id that is not text', p1({ actorId: {} as never })],
+    ['a subject type that is not text', p1({ subjectType: 5 as never })],
+    ['a requesting service that is not an identifier', p1({ requestingService: 'api gateway' })],
+    ['a requesting service that is not text', p1({ requestingService: 7 as never })],
   ])('M2-05 FR-04 %s', async (_name, request) => {
     expect(await reasonOf(service.generate(request))).toBe('VALIDATION_ERROR');
     expect(await count('pseudonym_mapping')).toBe(0);
     expect(await count('audit_log')).toBe(0);
+  });
+});
+
+describe('M2-05 FR-13 only a decision of the policy is audited as DENIED', () => {
+  it('M2-05 FR-13 any other failure of the policy leaves no DENIED row and no mapping row', async () => {
+    const broken = {
+      evaluate: () => {
+        throw new DomainError('SERVICE_UNAVAILABLE');
+      },
+    } as unknown as PolicyEngine;
+    const odd = new TokenService({
+      operation: new AuditedOperation(db.app, new AuditWriter()),
+      policy: broken,
+      index,
+      cipher,
+      mint,
+      clock,
+      keyVersion: 1,
+    });
+    expect(await reasonOf(odd.generate(p1()))).toBe('SERVICE_UNAVAILABLE');
+    expect(await count('audit_log')).toBe(0);
+    expect(await count('pseudonym_mapping')).toBe(0);
+  });
+});
+
+describe('M2-05 spec 7.2 the clock is read once the lock is held', () => {
+  it('M2-05 FR-33 a request that waited for the lock judges the token by the time it got the lock, not by the time it arrived', async () => {
+    const first = await service.generate(p1());
+    // Hold the lock of the combination in another transaction, as a slower request would.
+    const holder = await db.app.connect();
+    try {
+      await holder.query('BEGIN');
+      await holder.query(TOKEN_SQL.lock, [
+        `${index.lookup('CUSTOMER', CUSTOMER).toString('hex')}|TRANSACTION|PAYMENT_PROCESSING`,
+      ]);
+      const waiting = service.generate(p1());
+      // Until the request is queued on the lock (observed in pg_locks, polled without a sleep) the clock must not move.
+      for (let polls = 0; polls < 5000; polls += 1) {
+        const { rows } = await db.owner.query(
+          `SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`,
+        );
+        if (rows.length > 0) break;
+      }
+      clock.advance(TTL.PAYMENT_PROCESSING + 1);
+      await holder.query('COMMIT');
+      const second = await waiting;
+      expect(second.reused).toBe(false);
+      expect(second.pseudonym).not.toBe(first.pseudonym);
+    } finally {
+      holder.release();
+    }
+  });
+});
+
+describe('M2-05 spec 7.1 a token in its grace period does not block a new issue', () => {
+  it('M2-05 FR-33 one second past the TTL (inside the 30 s grace) the next issue marks the old row expired and gives a new token', async () => {
+    const first = await service.generate(p1());
+    clock.advance(TTL.PAYMENT_PROCESSING + 1);
+    const second = await service.generate(p1());
+    expect(second.pseudonym).not.toBe(first.pseudonym);
+    const old = (await mappings()).find((r) => r['pseudonym'] === first.pseudonym);
+    expect(old?.['status']).toBe('expired');
+  });
+});
+
+describe('M2-05 T-05 parallel requests that are not all alike', () => {
+  it('M2-05 NFR-13 two combinations and refusals at once: one new token for each combination, every refusal audited, nothing else written', async () => {
+    const calls = [
+      ...Array.from({ length: 12 }, () => service.generate(p1({ subjectId: 'CUST-000301' }))),
+      ...Array.from({ length: 12 }, () =>
+        service.generate(p1({ subjectType: 'ACCOUNT', subjectId: '1234567890' })),
+      ),
+      ...Array.from({ length: 12 }, () =>
+        reasonOf(service.generate(p1({ requestingService: 'TRANSACTION' }))),
+      ),
+    ];
+    const settled = await Promise.all(calls);
+    const issued = settled.filter((r) => typeof r !== 'string') as { reused: boolean }[];
+    expect(issued.filter((r) => !r.reused)).toHaveLength(2);
+    expect(issued.filter((r) => r.reused)).toHaveLength(22);
+    expect(settled.filter((r) => r === 'POLICY_NOT_ALLOWED')).toHaveLength(12);
+    expect(await count('pseudonym_mapping')).toBe(2);
+    expect(await count('audit_log')).toBe(36);
   });
 });
 

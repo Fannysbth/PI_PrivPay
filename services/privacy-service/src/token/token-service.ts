@@ -52,7 +52,7 @@ export interface TokenResult {
 
 export interface TokenServiceDeps {
   readonly operation: AuditedOperation;
-  readonly policy: PolicyEngine;
+  readonly policy: Pick<PolicyEngine, 'evaluate'>;
   readonly index: Pick<BlindIndex, 'lookup'>;
   readonly cipher: Pick<FieldCipher, 'encrypt'>;
   readonly mint: Pick<TokenMint, 'mint'>;
@@ -66,16 +66,31 @@ export interface TokenServiceDeps {
 const invalid = (): DomainError => new DomainError('VALIDATION_ERROR');
 const isText = (value: unknown): value is string => typeof value === 'string';
 
+/** The text fields are checked as text first: the type says string, but the data comes from outside (CLAUDE.md). */
 function assertShape(request: GenerateRequest): void {
-  const { subjectType, subjectId, targetService, purpose, transactionId, actorId } = request;
+  const {
+    requestingService,
+    subjectType,
+    subjectId,
+    targetService,
+    purpose,
+    transactionId,
+    actorId,
+  } = request;
+  if (!isText(requestingService) || !SERVICE_ID.test(requestingService)) throw invalid();
   if (subjectType !== 'CUSTOMER' && subjectType !== 'ACCOUNT') throw invalid();
   const idPattern = subjectType === 'CUSTOMER' ? CUSTOMER_ID : ACCOUNT_NUMBER;
   if (!isText(subjectId) || !idPattern.test(subjectId)) throw invalid();
   if (!isText(targetService) || !SERVICE_ID.test(targetService)) throw invalid();
   if (!isText(purpose) || !AUDIT_FORMATS.purpose.test(purpose)) throw invalid();
-  if (transactionId !== undefined && !AUDIT_FORMATS.transactionId.test(transactionId))
+  if (
+    transactionId !== undefined &&
+    (!isText(transactionId) || !AUDIT_FORMATS.transactionId.test(transactionId))
+  ) {
     throw invalid();
-  if (actorId !== undefined && !AUDIT_FORMATS.actorId.test(actorId)) throw invalid();
+  }
+  if (actorId !== undefined && (!isText(actorId) || !AUDIT_FORMATS.actorId.test(actorId)))
+    throw invalid();
 }
 
 interface ActiveRow {
@@ -119,15 +134,20 @@ export class TokenService {
           context: { serviceId: targetService, purpose, subjectType },
         }).ttlSeconds;
       } catch (error) {
-        if (error instanceof DomainError && error.reason !== 'INTERNAL_ERROR') {
+        // Only the two answers of the policy are decisions; any other failure is not, and is not audited as one.
+        if (
+          error instanceof DomainError &&
+          (error.reason === 'POLICY_NOT_ALLOWED' || error.reason === 'FORBIDDEN_ROLE')
+        ) {
           throw new DeniedOperation({ ...audited, status: 'DENIED', reason: error.reason });
         }
         throw error;
       }
 
       const lookup = this.deps.index.lookup(subjectType, subjectId);
-      const now = this.deps.clock.now();
       await tx.query(TOKEN_SQL.lock, [`${lookup.toString('hex')}|${targetService}|${purpose}`]);
+      // Read after the lock (spec 7.2 steps 3 and 7): a request that waited judges the token by the time it got in.
+      const now = this.deps.clock.now();
       await tx.query(TOKEN_SQL.expireStale, [lookup, targetService, purpose, now]);
 
       const found = await tx.query<ActiveRow>(TOKEN_SQL.findActive, [
