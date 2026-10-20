@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-02 modul `Crypto` (ADR-0011)
+
+- `services/privacy-service/src/crypto/`: `FieldCipher` (AES-256-GCM, blob `key_version(uint16) || IV(12) || ciphertext || tag(16)`, kunci dipilih menurut versi di blob), `BlindIndex.lookup`, `TokenMint.mint` (`PSEU-` + 8 heks), `mappingBinding`/`vaultBinding` (AAD terikat jenis, kolom, dan `id` baris), `encodeParts` (awalan panjang 4 byte), `createKeys`/`loadKeys` (tiga kunci 32 byte yang berbeda dari berkas `*_FILE`, kunci mentah di env ditolak). Hanya `node:crypto`; tanpa dependensi baru.
+- Keputusan rancangan: AAD hanya dapat dibuat oleh `mappingBinding`/`vaultBinding` (tipe bermerek), sehingga pemanggil tidak dapat mengirim AAD kosong atau buatan sendiri (T-16). Kunci disimpan di `WeakMap`, bukan di properti, sehingga `JSON.stringify`, `inspect`, dan `String` tidak menampilkannya (NFR-07). `CryptoError` membawa kata alasan tetap (`bad_key`, `integrity`, `unknown_key_version`, `malformed`) dan tidak pernah nilai, kunci, atau blob.
+- Tes: `crypto.spec.ts` (unit, 44) dan `crypto.integration.spec.ts` (5, PostgreSQL asli dengan peran `privpay_app`): format, IV tidak berulang, setiap byte blob diubah satu bit, pemindahan antar baris, jenis, kolom, dan kind, penukaran ciphertext langsung di basis data (pemilik skema), dump tanpa plaintext, rotasi `K_index` dan versi kunci medan, aturan tiga kunci, pemuatan dari berkas, impor hanya `node:crypto` (S-32).
+- Mutasi manual pada 20 pengaman (AAD, id baris, kolom, kind, IV konstan/pendek, awalan panjang, versi tak dikenal jatuh ke kunci lain, kunci salah untuk token, nonce, panjang token, tiga aturan kunci berbeda, ukuran kunci, kunci tampil di JSON, panjang tag): semua terbunuh. Satu selamat pada lari pertama (kind `mapping` dibuang dari AAD, karena jumlah bagian sudah membedakan dari `vault`); ditutup dengan tes yang membandingkan byte AAD dengan nilai harapan dari ADR-0011.
+
 ### M2-01 skema privacy-db dan hak akses per peran
 
 - `services/privacy-service/migrations/proposed/`: `0001_privacy_tables.sql` (lima tabel PRD 11 dengan perubahan E-06: `audit_log.disclosure_id`, `attribute_names`, `chk_attribute_names`; semua indeks dan `chk_purged`, `chk_vault_purged`, `chk_four_eyes`) dan `0002_privacy_grants.sql` (`privpay_app` hanya `INSERT` pada `audit_log`, tanpa `DELETE` di tabel mana pun; `privpay_auditor` hanya `SELECT audit_log`). Berkas ada di `proposed` karena mode `baseline` tidak menjalankan Privacy (spec data 2).
