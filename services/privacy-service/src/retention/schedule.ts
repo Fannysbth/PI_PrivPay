@@ -1,3 +1,4 @@
+export const DAY_MS = 86_400_000;
 const RUN_TIME = /^([01][0-9]|2[0-3]):([0-5][0-9])$/;
 
 /**
@@ -12,5 +13,5 @@ export function nextRunAt(now: Date, runUtc: string): Date {
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), hours, minutes);
-  return new Date(today > now.getTime() ? today : today + 86_400_000);
+  return new Date(today > now.getTime() ? today : today + DAY_MS);
 }

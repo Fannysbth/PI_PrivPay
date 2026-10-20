@@ -1,11 +1,16 @@
 import type { Clock } from '@privpay/common';
 import type { Pool } from 'pg';
 import { AuditWriter } from '../audit';
+import { DAY_MS } from './schedule';
 
 /** Every value is a bind parameter (CLAUDE.md). The predicates are those of PRD 6.2. */
 export const RETENTION_SQL = {
-  // Step 1: an active row past its TTL and grace period. $1 is now minus the grace period.
-  markExpired: `UPDATE pseudonym_mapping SET status = 'expired' WHERE status = 'active' AND expires_at < $1`,
+  // Step 1: an active row past its TTL and grace period. $1 is now minus the grace period. Rows another transaction holds
+  // are skipped too (marked by the next run): a plain UPDATE would queue behind an exchange or a re-issue while holding
+  // the locks of the rows it has already reached, and an exchange that marks a row the job holds would wait for the job,
+  // a circular wait.
+  markExpired: `UPDATE pseudonym_mapping SET status = 'expired'
+     WHERE id IN (SELECT id FROM pseudonym_mapping WHERE status = 'active' AND expires_at < $1 FOR UPDATE SKIP LOCKED)`,
   // Step 2, one batch: SKIP LOCKED leaves a row that an exchange, a re-issue or a revocation holds at this moment for the
   // next run, instead of waiting for it. $1 is now minus RETENTION_DAYS, $2 the batch size, $3 now. The identity columns
   // go together (chk_purged); the row stays, so audit_log.mapping_id stays valid; nothing is deleted.
@@ -23,7 +28,6 @@ export const RETENTION_SQL = {
 } as const;
 
 const DEFAULT_BATCH_SIZE = 500;
-const DAY_MS = 86_400_000;
 
 export interface RetentionJobDeps {
   readonly pool: Pick<Pool, 'connect' | 'query'>;
@@ -34,6 +38,8 @@ export interface RetentionJobDeps {
   readonly retentionDays: number;
   /** Rows per transaction (spec 7.11: one transaction per batch). */
   readonly batchSize?: number;
+  /** The only path to audit_log; replaceable in a test. */
+  readonly writer?: AuditWriter;
 }
 
 export interface RetentionResult {
@@ -55,9 +61,10 @@ interface PurgedRow {
  */
 export class RetentionJob {
   private readonly batchSize: number;
-  private readonly writer = new AuditWriter();
+  private readonly writer: AuditWriter;
 
   constructor(private readonly deps: RetentionJobDeps) {
+    this.writer = deps.writer ?? new AuditWriter();
     const { graceSeconds, retentionDays } = deps;
     if (
       typeof retentionDays !== 'number' ||

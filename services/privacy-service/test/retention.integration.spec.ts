@@ -357,6 +357,52 @@ describe('M2-09 NFR-18 batches, atomicity and rows in use', () => {
     expect(await count('audit_log')).toBe(0);
   });
 
+  it('M2-09 FR-31 step 1 does not wait for a row in use either: it is marked by the next run', async () => {
+    await insertRow({
+      pseudonym: 'PSEU-00000062',
+      status: 'active',
+      expiresAt: ago(2 * DAY),
+      subjectId: 'CUST-000603',
+    });
+    await insertRow({
+      pseudonym: 'PSEU-00000063',
+      status: 'active',
+      expiresAt: ago(2 * DAY),
+      subjectId: 'CUST-000604',
+    });
+    const holder = await db.owner.connect();
+    try {
+      await holder.query('BEGIN');
+      // What a re-issue or an exchange in flight holds on a row (spec 7.5, 7.7).
+      await holder.query(
+        `SELECT id FROM pseudonym_mapping WHERE pseudonym = 'PSEU-00000062' FOR SHARE`,
+      );
+      const state = { settled: false, queued: false };
+      const running = job.run().then((result) => {
+        state.settled = true;
+        return result;
+      });
+      // If the job queues behind the holder it is waiting, and the holder is only released below: that would be the
+      // circular wait that SKIP LOCKED avoids. It is observed in pg_locks, bounded, without a sleep.
+      for (let polls = 0; polls < 3000 && !state.settled && !state.queued; polls += 1) {
+        const { rows } = await db.owner.query(
+          `SELECT 1 FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')`,
+        );
+        state.queued = rows.length > 0;
+      }
+      await holder.query('COMMIT');
+      const result = await running;
+      expect(state.queued).toBe(false);
+      expect(result.expired).toBe(1);
+      expect((await rowOf('PSEU-00000062'))?.['status']).toBe('active');
+      expect((await rowOf('PSEU-00000063'))?.['status']).toBe('expired');
+    } finally {
+      holder.release();
+    }
+    expect((await job.run()).expired).toBe(1);
+    expect((await rowOf('PSEU-00000062'))?.['status']).toBe('expired');
+  });
+
   it('M2-09 FR-31 a row in use by another transaction is left for the next run, not waited for and not skipped for ever', async () => {
     await insertRow({
       pseudonym: 'PSEU-00000060',
