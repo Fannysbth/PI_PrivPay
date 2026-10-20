@@ -288,6 +288,10 @@ importers:
       '@privpay/common':
         specifier: workspace:*
         version: link:../../packages/common
+    devDependencies:
+      '@types/pg':
+        specifier: ^8.23.1
+        version: 8.23.1
 
   services/reconciliation-service:
     dependencies:

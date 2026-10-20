@@ -4,6 +4,18 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-04 `AuditWriter`, `AuditReader`, `AuditedOperation`
+
+- `services/privacy-service/src/audit/`: `AuditEntry` (tanpa kolom nilai; `reason` berupa kode tetap, `attributeNames` hanya `customer_id|nik|nama`), `AuditWriter.record(entry, tx)` (satu-satunya jalur `INSERT audit_log`, tanpa `RETURNING`), `AuditReader.query` (pool `privpay_auditor`; filter `action`, `status`, `pseudonym`, `limit` 1..500), dan `AuditedOperation.run`: hasil dan baris SUCCESS di satu transaksi; penolakan (`DeniedOperation`) membatalkan transaksi operasi lalu menulis tepat satu baris DENIED di transaksi pendek terpisah; audit atau commit yang gagal menjadi `INTERNAL_ERROR` tanpa keadaan setengah jadi (FR-13, spec privacy 11). Galat tak terduga membatalkan transaksi dan merambat tanpa baris audit.
+- Tes: `audit.integration.spec.ts` (10, PostgreSQL asli, peran `privpay_app` dan `privpay_auditor`) dengan empat kegagalan di tengah: baris audit ditolak `chk_attribute_names`, commit ditolak constraint trigger deferred (audit sudah tertulis), galat setelah perubahan keadaan, dan baris DENIED ditolak; plus `audit-entry.spec.ts` (tipe, ditegakkan `pnpm typecheck` lewat `@ts-expect-error`).
+- Mutasi manual: audit ditulis lewat koneksi di luar transaksi lolos pada lari pertama (tidak ada tes "audit tertulis, lalu commit gagal"); ditutup dengan tes constraint trigger deferred, mutan lalu terbunuh.
+- Dependensi: hanya `@types/pg` (devDependency, MIT, versi sama dengan `packages/common`, sudah ada di lockfile); kode hanya mengimpor tipe `pg`, jadi tes penjaga M0-06 (`dependencies` hanya `@privpay/common`) tidak diubah. `pnpm audit --prod`: bersih.
+- Belum: `created_at` memakai `now()` basis data (DDL PRD 11), bukan `Clock` yang disuntik; penulisan audit tidak memakai waktu aplikasi.
+
+### N-24 CHECK tambahan di privacy-db (E-29)
+
+- `chk_mapping_complete`, `chk_vault_complete`, `chk_disclosure_decided`, `chk_requested_attrs` di `0001_privacy_tables.sql` (diedit di tempat: belum di-merge ke `main`). Tujuh tes baru di `schema.integration.spec.ts`. Selisih dari DDL PRD dicatat di `docs/PRD_ERRATA.md` E-29. Database lokal `privpay_privacy` yang sudah menjalankan 0001 lama harus dibuat ulang (checksum berubah).
+
 ### M2 gerbang 1: tinjauan keamanan
 
 - `docs/security/review-M2-gerbang1.md`: tanpa Critical atau High. Diperbaiki: `RowBinding` kini disalin privat (tidak dapat diubah dari luar), teks dengan surrogate yatim dan bagian kosong ditolak (tiga tes baru, tiga mutan terbunuh). Menunggu keputusan: N-24 (pengetatan CHECK di luar DDL PRD). Diterima: kunci berentropi rendah menjadi tanggung jawab operator.
