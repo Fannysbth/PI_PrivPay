@@ -404,6 +404,23 @@ describe('M2-03 FR-04 TK-15 a context can be opened only if it is P7', () => {
     ).toBe('POLICY_NOT_ALLOWED');
   });
 
+  it('M2-03 FR-04 RECONCILIATION itself cannot open any context but P7, role or not', () => {
+    for (const row of TABLE_1.filter((r) => r[0] !== 'P7')) {
+      for (const actorRole of ['auditor', 'admin', undefined]) {
+        expect(
+          failure(() =>
+            engine.evaluate({
+              operation: 'DE_PSEUDONYMIZE',
+              requestingService: 'RECONCILIATION',
+              context: keyOf(row),
+              actorRole,
+            }),
+          ).reason,
+        ).toBe('POLICY_NOT_ALLOWED');
+      }
+    }
+  });
+
   it('M2-03 FR-04 mayDisclose is true for P7 and for no other context', () => {
     const open = engine
       .contexts()

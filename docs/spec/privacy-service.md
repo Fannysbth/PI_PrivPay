@@ -12,7 +12,7 @@ Istilah mengikuti skill `codebase-design`. Lapisan HTTP (controller) tipis dan h
 
 | Modul | Interface (ringkas) | Dalamnya |
 | --- | --- | --- |
-| `PolicyEngine` | `evaluate({requestingService, targetService, purpose, subjectType, mode, actorRole?})` mengembalikan baris Tabel 1 atau melempar `POLICY_NOT_ALLOWED`/`FORBIDDEN_ROLE`; `exchangeAllowed(...)`, `contextOf(mapping)` | Tabel 1, 2, 3, 5, 6 sebagai konfigurasi bertipe; murni, tanpa I/O |
+| `PolicyEngine` | **[Δ spec, M2-03]** `evaluate({operation, requestingService, context: {serviceId, purpose, subjectType}, actorRole?})` mengembalikan konteks Tabel 1 atau melempar `POLICY_NOT_ALLOWED`/`FORBIDDEN_ROLE` (`operation` menggantikan `mode`/"cara terbit": `GENERATE_FROM_IDENTITY`, `GENERATE_FROM_TRANSACTION`, `DE_PSEUDONYMIZE`, `RE_ISSUE`); `authorizeCaller(operation, caller)` (RESOLVE_NOTIF_DOMAIN); `exchangeTarget(caller, {serviceId, purpose})` (Tabel 2 sebelum token dibaca) dan `exchangeAllowed(sumber, tujuan, caller)` (setelah kepemilikan terbukti); `contextOf(key)`, `attributesFor(key)` (Tabel 5), `isValidBasis(basis)` (Tabel 6); TTL per purpose disuntik lewat konstruktor | Tabel 1, 2, 3, 5, 6 sebagai konfigurasi bertipe dan beku; murni, tanpa I/O |
 | `Crypto` | `FieldCipher.encrypt/decrypt`, `BlindIndex.lookup`, `TokenMint.mint`, `loadKeys` | bagian 5 |
 | `TokenService` | `generate`, `generateFromTransaction`, `exchange`, `reIssue`, `resolveDomain`, `revokeToken`, `revokeSubject` | `buat_token`, status efektif, kunci per-kombinasi, audit dalam transaksi yang sama |
 | `DisclosureService` | `request`, `approve`, `reject`, `open` (de-pseudonymize) | mesin status, lima gerbang, brankas |
@@ -105,7 +105,7 @@ Hanya `node:crypto`. Tiga kunci terpisah (`K_token`, `K_index`, `K_field`), masi
 
 ## 6. Policy Engine
 
-Tabel 1, 2, 3, 5, 6 ditulis sebagai konstanta bertipe di `PolicyEngine` (konfigurasi, bukan tabel basis data); TTL tiap purpose dari env. Mengubah isi tabel = ADR. `evaluate` memeriksa: baris Tabel 1 (layanan, purpose, jenis subjek) → cara terbit → pemanggil sah (Tabel 3) → syarat peran (kolom "Peran diperlukan": `service`, atau `auditor` untuk P7). Pertukaran: pasangan (pemanggil, tujuan, purpose) pada Tabel 2 diperiksa sebelum token dibaca (7.5 STEP 0), konteks sumber setelah kepemilikan terbukti (STEP 2). `contextOf(mapping).bolehDibuka` hanya benar untuk P7.
+Tabel 1, 2, 3, 5, 6 ditulis sebagai konstanta bertipe di `PolicyEngine` (konfigurasi, bukan tabel basis data); TTL tiap purpose dari env. Mengubah isi tabel = ADR. `evaluate` memeriksa: baris Tabel 1 (layanan, purpose, jenis subjek) → cara terbit → pemanggil sah (Tabel 3) → syarat peran (dalam kode: aturan Tabel 3 dicari lewat pemanggil lebih dulu, lalu baris Tabel 1; tidak terlihat dari luar karena setiap kegagalan sebelum peran adalah `POLICY_NOT_ALLOWED`, M2-03) (kolom "Peran diperlukan": `service`, atau `auditor` untuk P7). Pertukaran: pasangan (pemanggil, tujuan, purpose) pada Tabel 2 diperiksa sebelum token dibaca (7.5 STEP 0), konteks sumber setelah kepemilikan terbukti (STEP 2). `contextOf(mapping).bolehDibuka` hanya benar untuk P7.
 
 Mode: bila `PRIVACY_MODE=baseline`, Privacy Service tidak dijalankan (PRD 17).
 

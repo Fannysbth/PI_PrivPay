@@ -1,7 +1,7 @@
 import { DomainError } from '@privpay/common';
 import type { AuditAttributeName } from '../audit';
 import {
-  BASES,
+  DISCLOSURE_BASES,
   DISCLOSABLE_ATTRIBUTES,
   PURPOSES,
   TABLE_1,
@@ -40,6 +40,9 @@ export interface EvaluateRequest {
 
 const deny = (): DomainError => new DomainError('POLICY_NOT_ALLOWED');
 
+/** Tabel 5 for every context that may not be opened. */
+const NONE: readonly AuditAttributeName[] = Object.freeze([]);
+
 /**
  * Policy of Tabel 1, 2, 3, 5 and 6 (spec privacy 6). Pure: no I/O, no clock, no randomness. Failures are
  * `POLICY_NOT_ALLOWED`, or `FORBIDDEN_ROLE` when only the role is missing; the caller and the way of issue are always
@@ -77,16 +80,19 @@ export class PolicyEngine {
 
   /** Tabel 3, the caller alone: all that RESOLVE_NOTIF_DOMAIN checks before it reads the token (PRD 7.3 STEP 0). */
   authorizeCaller(operation: Operation, requestingService: string): void {
-    const row = TABLE_3.find((entry) => entry.operation === operation);
-    if (row === undefined || row.caller !== requestingService) throw deny();
+    this.ruleOf(operation, requestingService);
   }
 
-  /** Tabel 1 row, then way of issue and caller (Tabel 3), then role. Returns the context the operation touches. */
+  /**
+   * Tabel 3 caller and way of issue, then the Tabel 1 row, then the role. Spec 6 lists the Tabel 1 row first; the
+   * caller is looked at first here because the rule is found by it, and the order cannot be seen from outside (every
+   * failure before the role is POLICY_NOT_ALLOWED). Only the operations that touch a context (not EXCHANGE or
+   * RESOLVE_NOTIF_DOMAIN) are accepted by the type: those use `exchangeTarget` and `authorizeCaller`.
+   */
   evaluate(request: EvaluateRequest): PolicyContext {
-    this.authorizeCaller(request.operation, request.requestingService);
-    const row = TABLE_3.find((entry) => entry.operation === request.operation);
+    const rule = this.ruleOf(request.operation, request.requestingService);
     const context = this.contextOf(request.context);
-    if (context === undefined || row?.contexts.includes(context.id) !== true) throw deny();
+    if (context === undefined || !rule.contexts.includes(context.id)) throw deny();
     if (context.requiredRole === 'auditor' && request.actorRole !== 'auditor') {
       throw new DomainError('FORBIDDEN_ROLE');
     }
@@ -114,7 +120,11 @@ export class PolicyEngine {
     return this.byId(found.target);
   }
 
-  /** Tabel 2 after ownership is proved (PRD 7.2 STEP 2): is this exact source to target exchange one of the two? */
+  /**
+   * Tabel 2 after ownership is proved (PRD 7.2 STEP 2): is this exact source to target exchange one of the two? The
+   * caller builds `target` from the source mapping's `subject_type` (PRD 7.2 STEP 3), so a target of another subject
+   * type is not a context of Tabel 1 and is refused here.
+   */
   exchangeAllowed(source: ContextKey, target: ContextKey, requestingService: string): boolean {
     const from = this.contextOf(source);
     const to = this.contextOf(target);
@@ -132,9 +142,18 @@ export class PolicyEngine {
     return this.contextOf(key)?.mayDisclose === true ? DISCLOSABLE_ATTRIBUTES : NONE;
   }
 
-  /** Tabel 6. */
+  /**
+   * Tabel 6 (PRD 7.4 flow E2, TK-27): only these bases may open a disclosure request. The caller records a refusal
+   * as INVALID_BASIS, audited (spec privacy 9.4).
+   */
   isValidBasis(basis: string): boolean {
-    return BASES.includes(basis);
+    return DISCLOSURE_BASES.includes(basis);
+  }
+
+  private ruleOf(operation: Operation, requestingService: string): (typeof TABLE_3)[number] {
+    const rule = TABLE_3.find((entry) => entry.operation === operation);
+    if (rule === undefined || rule.caller !== requestingService) throw deny();
+    return rule;
   }
 
   private byId(id: ContextId): PolicyContext {
@@ -143,5 +162,3 @@ export class PolicyEngine {
     return found;
   }
 }
-
-const NONE: readonly AuditAttributeName[] = Object.freeze([]);

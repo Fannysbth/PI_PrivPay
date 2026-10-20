@@ -128,8 +128,8 @@ export const DISCLOSABLE_ATTRIBUTES: readonly AuditAttributeName[] = Object.free
   'nama',
 ]);
 
-/** Tabel 6: the legitimate bases for a disclosure request. */
-export const BASES: readonly string[] = Object.freeze([
+/** Tabel 6: the legitimate bases for a disclosure request (PRD 7.4 flow E2, TK-27). */
+export const DISCLOSURE_BASES: readonly string[] = Object.freeze([
   'DISPUTE',
   'FRAUD_CONFIRMED',
   'LEGAL_REQUEST',

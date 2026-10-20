@@ -10,7 +10,8 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 - Pencarian memakai `===` pada array, bukan indeks objek dari masukan pemanggil, sehingga `__proto__`, `constructor`, `toString` tidak dapat mencapai prototipe (diuji).
 - Tes: `policy-engine.spec.ts` (28, unit). Oracle berupa literal tabel PRD, bukan hasil hitung kode; seluruh hasil kali operasi × pemanggil × layanan × purpose × jenis subjek (sekitar 1.500 kombinasi) dan 7 × 7 pasangan pertukaran dibandingkan. TK-06, TK-13, TK-14, TK-15 pada tingkat unit; FR-04, FR-27, FR-28.
 - Mutasi manual pada enam pengaman (pemeriksaan peran, pemeriksaan pemanggil, pemanggil pada `exchangeAllowed`, pertukaran ketiga di Tabel 2, `mayDisclose` P6, `subjectType` diabaikan): semua terbunuh.
-- Belum: operasi ADMIN_CONSOLE (`REVOKE_*`, `VIEW_AUDIT_LOG`) tidak ada di engine; tiketnya (M3-02, M3-03) menambahkannya.
+- **Review (Standards + Spec): isi seluruh tabel cocok dengan PRD, tanpa pelanggaran keras.** Diperbaiki: bentuk API dan urutan pemeriksaan menyimpang dari spec privacy 2 dan 6 (kini tertulis di spec, M2-03; urutan tidak terlihat dari luar), pencarian aturan Tabel 3 ganda disatukan (`ruleOf`), `BASES` menjadi `DISCLOSURE_BASES` dengan rujukan PRD/TK-27, komentar `exchangeAllowed` (target dibangun dari `subject_type` sumber) dan `isValidBasis`, tes eksplisit bahwa RECONCILIATION tidak dapat membuka konteks selain P7 (29 tes). Ditolak: union `ServiceId` bersama (keputusan lintas modul), pembagian pencarian `TABLE_2`.
+- Belum: operasi ADMIN_CONSOLE (`REVOKE_*`, `VIEW_AUDIT_LOG`) tidak ada di engine; tiketnya (M3-02, M3-03) menambahkannya. Pembacaan `TTL_*` dari env menunggu pemasangan konfigurasi layanan (M2-05).
 
 ### M2-04 lanjutan: pola kolom bebas audit dan pemilah keputusan/validasi
 
