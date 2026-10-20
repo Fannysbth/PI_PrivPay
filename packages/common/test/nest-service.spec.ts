@@ -10,6 +10,7 @@ import { type Delay } from '../src/delay';
 import { DomainError, RateLimitedError } from '../src/errors';
 import { createServiceApp, SERVICE_IDS, type ServiceApp, type ServiceId } from '../src/nest';
 import { capture } from './log-capture';
+import { probe, probeAll } from './tcp-probe';
 
 // Built at run time so no PSEU- literal sits in the repository (gitleaks allowlist covers docs/ and tests/ only).
 const canary = ['PSEU', 'AB12CD34'].join('-');
@@ -309,35 +310,34 @@ describe('M0-06 the environment is validated at start (fail fast, NFR-20)', () =
   });
 });
 
-/** The error code of a connection attempt, or 'connected'. */
-function connectCode(host: string, port: number): Promise<string> {
-  return new Promise<string>((resolve) => {
-    const req = httpRequest({ host, port, path: '/health', timeout: 2000 }, (res) => {
-      res.resume();
-      resolve('connected');
-    });
-    req.on('error', (error: NodeJS.ErrnoException) => {
-      resolve(error.code ?? 'error');
-    });
-    req.end();
-  });
-}
+// Windows needs about two seconds to report a refusal on a non-loopback address of the machine, so a probe waits
+// longer than that and all addresses are tried at once; sequentially, three network interfaces would exceed the test's
+// five seconds.
+const PROBE_TIMEOUT_MS = 3000;
 
 describe.each(SERVICE_IDS)('M0-06 %s listens on loopback only (AZ-43)', (id) => {
   it('M0-06 binds 127.0.0.1 and refuses connections that arrive on any other local address', async () => {
     const { service } = await start(id);
-    const { host, port } = await service.listen();
-    expect(host).toBe('127.0.0.1');
-    expect(await connectCode(host, port)).toBe('connected');
+    try {
+      const { host, port } = await service.listen();
+      expect(host).toBe('127.0.0.1');
+      expect(await probe(host, port, { timeoutMs: PROBE_TIMEOUT_MS })).toBe('connected');
 
-    // 127.0.0.2 is loopback too, but not the address the service is bound to: it exists on every machine, so this
-    // check never passes vacuously. The machine's own addresses are tried as well when it has any.
-    const external = Object.values(networkInterfaces())
-      .flat()
-      .filter((net) => net !== undefined && net.family === 'IPv4' && !net.internal)
-      .map((net) => net?.address ?? '');
-    for (const address of ['127.0.0.2', ...external]) {
-      expect(await connectCode(address, port)).toBe('ECONNREFUSED');
+      // 127.0.0.2 is loopback too, but not the address the service is bound to: it exists on every machine, so this
+      // check never passes vacuously. The machine's own addresses are tried as well, whatever interfaces it has.
+      const own = Object.values(networkInterfaces())
+        .flat()
+        .filter((net) => net !== undefined && net.family === 'IPv4' && !net.internal)
+        .map((net) => net?.address ?? '');
+      const outcomes = await probeAll(['127.0.0.2', ...own], port, { timeoutMs: PROBE_TIMEOUT_MS });
+
+      // Nothing may connect. Another loopback address is refused at once; an address of a real interface is refused
+      // (after a delay on Windows) or does not answer, which is also not an accepted connection.
+      expect(Object.entries(outcomes).filter(([, outcome]) => outcome === 'connected')).toEqual([]);
+      expect(outcomes['127.0.0.2']).toBe('refused');
+      for (const address of own) expect(['refused', 'no answer']).toContain(outcomes[address]);
+    } finally {
+      await service.close();
     }
   });
 
