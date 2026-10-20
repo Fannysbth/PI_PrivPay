@@ -6,21 +6,22 @@ import type { CommonRequest, Issued, TokenResult } from './token-types';
 
 /** The fields of an audit row that do not depend on the outcome. */
 export interface AuditBase {
-  readonly action: Extract<AuditAction, 'GENERATE_TOKEN' | 'EXCHANGE_TOKEN'>;
+  readonly action: Extract<AuditAction, 'GENERATE_TOKEN' | 'EXCHANGE_TOKEN' | 'RE_ISSUE'>;
   readonly requestingService: string;
-  readonly purpose: string;
+  /** Known from the request, or, for re-issue, from the token once it has been read. */
+  readonly purpose?: string;
   readonly transactionId?: string;
   readonly actorId?: string;
 }
 
 export function baseOf(
   action: AuditBase['action'],
-  request: CommonRequest & { purpose: string; transactionId?: string },
+  request: CommonRequest & { purpose?: string; transactionId?: string },
 ): AuditBase {
   return {
     action,
     requestingService: request.requestingService,
-    purpose: request.purpose,
+    ...(request.purpose === undefined ? {} : { purpose: request.purpose }),
     ...(request.transactionId === undefined ? {} : { transactionId: request.transactionId }),
     ...(request.actorId === undefined ? {} : { actorId: request.actorId }),
   };

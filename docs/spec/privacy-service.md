@@ -56,7 +56,7 @@ Permintaan: `{pseudonym, purpose, disclosure_id}`, ketiganya wajib. Pemanggil: `
 
 ### 4.4 `POST /re-issue`
 
-`{pseudonym, transaction_id}` → 200 `{pseudonym, expires_at, reused}`. Pemanggil: `TRANSACTION`. Audit `RE_ISSUE`. DENIED: `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `POLICY_NOT_ALLOWED`, `REVOKED`, `TX_TERMINAL` (409).
+`{pseudonym, transaction_id}` → 200 `{pseudonym, expires_at, reused}`. Pemanggil: `TRANSACTION`. Audit `RE_ISSUE`. DENIED: `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `POLICY_NOT_ALLOWED`, `REVOKED`, `TX_TERMINAL` (409). **[Δ PRD 7.5, M2-07]** Pemanggil yang bukan `TRANSACTION` ditolak `POLICY_NOT_ALLOWED` **sebelum** token dibaca (AZ-23; PRD membaca token lebih dulu): layanan lain tidak dapat menebak token mana yang ada. Urutan selanjutnya: token ada, milik pemanggil, konteks P1/P2 (`POLICY_NOT_ALLOWED`), bukan `revoked`, identitas belum dikosongkan retensi, transaksi belum final. Token `expired` justru yang diterbitkan ulang. Baris audit menyebut token yang diajukan (`pseudonym`, `mapping_id`) pada DENIED dan token baru pada SUCCESS.
 
 ### 4.5 `POST /pseudonym/{pseudonym}/revoke`
 
@@ -68,7 +68,7 @@ Tanpa body; pemanggil `ADMIN_CONSOLE` dengan peran `admin`. 200 `{pseudonym, sta
 
 ### 4.7 `PATCH /transaction-status`
 
-`{transaction_id, status}` dengan `status` ∈ `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `CANCELLED`. Pemanggil `TRANSACTION`. Upsert idempoten; 200 `{transaction_id, status, updated_at}`. **Tidak diaudit** (bukan operasi token). Status terminal (`COMPLETED`, `FAILED`, `CANCELLED`) tidak dapat kembali ke non-terminal: 409 `TX_TERMINAL` (K-09).
+`{transaction_id, status}` dengan `status` ∈ `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `CANCELLED`. Pemanggil `TRANSACTION`. Upsert idempoten; 200 `{transaction_id, status, updated_at}`. **Tidak diaudit** (bukan operasi token). Status terminal (`COMPLETED`, `FAILED`, `CANCELLED`) tidak dapat kembali ke non-terminal: 409 `TX_TERMINAL` (K-09). **[K-30, M2-07]** Status terminal tidak berubah sama sekali: mengulang status terminal yang sama menjawab 200 dengan baris apa adanya (`updated_at` tidak berubah); status lain, termasuk terminal yang berbeda, 409 `TX_TERMINAL`. Satu pernyataan `INSERT ... ON CONFLICT DO UPDATE ... WHERE` membuat dua panggilan serentak tidak dapat lolos bersama.
 
 ### 4.8 `GET /audit-log`, `/audit-log/timeline/{pseudonym}`, `/audit-log/summary`
 

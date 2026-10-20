@@ -88,7 +88,7 @@ export const TABLE_1: readonly ContextRow[] = [
 
 export type ContextOperation =
   'GENERATE_FROM_IDENTITY' | 'GENERATE_FROM_TRANSACTION' | 'DE_PSEUDONYMIZE' | 'RE_ISSUE';
-export type Operation = ContextOperation | 'EXCHANGE' | 'RESOLVE_NOTIF_DOMAIN';
+export type Operation = ContextOperation | 'EXCHANGE' | 'RESOLVE_NOTIF_DOMAIN' | 'UPDATE_TX_STATUS';
 
 /**
  * Tabel 3: who may call and which contexts the operation may touch. RESOLVE_NOTIF_DOMAIN and EXCHANGE decide their
@@ -107,6 +107,8 @@ export const TABLE_3: readonly {
   { operation: 'GENERATE_FROM_TRANSACTION', caller: 'RECONCILIATION', contexts: ['P6', 'P7'] },
   { operation: 'EXCHANGE', caller: 'TRANSACTION', contexts: [] },
   { operation: 'RESOLVE_NOTIF_DOMAIN', caller: 'NOTIFICATION', contexts: [] },
+  // Tabel 3: not a token operation, so it touches no context and is not audited.
+  { operation: 'UPDATE_TX_STATUS', caller: 'TRANSACTION', contexts: [] },
   { operation: 'DE_PSEUDONYMIZE', caller: 'RECONCILIATION', contexts: ['P7'] },
   { operation: 'RE_ISSUE', caller: 'TRANSACTION', contexts: ['P1', 'P2'] },
 ];

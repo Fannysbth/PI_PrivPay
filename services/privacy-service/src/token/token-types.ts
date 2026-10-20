@@ -33,6 +33,12 @@ export interface FromTransactionRequest extends CommonRequest {
   readonly actorRole?: string;
 }
 
+/** Re-issue: TRANSACTION asks for a new token in place of one that expired (spec privacy 4.4). */
+export interface ReIssueRequest extends CommonRequest {
+  readonly pseudonym: string;
+  readonly transactionId: string;
+}
+
 export interface TokenResult {
   readonly pseudonym: string;
   readonly expiresAt: Date;

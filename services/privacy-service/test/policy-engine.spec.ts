@@ -37,7 +37,7 @@ const keyOf = ([, serviceId, purpose, subjectType]: Row) => ({ serviceId, purpos
 
 /** PRD Tabel 3, for the operations of this engine: who may call, and which contexts they may touch. */
 const TABLE_3: Record<
-  Exclude<Operation, 'RESOLVE_NOTIF_DOMAIN' | 'EXCHANGE'>,
+  Exclude<Operation, 'RESOLVE_NOTIF_DOMAIN' | 'EXCHANGE' | 'UPDATE_TX_STATUS'>,
   { caller: string; contexts: string[] }
 > = {
   GENERATE_FROM_IDENTITY: { caller: 'API_GATEWAY', contexts: ['P1', 'P2', 'P5', 'P6'] },
@@ -252,6 +252,23 @@ describe('M2-03 FR-04 evaluate allows exactly the combinations of Tabel 1 and Ta
           engine.authorizeCaller('RESOLVE_NOTIF_DOMAIN', caller);
         }).reason,
       ).toBe('POLICY_NOT_ALLOWED');
+    }
+  });
+
+  it('M2-07 AZ-24 UPDATE_TX_STATUS and RE_ISSUE are for TRANSACTION only (PRD Tabel 3)', () => {
+    for (const operation of ['UPDATE_TX_STATUS', 'RE_ISSUE'] as const) {
+      expect(
+        failure(() => {
+          engine.authorizeCaller(operation, 'TRANSACTION');
+        }).reason,
+      ).toBeUndefined();
+      for (const caller of CALLERS.filter((c) => c !== 'TRANSACTION')) {
+        expect(
+          failure(() => {
+            engine.authorizeCaller(operation, caller);
+          }).reason,
+        ).toBe('POLICY_NOT_ALLOWED');
+      }
     }
   });
 });
