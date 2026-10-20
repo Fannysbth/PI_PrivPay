@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-03 `PolicyEngine`
+
+- `services/privacy-service/src/policy/`: Tabel 1, 2, 3, 5, 6 PRD sebagai konstanta bertipe dan beku; `evaluate` (Tabel 1 → cara terbit dan pemanggil Tabel 3 → peran; `POLICY_NOT_ALLOWED` atau `FORBIDDEN_ROLE`, pemanggil selalu sebelum peran), `authorizeCaller` (RESOLVE_NOTIF_DOMAIN, PRD 7.3 STEP 0), `exchangeTarget` (Tabel 2 sebelum token dibaca) dan `exchangeAllowed` (setelah kepemilikan terbukti), `contextOf`, `attributesFor` (Tabel 5: hanya P7, `customer_id`, `nik`, `nama`), `isValidBasis` (Tabel 6). Murni: tanpa I/O, jam, atau acak (dijaga tes terhadap impor dan pemanggilan). TTL per purpose disuntik lewat konstruktor dan ditolak bila hilang, nol, negatif, pecahan, NaN, tak hingga, atau teks; pembacaan `TTL_*` dari env menunggu pemasangan layanan (M2-05).
+- Pencarian memakai `===` pada array, bukan indeks objek dari masukan pemanggil, sehingga `__proto__`, `constructor`, `toString` tidak dapat mencapai prototipe (diuji).
+- Tes: `policy-engine.spec.ts` (28, unit). Oracle berupa literal tabel PRD, bukan hasil hitung kode; seluruh hasil kali operasi × pemanggil × layanan × purpose × jenis subjek (sekitar 1.500 kombinasi) dan 7 × 7 pasangan pertukaran dibandingkan. TK-06, TK-13, TK-14, TK-15 pada tingkat unit; FR-04, FR-27, FR-28.
+- Mutasi manual pada enam pengaman (pemeriksaan peran, pemeriksaan pemanggil, pemanggil pada `exchangeAllowed`, pertukaran ketiga di Tabel 2, `mayDisclose` P6, `subjectType` diabaikan): semua terbunuh.
+- Belum: operasi ADMIN_CONSOLE (`REVOKE_*`, `VIEW_AUDIT_LOG`) tidak ada di engine; tiketnya (M3-02, M3-03) menambahkannya.
+
 ### M2-04 lanjutan: pola kolom bebas audit dan pemilah keputusan/validasi
 
 - `AuditWriter.record` menolak entri sebelum SQL dikirim bila `pseudonym`, `transactionId`, `purpose`, atau `actorId` tidak berpola (`AuditEntryError`, hanya nama field, tanpa nilai); operasi gagal `INTERNAL_ERROR` (`cause` `audit_write:invalid_entry`) tanpa keadaan setengah jadi. 22 tes baru (`audit-entry-format.spec.ts`, 1 tes integrasi). Pola `purpose` dan `actorId` ditetapkan di sini (spec belum punya pola; `actorId` menolak `@`, titik, spasi, dan deretan angka murni); `pseudonym` dan `transactionId` dari `platform-dan-ci.md` 3.1.
