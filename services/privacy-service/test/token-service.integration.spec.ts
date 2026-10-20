@@ -57,6 +57,7 @@ function build(): TokenService {
     cipher,
     mint,
     clock,
+    graceSeconds: 30,
     keyVersion: 1,
   });
 }
@@ -436,6 +437,7 @@ describe('M2-05 FR-13 only a decision of the policy is audited as DENIED', () =>
       cipher,
       mint,
       clock,
+      graceSeconds: 30,
       keyVersion: 1,
     });
     expect(await reasonOf(odd.generate(p1()))).toBe('SERVICE_UNAVAILABLE');
