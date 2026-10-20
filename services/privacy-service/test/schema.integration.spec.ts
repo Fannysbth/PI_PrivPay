@@ -30,6 +30,7 @@ async function sqlState(work: Promise<unknown>): Promise<string> {
 const INSUFFICIENT_PRIVILEGE = '42501';
 const CHECK_VIOLATION = '23514';
 const UNIQUE_VIOLATION = '23505';
+const FOREIGN_KEY_VIOLATION = '23503';
 
 const bytes = (n: number, fill = 7): Buffer => Buffer.alloc(n, fill);
 
@@ -237,6 +238,24 @@ describe('M2-01 S-22 the database itself rejects half-purged and self-approved r
   });
 });
 
+describe('M2-01 FR-15 FR-25 every index of PRD 11 exists', () => {
+  it('M2-01 FR-15 FR-25 the indexes of the mapping table and the audit log are all there', async () => {
+    const { rows } = await db.owner.query<{ indexname: string }>(
+      "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND (indexname LIKE 'idx%' OR indexname = 'uq_mapping_active') ORDER BY 1",
+    );
+    expect(rows.map((r) => r.indexname)).toEqual([
+      'idx_audit_denied',
+      'idx_audit_pseu',
+      'idx_audit_time',
+      'idx_mapping_expiry',
+      'idx_mapping_pseudonym',
+      'idx_mapping_purge',
+      'idx_mapping_tx',
+      'uq_mapping_active',
+    ]);
+  });
+});
+
 describe('M2-01 FR-25 uniqueness and the row identifiers', () => {
   it('M2-01 FR-25 uq_mapping_active allows one active token per lookup, service and purpose', async () => {
     await insertMapping({ pseudonym: 'PSEU-00000001' });
@@ -275,7 +294,7 @@ describe('M2-01 FR-25 uniqueness and the row identifiers', () => {
           [missing],
         ),
       ),
-    ).toBe('23503');
+    ).toBe(FOREIGN_KEY_VIOLATION);
     expect(
       await sqlState(
         db.app.query(
@@ -283,7 +302,7 @@ describe('M2-01 FR-25 uniqueness and the row identifiers', () => {
           [missing],
         ),
       ),
-    ).toBe('23503');
+    ).toBe(FOREIGN_KEY_VIOLATION);
   });
 });
 
