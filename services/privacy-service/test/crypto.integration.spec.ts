@@ -134,11 +134,16 @@ describe('M2-02 T-16 a ciphertext moved inside the database is refused', () => {
 
   it('M2-02 T-16 swapping two columns of one vault row makes both unreadable', async () => {
     const id = randomUUID();
-    await db.app.query('INSERT INTO identity_vault (id, nik_enc, nama_enc) VALUES ($1, $2, $3)', [
-      id,
-      cipher.encrypt(NIK, vaultBinding('nik', id)),
-      cipher.encrypt(NAMA, vaultBinding('nama', id)),
-    ]);
+    await db.app.query(
+      'INSERT INTO identity_vault (id, customer_lookup, customer_id_enc, nik_enc, nama_enc) VALUES ($1, $2, $3, $4, $5)',
+      [
+        id,
+        lookupOf(SUBJECT_A),
+        cipher.encrypt(SUBJECT_A, vaultBinding('customer_id', id)),
+        cipher.encrypt(NIK, vaultBinding('nik', id)),
+        cipher.encrypt(NAMA, vaultBinding('nama', id)),
+      ],
+    );
     await db.owner.query(
       'UPDATE identity_vault SET nik_enc = nama_enc, nama_enc = nik_enc WHERE id = $1',
       [id],

@@ -23,7 +23,10 @@ CREATE TABLE pseudonym_mapping (
   status          token_status_enum NOT NULL DEFAULT 'active',
   -- Retention clears both columns together; a half-cleared row is refused by the database itself (S-22).
   CONSTRAINT chk_purged CHECK (
-    purged_at IS NULL OR (subject_id_enc IS NULL AND subject_lookup IS NULL))
+    purged_at IS NULL OR (subject_id_enc IS NULL AND subject_lookup IS NULL)),
+  -- The reverse (N-24): a live row always has its subject. Without it a NULL lookup slips past uq_mapping_active.
+  CONSTRAINT chk_mapping_complete CHECK (
+    purged_at IS NOT NULL OR (subject_id_enc IS NOT NULL AND subject_lookup IS NOT NULL))
 );
 
 -- At most one active token per subject, service and purpose (PRD 7.1 STEP 1).
@@ -56,7 +59,10 @@ CREATE TABLE identity_vault (
   purged_at        TIMESTAMPTZ,
   CONSTRAINT chk_vault_purged CHECK (
     purged_at IS NULL OR (customer_lookup IS NULL AND customer_id_enc IS NULL AND nik_enc IS NULL
-                          AND nama_enc IS NULL AND hp_enc IS NULL AND rekening_enc IS NULL))
+                          AND nama_enc IS NULL AND hp_enc IS NULL AND rekening_enc IS NULL)),
+  -- N-24: a live vault row always has its lookup and customer_id; the other columns stay optional.
+  CONSTRAINT chk_vault_complete CHECK (
+    purged_at IS NOT NULL OR (customer_lookup IS NOT NULL AND customer_id_enc IS NOT NULL))
 );
 
 -- Created before audit_log, which refers to it (E-06).
@@ -73,7 +79,12 @@ CREATE TABLE disclosure_request (
   decided_at       TIMESTAMPTZ,
   expires_at       TIMESTAMPTZ,
   used_at          TIMESTAMPTZ,
-  CONSTRAINT chk_four_eyes CHECK (approver_id IS NULL OR approver_id <> requester_id)
+  CONSTRAINT chk_four_eyes CHECK (approver_id IS NULL OR approver_id <> requester_id),
+  -- N-24: an approved or used request always records who approved it and when.
+  CONSTRAINT chk_disclosure_decided CHECK (
+    status NOT IN ('APPROVED', 'USED') OR (approver_id IS NOT NULL AND decided_at IS NOT NULL)),
+  -- N-24: same whitelist as audit_log.chk_attribute_names (E-06).
+  CONSTRAINT chk_requested_attrs CHECK (requested_attrs <@ ARRAY['customer_id', 'nik', 'nama']::text[])
 );
 
 -- There is no subject column: the log records pseudonyms, row ids and attribute names, never values (invariant 6).

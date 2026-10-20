@@ -256,6 +256,110 @@ describe('M2-01 FR-15 FR-25 every index of PRD 11 exists', () => {
   });
 });
 
+describe('M2-01 N-24 the database also refuses incomplete rows that are not purged', () => {
+  it('M2-01 N-24 chk_mapping_complete: a mapping that is not purged needs its ciphertext and its lookup', async () => {
+    expect(await sqlState(insertMapping({ lookup: null }))).toBe(CHECK_VIOLATION);
+    expect(await sqlState(insertMapping({ enc: null }))).toBe(CHECK_VIOLATION);
+    const id = await insertMapping({ pseudonym: 'PSEU-0000000C' });
+    for (const column of ['subject_lookup', 'subject_id_enc']) {
+      // The column name is a constant of this test, not input.
+      expect(
+        await sqlState(
+          db.app.query(`UPDATE pseudonym_mapping SET ${column} = NULL WHERE id = $1`, [id]),
+        ),
+      ).toBe(CHECK_VIOLATION);
+    }
+  });
+
+  it('M2-01 N-24 chk_mapping_complete: two incomplete rows cannot slip past uq_mapping_active as NULL lookups', async () => {
+    const insert = (pseudonym: string): Promise<string> =>
+      insertMapping({ pseudonym, lookup: null });
+    expect(await sqlState(insert('PSEU-0000000D'))).toBe(CHECK_VIOLATION);
+    expect(await sqlState(insert('PSEU-0000000E'))).toBe(CHECK_VIOLATION);
+  });
+
+  it.each(['customer_lookup', 'customer_id_enc'])(
+    'M2-01 N-24 chk_vault_complete: a vault row that is not purged needs %s',
+    async (missing) => {
+      const values: Record<string, Buffer | null> = {
+        customer_lookup: bytes(32, 5),
+        customer_id_enc: bytes(40, 6),
+        [missing]: null,
+      };
+      expect(
+        await sqlState(
+          db.app.query(
+            'INSERT INTO identity_vault (customer_lookup, customer_id_enc) VALUES ($1, $2)',
+            [values['customer_lookup'], values['customer_id_enc']],
+          ),
+        ),
+      ).toBe(CHECK_VIOLATION);
+    },
+  );
+
+  describe('chk_disclosure_decided', () => {
+    let serial = 0;
+    // A fresh mapping per call: the loop below inserts several requests in one test.
+    const nextPseudonym = (): string => `PSEU-D${String((serial += 1)).padStart(7, '0')}`;
+    const insert = (
+      status: string,
+      fields: { approver?: string | null; decidedAt?: string | null; expiresAt?: string | null },
+    ): Promise<unknown> =>
+      insertMapping({ pseudonym: nextPseudonym(), lookup: bytes(32, 100 + serial) }).then(
+        (mapping) =>
+          db.app.query(
+            `INSERT INTO disclosure_request
+             (mapping_id, basis, case_ref, requested_attrs, requester_id, approver_id, status, decided_at, expires_at)
+           VALUES ($1, 'DISPUTE', 'CASE-TEST-1', ARRAY['nik']::text[], 'auditor-a', $2, $3, $4, $5)`,
+            [
+              mapping,
+              fields.approver ?? null,
+              status,
+              fields.decidedAt ?? null,
+              fields.expiresAt ?? null,
+            ],
+          ),
+      );
+    const complete = {
+      approver: 'admin-b',
+      decidedAt: '2026-10-20T10:00:00Z',
+      expiresAt: '2026-10-20T10:10:00Z',
+    };
+
+    it.each(['APPROVED', 'USED'])(
+      'M2-01 N-24 a %s request needs the approver and the decision time',
+      async (status) => {
+        expect(await sqlState(insert(status, complete))).toBe('no error');
+        for (const missing of ['approver', 'decidedAt'] as const) {
+          expect(await sqlState(insert(status, { ...complete, [missing]: null }))).toBe(
+            CHECK_VIOLATION,
+          );
+        }
+      },
+    );
+
+    it.each(['PENDING', 'REJECTED', 'EXPIRED'])(
+      'M2-01 N-24 a %s request needs no approver',
+      async (status) => {
+        expect(await sqlState(insert(status, {}))).toBe('no error');
+      },
+    );
+  });
+
+  it('M2-01 N-24 chk_requested_attrs: only customer_id, nik and nama can be requested', async () => {
+    const mapping = await insertMapping({ pseudonym: 'PSEU-00000010' });
+    const insert = (attrs: string[]): Promise<unknown> =>
+      db.app.query(
+        `INSERT INTO disclosure_request (mapping_id, basis, case_ref, requested_attrs, requester_id)
+         VALUES ($1, 'DISPUTE', 'CASE-TEST-1', $2::text[], 'auditor-a')`,
+        [mapping, attrs],
+      );
+    expect(await sqlState(insert(['nik', 'nama']))).toBe('no error');
+    expect(await sqlState(insert(['hp']))).toBe(CHECK_VIOLATION);
+    expect(await sqlState(insert(['rekening', 'nik']))).toBe(CHECK_VIOLATION);
+  });
+});
+
 describe('M2-01 FR-25 uniqueness and the row identifiers', () => {
   it('M2-01 FR-25 uq_mapping_active allows one active token per lookup, service and purpose', async () => {
     await insertMapping({ pseudonym: 'PSEU-00000001' });
@@ -280,7 +384,10 @@ describe('M2-01 FR-25 uniqueness and the row identifiers', () => {
       ),
     ).toBe(UNIQUE_VIOLATION);
     const vault = (): Promise<unknown> =>
-      db.app.query('INSERT INTO identity_vault (customer_lookup) VALUES ($1)', [bytes(32, 5)]);
+      db.app.query(
+        'INSERT INTO identity_vault (customer_lookup, customer_id_enc) VALUES ($1, $2)',
+        [bytes(32, 5), bytes(40, 6)],
+      );
     await vault();
     expect(await sqlState(vault())).toBe(UNIQUE_VIOLATION);
   });
