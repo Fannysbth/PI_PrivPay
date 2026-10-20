@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2 gerbang 2: tinjauan keamanan
+
+- `docs/security/review-M2-gerbang2.md`: `/security-review` dua tahap (identifikasi, lalu penyaring) atas `fd48030...HEAD`: tanpa temuan Critical, High, atau Medium; satu kandidat Low tersaring (catatan rancangan, dilipat ke K-28). Memuat enam temuan keamanan dari review per tiket yang sudah diperbaiki (jam setelah kunci, daftar putih keputusan, pembacaan sumber berkunci, deadlock `FOR SHARE`, langkah 1 retensi, `ROLLBACK` gagal), status butir checklist (S-22 lulus penuh setelah N-24), dan yang belum teruji (lapisan HTTP, konfigurasi dari env, gerbang 3). Gerbang penuh dijalankan dua kali berturut-turut: lint, typecheck, 884 unit, 251 integrasi, audit prod, gitleaks, 20 smoke, semua hijau.
+
 ### M2-09 `RetentionJob` dan `nextRunAt`
 
 - `services/privacy-service/src/retention/`: `RetentionJob.run()` (PRD 6.2, spec 7.11): langkah 1 menandai `expired` baris aktif yang lewat `expires_at + grace` (tidak diaudit); langkah 2, per batch dalam satu transaksi, mengosongkan `subject_id_enc` dan `subject_lookup` serta mengisi `purged_at` pada baris `expired`/`revoked` dengan `COALESCE(revoked_at, expires_at) < now - RETENTION_DAYS`, satu audit `PURGE_IDENTITY` per baris (`actor_id` SYSTEM, `requesting_service` PRIVACY_SERVICE, tanpa identitas). Batch memakai `FOR UPDATE SKIP LOCKED`: baris yang dipegang pertukaran, re-issue, atau pencabutan dilewati ke lari berikutnya; dua job serentak membagi baris. Baris tidak dihapus, brankas tidak disentuh. `overdueCount()` adalah kueri pemeriksaan TF-14. `nextRunAt` menghitung saat jalan berikutnya dari `RETENTION_JOB_RUN_UTC` (K-26). `retentionDays`, `graceSeconds`, `batchSize` divalidasi saat dibuat.
