@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import type { AuditEntry } from './audit-entry';
+import { assertAuditEntry, type AuditEntry } from './audit-entry';
 
 /** The only code path that inserts into audit_log (M2-04); the connection decides which role does it. */
 export class AuditWriter {
@@ -8,6 +8,7 @@ export class AuditWriter {
    * operation's result (FR-13). No RETURNING: privpay_app has no SELECT on audit_log (spec privacy 3).
    */
   async record(entry: AuditEntry, tx: Pick<PoolClient, 'query'>): Promise<void> {
+    assertAuditEntry(entry);
     await tx.query(
       `INSERT INTO audit_log
          (action, status, reason, requesting_service, actor_id, pseudonym, purpose, transaction_id,

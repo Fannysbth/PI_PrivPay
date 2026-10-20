@@ -89,6 +89,7 @@ Nilai bawaan dipakai spec sampai diputuskan. "Dampak" menunjukkan spec yang beru
 | K-24 | format nilai kenari dan lokasi `tests/pii-scan` untuk proxy pengamat | PP 6 | DITERIMA (bawaan, Gerbang 3) |
 | K-25 | pemenang idempotensi yang masih `PENDING`: penantian hingga `HTTP_TIMEOUT_MS` lewat `Delay`, lalu 200 atau 409 | TX 5 | DITERIMA (bawaan, Gerbang 3) |
 | K-26 | env baru `RETENTION_JOB_RUN_UTC` (`01:00`) untuk job retensi harian | PV 7.11 | DITERIMA (bawaan, Gerbang 3) (E-28) |
+| K-27 | penolakan keputusan yang reason-nya tidak ada di katalog audit PRD: `SELF_APPROVAL`, `DISCLOSURE_NOT_PENDING`, `FORBIDDEN_ROLE` dan `DISCLOSURE_NOT_FOUND` pada approve/reject/permintaan, kegagalan token pada `POST /disclosure-requests`, `FORBIDDEN_ROLE` pada `GET /audit-log`. Usulan: diaudit sebagai DENIED pada action `DISCLOSURE_*` dan `VIEW_AUDIT_LOG` (KPI "100% operasi tercatat, SUCCESS maupun DENIED"); pemilah keputusan/validasi di PV 9.4 sudah diterima | PV 9.4, 4.8, 4.10 | MENUNGGU Fanny (belum dikodekan; M3-04) |
 
 ## G. Keputusan implementasi M0 yang diambil sementara (menunggu Fanny)
 

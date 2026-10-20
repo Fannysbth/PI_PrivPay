@@ -189,9 +189,37 @@ Harian (`RETENTION_JOB_RUN_UTC`, bawaan `01:00`, K-26) dan dapat dipicu di tes. 
 
 Boleh dicatat: `action`, `status`, `reason`, `requesting_service`, `actor_id`, `pseudonym`, `purpose`, `transaction_id`, `mapping_id`, `disclosure_id`, `attribute_names`, `key_version`. Dilarang: NIK, nama, HP, email, rekening, `subject_id`, nominal, geohash, rahasia, JWT, nilai atribut hasil pembukaan. Ditegakkan oleh DDL (tidak ada kolom untuk itu, `chk_attribute_names`), tipe `AuditEntry`, tes, dan pemindai kenari. Kegagalan sebelum pemanggil teridentifikasi (JWT tidak sah) tidak diaudit di Privacy.
 
+**Format kolom bebas (M2-04):** `AuditWriter.record` menolak entri sebelum SQL dikirim bila `pseudonym` bukan `^PSEU-[0-9A-F]{8}$`, `transaction_id` bukan `^TX-[0-9]{1,29}$` (keduanya `platform-dan-ci.md` 3.1), `purpose` bukan `^[A-Z][A-Z0-9_]{0,47}$`, atau `actor_id` bukan `^(?![0-9]+$)[A-Za-z0-9][A-Za-z0-9_-]{0,63}$` (tanpa `@`, titik, spasi, dan tidak seluruhnya angka, sehingga email, nama, dan angka mirip NIK tidak lolos). Penolakan melempar `AuditEntryError` yang hanya memuat nama field, dan operasi gagal 500 tanpa keadaan setengah jadi. Pola tidak membuktikan nilai bukan data pribadi; ia hanya menutup saluran yang mudah.
+
 ### 9.3 Rantai hash (hanya dirancang)
 
 Rancangan, tidak diimplementasikan: `row_hash = SHA-256(prev_hash ‖ isi baris kanonik)`, `prev_hash` = `row_hash` baris sebelumnya menurut urutan penulisan yang diserialisasi (satu penulis per instans atau kunci advisory khusus audit). Rujukan konsep: Schneier dan Kelsey 1999; Crosby dan Wallach 2009 (belum diverifikasi, cek sumber sebelum dikutip). Kolom `prev_hash`/`row_hash` tetap ada (nullable) dan tidak diisi; implementasi tidak sebelum M3 stabil dan menunggu jawaban dosen (PRD 20 no. 2).
+
+### 9.4 Penolakan: keputusan (diaudit) dan validasi bentuk (tidak diaudit)
+
+**Aturan pemilah.** Penolakan yang hasilnya bergantung pada identitas pemanggil, status token atau permintaan, peran, atau tabel kebijakan (Tabel 1, 2, 3, 5, 6) adalah **keputusan**: dilempar sebagai `DeniedOperation`, tepat satu baris DENIED (bagian 7). Penolakan yang hanya bergantung pada sintaks permintaan itu sendiri (skema zod, field tak dikenal, tipe atau pola salah, bentuk campuran, ukuran body) adalah **validasi bentuk**: 422 `VALIDATION_ERROR`, tidak membaca basis data, tidak diaudit. Urutannya: autentikasi (di luar Privacy) → validasi bentuk → keputusan.
+
+**Keputusan yang diaudit**, dicocokkan dengan katalog PRD (kolom Sumber; "spec" berarti spec menambahkannya dan pseudokode PRD tidak menyebut baris audit untuk reason itu):
+
+| Action | Reason DENIED | Sumber |
+| --- | --- | --- |
+| `GENERATE_TOKEN` | `POLICY_NOT_ALLOWED` (termasuk `subject_id` dari bukan Gateway, TK-07), `TOKEN_NOT_FOUND` (bentuk 3) | PRD 7.1, 6.1 |
+| `GENERATE_TOKEN` | `FORBIDDEN_ROLE` (P7 tanpa aktor auditor) | spec 4.1 (Tabel 1, kolom peran) |
+| `EXCHANGE_TOKEN` | `POLICY_NOT_ALLOWED`, `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `REVOKED`, `EXPIRED` | PRD 7.2 |
+| `RESOLVE_NOTIF_DOMAIN` | `POLICY_NOT_ALLOWED`, `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `PURPOSE_MISMATCH`, `REVOKED`, `EXPIRED` | PRD 7.3 |
+| `DE_PSEUDONYMIZE` | `TOKEN_NOT_FOUND` (juga brankas hilang, K-13), `SERVICE_MISMATCH`, `PURPOSE_MISMATCH`, `REVOKED`, `EXPIRED`, `POLICY_NOT_ALLOWED`, `FORBIDDEN_ROLE` | PRD 7.4 |
+| `DE_PSEUDONYMIZE` | `DISCLOSURE_NOT_FOUND`, `DISCLOSURE_NOT_APPROVED`, `DISCLOSURE_EXPIRED`, `REQUESTER_MISMATCH` (GATE 5) | PRD 7.4 + E-03, E-05 |
+| `RE_ISSUE` | `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `POLICY_NOT_ALLOWED`, `REVOKED`, `TX_TERMINAL` | PRD 7.5 |
+| `REVOKE_TOKEN` | `TOKEN_NOT_FOUND`, `FORBIDDEN_ROLE` | spec 4.5 |
+| `REVOKE_SUBJECT` | `TOKEN_NOT_FOUND` (tidak ada token dan tidak ada brankas), `FORBIDDEN_ROLE` | spec 4.6, ADR-0005, katalog PRD 12 |
+| `STORE_IDENTITY` | `POLICY_NOT_ALLOWED` | spec 4.9 (TK-20) |
+| `DISCLOSURE_REQUESTED` | `INVALID_BASIS`, `ATTRIBUTE_NOT_ALLOWED` | spec 4.10, K-07 |
+
+**Belum ditetapkan (K-27, menunggu Fanny; belum dikodekan):** `SELF_APPROVAL`, `DISCLOSURE_NOT_PENDING`, `FORBIDDEN_ROLE`, dan `DISCLOSURE_NOT_FOUND` pada `approve`/`reject`/permintaan; kegagalan token (`TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, bukan P7) pada `POST /disclosure-requests`; `FORBIDDEN_ROLE` pada `GET /audit-log` (4.8 hanya menyebut `VIEW_AUDIT_LOG` SUCCESS). Katalog PRD tidak menyebut baris audit untuk reason ini. Usulan spec: semuanya keputusan yang diaudit (`DISCLOSURE_REQUESTED`/`APPROVED`/`REJECTED`, `VIEW_AUDIT_LOG` DENIED), karena KPI PRD 1 menyatakan 100% operasi tercatat, SUCCESS maupun DENIED.
+
+**Tidak diaudit:** validasi bentuk (di atas); JWT tidak sah (401) dan rate limit (429), yang dicatat di log Gateway; `PATCH /transaction-status` termasuk 409 `TX_TERMINAL` (K-09), karena `UPDATE_TX_STATUS` bukan operasi token (PRD Tabel 3; `TX_TERMINAL` pada `RE_ISSUE` tetap diaudit); penandaan `expired` karena waktu; galat infrastruktur 503 dan 500 (bukan keputusan; bila baris audit sendiri tidak dapat ditulis, operasi gagal 500 dan tentu tanpa baris).
+
+**"Ditolak 422 tanpa baris" (S-24, TK-27, K-07).** `INVALID_BASIS` dan `ATTRIBUTE_NOT_ALLOWED` memeriksa nilai terhadap Tabel 6 dan Tabel 5, tabel kebijakan, bukan sintaks; karena itu keputusan yang diaudit walau klien melihat `VALIDATION_ERROR` 422 (ADR-0008). "Tanpa baris" berarti **tidak ada baris `disclosure_request`**; token tidak dibaca dan tidak ada baris `pseudonym_mapping` yang berubah. Ini tidak berarti tanpa audit: tepat satu baris `audit_log` `DISCLOSURE_REQUESTED` DENIED dengan reason `INVALID_BASIS` atau `ATTRIBUTE_NOT_ALLOWED`, `mapping_id` dan `disclosure_id` kosong, `attribute_names` kosong (nama di luar daftar tidak boleh disimpan: `chk_attribute_names`). Urutan: pola `case_ref` dan bentuk umum (validasi bentuk, tidak diaudit) → `basis` → `attributes` → token. Bila dasar dan atribut sama-sama salah, reason-nya `INVALID_BASIS`. Tes TK-27 menegaskan dua hal: 0 baris `disclosure_request` dan 1 baris audit DENIED.
 
 ## 10. Invarian keamanan
 

@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-04 lanjutan: pola kolom bebas audit dan pemilah keputusan/validasi
+
+- `AuditWriter.record` menolak entri sebelum SQL dikirim bila `pseudonym`, `transactionId`, `purpose`, atau `actorId` tidak berpola (`AuditEntryError`, hanya nama field, tanpa nilai); operasi gagal `INTERNAL_ERROR` (`cause` `audit_write:invalid_entry`) tanpa keadaan setengah jadi. 22 tes baru (`audit-entry-format.spec.ts`, 1 tes integrasi). Pola `purpose` dan `actorId` ditetapkan di sini (spec belum punya pola; `actorId` menolak `@`, titik, spasi, dan deretan angka murni); `pseudonym` dan `transactionId` dari `platform-dan-ci.md` 3.1.
+- `docs/spec/privacy-service.md` 9.4: pemilah keputusan (diaudit lewat `DeniedOperation`) vs validasi bentuk (422, tidak diaudit), daftar keputusan per action dicocokkan dengan katalog PRD, dan perlakuan S-24: 422 `INVALID_BASIS`/`ATTRIBUTE_NOT_ALLOWED` tanpa baris `disclosure_request` tetapi tepat satu baris audit DENIED (K-07). Reason di luar katalog PRD dicatat sebagai K-27 (menunggu Fanny, belum dikodekan).
+
 ### M2-04 `AuditWriter`, `AuditReader`, `AuditedOperation`
 
 - `services/privacy-service/src/audit/`: `AuditEntry` (tanpa kolom nilai; `reason` berupa kode tetap, `attributeNames` hanya `customer_id|nik|nama`), `AuditWriter.record(entry, tx)` (satu-satunya jalur `INSERT audit_log`, tanpa `RETURNING`), `AuditReader.query` (pool `privpay_auditor`; filter `action`, `status`, `pseudonym`, `limit` 1..500), dan `AuditedOperation.run`: hasil dan baris SUCCESS di satu transaksi; penolakan (`DeniedOperation`) membatalkan transaksi operasi lalu menulis tepat satu baris DENIED di transaksi pendek terpisah; audit atau commit yang gagal menjadi `INTERNAL_ERROR` tanpa keadaan setengah jadi (FR-13, spec privacy 11). Galat tak terduga membatalkan transaksi dan merambat tanpa baris audit.

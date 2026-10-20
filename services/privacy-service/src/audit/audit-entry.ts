@@ -41,3 +41,34 @@ export interface AuditEntry {
   readonly attributeNames?: readonly AuditAttributeName[];
   readonly keyVersion?: number;
 }
+
+/** Names the field only: the value is what must never reach a log, an error or a row (FR-15). */
+export class AuditEntryError extends RangeError {
+  readonly field: string;
+
+  constructor(field: string) {
+    super(`audit entry field ${field} has an invalid format`);
+    this.name = 'AuditEntryError';
+    this.field = field;
+  }
+}
+
+// Formats of platform-dan-ci.md 3.1 (`Pseudonym`, `TransactionId`); `purpose` is an upper-case identifier that fits
+// VARCHAR(48); `actorId` is a subject id or SYSTEM: no '@', '.' or space (so no e-mail or name) and never all digits
+// (so no NIK-like number). A format cannot prove a value is not personal, it removes the easy channels.
+const FORMATS = {
+  pseudonym: /^PSEU-[0-9A-F]{8}$/,
+  transactionId: /^TX-[0-9]{1,29}$/,
+  purpose: /^[A-Z][A-Z0-9_]{0,47}$/,
+  actorId: /^(?![0-9]+$)[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/,
+} as const;
+
+/** Refuses a malformed entry before anything is sent to the database (spec privacy 9.2). */
+export function assertAuditEntry(entry: AuditEntry): void {
+  for (const field of Object.keys(FORMATS) as (keyof typeof FORMATS)[]) {
+    const value: unknown = entry[field];
+    if (value !== undefined && (typeof value !== 'string' || !FORMATS[field].test(value))) {
+      throw new AuditEntryError(field);
+    }
+  }
+}

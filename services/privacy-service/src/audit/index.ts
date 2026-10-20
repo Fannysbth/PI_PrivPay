@@ -1,5 +1,7 @@
 export {
   AUDIT_ACTIONS,
+  AuditEntryError,
+  assertAuditEntry,
   type AuditAction,
   type AuditAttributeName,
   type AuditEntry,

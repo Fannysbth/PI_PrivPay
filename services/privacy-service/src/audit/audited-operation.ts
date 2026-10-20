@@ -1,6 +1,6 @@
 import { DomainError } from '@privpay/common';
 import type { Pool, PoolClient } from 'pg';
-import type { AuditEntry } from './audit-entry';
+import { AuditEntryError, type AuditEntry } from './audit-entry';
 import type { AuditWriter } from './audit-writer';
 
 /**
@@ -48,6 +48,8 @@ const SQLSTATE = /^[0-9A-Z]{5}$/;
 
 /** `<step>:<SQLSTATE>`: a fixed category an operator can act on, never a message that could carry a value. */
 function failure(step: 'audit_write' | 'commit', error: unknown): DomainError {
+  if (error instanceof AuditEntryError)
+    return new DomainError('INTERNAL_ERROR', `${step}:invalid_entry`);
   const code = (error as { code?: unknown } | null)?.code;
   return new DomainError(
     'INTERNAL_ERROR',

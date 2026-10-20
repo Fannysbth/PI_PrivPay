@@ -40,7 +40,7 @@ const SUCCESS_ENTRY: SuccessEntry = {
   requestingService: 'API_GATEWAY',
   pseudonym: 'PSEU-00000001',
   purpose: 'PAYMENT',
-  transactionId: 'TX-TEST-0001',
+  transactionId: 'TX-9001',
   keyVersion: 1,
 };
 
@@ -86,7 +86,7 @@ describe('M2-04 FR-13 a successful operation', () => {
       reason: 'OK',
       requestingService: 'API_GATEWAY',
       purpose: 'PAYMENT',
-      transactionId: 'TX-TEST-0001',
+      transactionId: 'TX-9001',
       attributeNames: ['nik', 'nama'],
       keyVersion: 1,
     });
@@ -106,6 +106,20 @@ describe('M2-04 FR-13 a failure in the middle of an operation', () => {
       cause: 'audit_write:23514',
     });
     await expect(outcome).rejects.toBeInstanceOf(DomainError);
+    expect(await stateCount()).toBe(0);
+    expect(await auditCount()).toBe(0);
+  });
+
+  it('M2-04 FR-15 an entry with a malformed field is refused before writing, state and audit both absent', async () => {
+    const bad = { ...SUCCESS_ENTRY, actorId: 'budi.example@example.test' };
+    const outcome = operation.run(async (tx) => {
+      await setStatus(tx, 'TX-TEST-0006');
+      return { result: 'done', audit: bad };
+    });
+    await expect(outcome).rejects.toMatchObject({
+      reason: 'INTERNAL_ERROR',
+      cause: 'audit_write:invalid_entry',
+    });
     expect(await stateCount()).toBe(0);
     expect(await auditCount()).toBe(0);
   });
@@ -191,7 +205,7 @@ describe('M2-04 FR-13 the reader filters and orders', () => {
     for (const [i, action] of (
       ['GENERATE_TOKEN', 'EXCHANGE_TOKEN', 'GENERATE_TOKEN'] as const
     ).entries()) {
-      const id = `TX-TEST-1${String(i)}`;
+      const id = `TX-91${String(i)}`;
       await operation.run(async (tx) => {
         await setStatus(tx, id);
         return {
@@ -201,8 +215,8 @@ describe('M2-04 FR-13 the reader filters and orders', () => {
       });
     }
     expect((await reader.query({ action: 'GENERATE_TOKEN' })).map((r) => r.transactionId)).toEqual([
-      'TX-TEST-12',
-      'TX-TEST-10',
+      'TX-912',
+      'TX-910',
     ]);
     expect(await reader.query({ limit: 1 })).toHaveLength(1);
     expect(await reader.query({ status: 'DENIED' })).toHaveLength(0);
