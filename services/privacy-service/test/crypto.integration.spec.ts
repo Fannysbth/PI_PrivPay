@@ -32,6 +32,16 @@ const SUBJECT_B = 'CUST-TEST-BBB002';
 const NIK = 'FAKE-NIK-0000-0001';
 const NAMA = 'Nama Fiktif Uji';
 
+/** The reason of the CryptoError thrown by `fn`; any other outcome is reported as such. */
+function failureOf(fn: () => unknown): string {
+  try {
+    fn();
+  } catch (error) {
+    return error instanceof CryptoError ? error.reason : 'not a CryptoError';
+  }
+  return 'no error';
+}
+
 let db: TestDb;
 beforeEach(async () => {
   db = await createTestDb(config, { service: 'privacy', suffix: 'm202' });
@@ -116,7 +126,9 @@ describe('M2-02 T-16 a ciphertext moved inside the database is refused', () => {
     ]);
     for (const id of [a, b]) {
       const enc = await readEnc(id);
-      expect(() => cipher.decrypt(enc, mappingBinding('CUSTOMER', id))).toThrow(CryptoError);
+      expect(failureOf(() => cipher.decrypt(enc, mappingBinding('CUSTOMER', id)))).toBe(
+        'integrity',
+      );
     }
   });
 
@@ -135,12 +147,14 @@ describe('M2-02 T-16 a ciphertext moved inside the database is refused', () => {
       'SELECT nik_enc, nama_enc FROM identity_vault WHERE id = $1',
       [id],
     );
-    expect(() =>
-      cipher.decrypt(rows[0]?.nik_enc ?? Buffer.alloc(0), vaultBinding('nik', id)),
-    ).toThrow(CryptoError);
-    expect(() =>
-      cipher.decrypt(rows[0]?.nama_enc ?? Buffer.alloc(0), vaultBinding('nama', id)),
-    ).toThrow(CryptoError);
+    expect(
+      failureOf(() => cipher.decrypt(rows[0]?.nik_enc ?? Buffer.alloc(0), vaultBinding('nik', id))),
+    ).toBe('integrity');
+    expect(
+      failureOf(() =>
+        cipher.decrypt(rows[0]?.nama_enc ?? Buffer.alloc(0), vaultBinding('nama', id)),
+      ),
+    ).toBe('integrity');
   });
 });
 

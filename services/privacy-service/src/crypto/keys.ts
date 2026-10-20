@@ -48,7 +48,7 @@ export function keyMaterial(keys: PrivacyKeys): KeyMaterial {
  * Messages say which rule failed and never show a key.
  */
 export function createKeys(value: KeyMaterial): PrivacyKeys {
-  const sized: [string, Buffer][] = [
+  const named: [string, Buffer][] = [
     ['K_token', value.token],
     ['K_index', value.index],
     ...[...value.field].map(([version, key]): [string, Buffer] => [
@@ -56,7 +56,7 @@ export function createKeys(value: KeyMaterial): PrivacyKeys {
       key,
     ]),
   ];
-  for (const [name, key] of sized) {
+  for (const [name, key] of named) {
     if (!Buffer.isBuffer(key) || key.length !== KEY_BYTES) {
       throw new CryptoError('bad_key', `${name} is not ${String(KEY_BYTES)} bytes`);
     }
@@ -69,19 +69,14 @@ export function createKeys(value: KeyMaterial): PrivacyKeys {
   if (!value.field.has(value.fieldVersion)) {
     throw new CryptoError('bad_key', 'the current key version has no key');
   }
-  // Different purposes need different keys (FR-30, S-03); the comparison is constant-time like every secret compare.
-  for (const [field, key] of value.field) {
-    const clash = safeEqual(value.token, key)
-      ? 'K_token'
-      : safeEqual(value.index, key)
-        ? 'K_index'
-        : undefined;
-    if (clash !== undefined) {
-      throw new CryptoError('bad_key', `K_field v${String(field)} equals ${clash}`);
+  // Every pair differs (FR-30, S-03): the three kinds from each other, and every field version from all the others,
+  // so a rotation to an identical key is refused. The comparison is the constant-time one used for every secret.
+  for (let i = 0; i < named.length; i += 1) {
+    for (let j = i + 1; j < named.length; j += 1) {
+      if (safeEqual(named[i]?.[1] ?? '', named[j]?.[1] ?? '')) {
+        throw new CryptoError('bad_key', `${named[i]?.[0] ?? ''} equals ${named[j]?.[0] ?? ''}`);
+      }
     }
-  }
-  if (safeEqual(value.token, value.index)) {
-    throw new CryptoError('bad_key', 'K_token equals K_index');
   }
   return new PrivacyKeys({
     token: Buffer.from(value.token),

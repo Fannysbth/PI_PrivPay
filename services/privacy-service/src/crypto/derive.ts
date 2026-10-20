@@ -1,17 +1,15 @@
 import { createHmac } from 'node:crypto';
 import { CryptoError } from './errors';
 import { keyMaterial, type PrivacyKeys } from './keys';
-import { SUBJECT_TYPES, encodeParts, isUuid } from './parts';
+import { encodeParts, isSubjectType, isUuid } from './parts';
 
 function assertSubjectType(subjectType: string): void {
-  if (!(SUBJECT_TYPES as readonly string[]).includes(subjectType)) {
-    throw new CryptoError('malformed', 'unknown subject type');
-  }
+  if (!isSubjectType(subjectType)) throw new CryptoError('malformed', 'unknown subject type');
 }
 
 /**
- * subject_lookup = HMAC-SHA256(K_index, enc(subject_type, subject_id)): deterministic, so the same subject finds its
- * rows, and a pseudonym of the subject on its own (a static one) that never leaves the Privacy database (PRD 6.2).
+ * subject_lookup = HMAC-SHA256(K_index, enc(subject_type, subject_id)): the same subject always gives the same value,
+ * so its rows can be found. It is a static pseudonym of the subject and must never leave the Privacy database (PRD 6.2).
  */
 export class BlindIndex {
   constructor(private readonly keys: PrivacyKeys) {}

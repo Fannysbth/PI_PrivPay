@@ -1,11 +1,18 @@
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import { CryptoError } from './errors';
 import { keyMaterial, type PrivacyKeys } from './keys';
-import type { RowBinding } from './parts';
+import { isIssuedBinding, type RowBinding } from './parts';
 
 const VERSION_BYTES = 2;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
+
+// The type already forbids a hand-made AAD; this stops a cast or a caller without types from encrypting with none (T-16).
+function assertIssued(binding: RowBinding): void {
+  if (!isIssuedBinding(binding)) {
+    throw new CryptoError('malformed', 'the AAD was not made by mappingBinding or vaultBinding');
+  }
+}
 
 /**
  * AES-256-GCM for the encrypted columns (PRD 6.2, ADR-0011). Blob: key_version(uint16 BE) || IV(12, random for each
@@ -16,6 +23,7 @@ export class FieldCipher {
   constructor(private readonly keys: PrivacyKeys) {}
 
   encrypt(plaintext: string, binding: RowBinding): Buffer {
+    assertIssued(binding);
     const { field, fieldVersion } = keyMaterial(this.keys);
     const key = field.get(fieldVersion);
     if (key === undefined) throw new CryptoError('bad_key', 'the current key version has no key');
@@ -29,6 +37,7 @@ export class FieldCipher {
   }
 
   decrypt(blob: Buffer, binding: RowBinding): string {
+    assertIssued(binding);
     if (!Buffer.isBuffer(blob) || blob.length < VERSION_BYTES + IV_BYTES + TAG_BYTES) {
       throw new CryptoError('malformed', 'the blob is too short');
     }

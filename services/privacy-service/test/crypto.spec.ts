@@ -12,7 +12,9 @@ import {
   mappingBinding,
   vaultBinding,
   type PrivacyKeys,
+  type RowBinding,
 } from '../src/crypto';
+import * as cryptoModule from '../src/crypto';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 
@@ -46,7 +48,7 @@ describe('M2-02 S-31 NFR-05 the encrypted field format', () => {
   const cipher = new FieldCipher(keys());
   const binding = mappingBinding('CUSTOMER', ROW_A);
 
-  it('M2-02 S-31 the blob is key_version(uint16) || IV(12) || ciphertext || tag(16) and round-trips', () => {
+  it('M2-02 S-31 NFR-05 the blob is key_version(uint16) || IV(12) || ciphertext || tag(16) and round-trips', () => {
     const blob = cipher.encrypt(PLAIN, binding);
     expect(blob.readUInt16BE(0)).toBe(1);
     expect(blob.length).toBe(2 + 12 + Buffer.byteLength(PLAIN) + 16);
@@ -64,13 +66,16 @@ describe('M2-02 S-31 NFR-05 the encrypted field format', () => {
     expect(blob.includes(Buffer.from(PLAIN))).toBe(false);
   });
 
-  it('M2-02 S-31 a changed bit in the version, the IV, the ciphertext or the tag is refused', () => {
+  it('M2-02 S-31 NFR-05 a changed bit in the version, the IV, the ciphertext or the tag is refused', () => {
     const blob = cipher.encrypt(PLAIN, binding);
     for (let position = 0; position < blob.length; position += 1) {
       for (const bit of [0x01, 0x80]) {
         const tampered = Buffer.from(blob);
         tampered[position] = (tampered[position] ?? 0) ^ bit;
-        expect(reasonOf(() => cipher.decrypt(tampered, binding))).not.toBe('no error');
+        // The two version bytes name a key that does not exist; every other byte must fail authentication.
+        expect(reasonOf(() => cipher.decrypt(tampered, binding))).toBe(
+          position < 2 ? 'unknown_key_version' : 'integrity',
+        );
       }
     }
   });
@@ -175,6 +180,26 @@ describe('M2-02 T-16 a ciphertext is bound to its row, its kind and its column',
     ]);
   });
 
+  it('M2-02 T-16 guard: an AAD that is empty or made by hand is refused, so it cannot be dropped', () => {
+    const blob = cipher.encrypt(PLAIN, mappingBinding('CUSTOMER', ROW_A));
+    const empty = Buffer.alloc(0) as RowBinding;
+    // Same bytes as the real binding, but not issued by mappingBinding.
+    const handMade = encodeParts('mapping', 'CUSTOMER', ROW_A) as RowBinding;
+    for (const forged of [empty, handMade]) {
+      expect(reasonOf(() => cipher.encrypt(PLAIN, forged))).toBe('malformed');
+      expect(reasonOf(() => cipher.decrypt(blob, forged))).toBe('malformed');
+    }
+  });
+
+  it('M2-02 T-16 the row id must be a UUID v4: a v1 or v7 id is refused too', () => {
+    expect(reasonOf(() => mappingBinding('CUSTOMER', '11111111-1111-1111-8111-111111111111'))).toBe(
+      'malformed',
+    );
+    expect(reasonOf(() => vaultBinding('nik', '01890a5d-ac96-774b-bcce-b302099a8057'))).toBe(
+      'malformed',
+    );
+  });
+
   it('M2-02 T-16 the row id must be a UUID: a free text id is refused before anything is encrypted', () => {
     expect(reasonOf(() => mappingBinding('CUSTOMER', 'not-a-uuid'))).toBe('malformed');
     expect(reasonOf(() => vaultBinding('nik', ''))).toBe('malformed');
@@ -196,6 +221,28 @@ describe('M2-02 the "||" encoding is unambiguous', () => {
 
   it('M2-02 each part has a 4-byte big-endian length in front', () => {
     expect([...encodeParts('ab', 'c')]).toEqual([0, 0, 0, 2, 97, 98, 0, 0, 0, 1, 99]);
+  });
+});
+
+describe('M2-02 known answers computed outside this code base', () => {
+  // Made with Python hmac/hashlib from the formulas of spec privacy 5: HMAC-SHA256 over the 4-byte-length-prefixed
+  // parts. A change in the order or the encoding of the parts fails these, whatever the unit tests above do.
+  it('M2-02 subject_lookup of (CUSTOMER, CUST-000101) under K_index=0x02*32', () => {
+    expect(new BlindIndex(keys()).lookup('CUSTOMER', 'CUST-000101').toString('hex')).toBe(
+      '51054eaeb30542572ae77a59fa90776ac2c4852f4440cd2a655308e436325cb5',
+    );
+  });
+
+  it('M2-02 the pseudonym of (CUSTOMER, CUST-000101, TRANSACTION, PAYMENT_PROCESSING, nonce) under K_token=0x01*32', () => {
+    expect(
+      new TokenMint(keys()).mint({
+        subjectType: 'CUSTOMER',
+        subjectId: 'CUST-000101',
+        serviceId: 'TRANSACTION',
+        purpose: 'PAYMENT_PROCESSING',
+        nonce: '33333333-3333-4333-8333-333333333333',
+      }),
+    ).toBe('PSEU-8D77B8FD');
   });
 });
 
@@ -266,6 +313,16 @@ describe('M2-02 the token value', () => {
     expect(mint.mint(input)).not.toContain('000101');
   });
 
+  it('M2-02 a nonce that is not a UUID v4 is refused (a v1 or v7 UUID too)', () => {
+    for (const nonce of [
+      '11111111-1111-1111-8111-111111111111',
+      '01890a5d-ac96-774b-bcce-b302099a8057',
+      '33333333-3333-4333-c333-333333333333',
+    ]) {
+      expect(reasonOf(() => mint.mint({ ...input, nonce }))).toBe('malformed');
+    }
+  });
+
   it('M2-02 a nonce that is not a UUID is refused', () => {
     expect(reasonOf(() => mint.mint({ ...input, nonce: 'abc' }))).toBe('malformed');
   });
@@ -305,6 +362,33 @@ describe('M2-02 FR-30 S-03 the three keys', () => {
         }),
       ),
     ).toBe('bad_key');
+  });
+
+  it('M2-02 FR-30 refuses two field versions that hold the same key (a rotation to nothing)', () => {
+    expect(
+      reasonOf(() =>
+        keys({
+          field: new Map([
+            [1, Buffer.alloc(32, 3)],
+            [2, Buffer.alloc(32, 3)],
+          ]),
+          fieldVersion: 2,
+        }),
+      ),
+    ).toBe('bad_key');
+  });
+
+  it('M2-02 FR-30 the PrivacyKeys class is not exported: keys can only come from createKeys or loadKeys', () => {
+    expect(Object.keys(cryptoModule)).not.toContain('PrivacyKeys');
+  });
+
+  it('M2-02 FR-30 a key buffer changed by the caller afterwards does not change the keys', () => {
+    const source = Buffer.alloc(32, 3);
+    const material = keys({ field: new Map([[1, source]]) });
+    const binding = mappingBinding('CUSTOMER', ROW_A);
+    const blob = new FieldCipher(material).encrypt(PLAIN, binding);
+    source.fill(9);
+    expect(new FieldCipher(material).decrypt(blob, binding)).toBe(PLAIN);
   });
 
   it('M2-02 FR-30 refuses a current version that has no key, and a version outside uint16', () => {
