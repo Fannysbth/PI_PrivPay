@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Inject,
   Injectable,
@@ -9,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   type OnModuleDestroy,
@@ -24,7 +26,7 @@ import {
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
-import { AuditedOperation, AuditWriter } from './audit';
+import { AuditLogService, AuditReader, AuditedOperation, AuditWriter } from './audit';
 import { loadPrivacyConfig } from './config';
 import { BlindIndex, FieldCipher, TokenMint, loadKeys, type PrivacyKeys } from './crypto';
 import { IdentityVault } from './identity';
@@ -70,6 +72,25 @@ class PrivacyController {
     return this.privacy.revokeSubject(req.headers, body);
   }
 
+  @Get('audit-log')
+  auditLog(@Req() req: Request, @Query() query: unknown) {
+    return this.privacy.auditLog(req.headers, query);
+  }
+
+  @Get('audit-log/summary')
+  auditSummary(@Req() req: Request, @Query() query: unknown) {
+    return this.privacy.auditSummary(req.headers, query);
+  }
+
+  @Get('audit-log/timeline/:pseudonym')
+  auditTimeline(
+    @Req() req: Request,
+    @Param('pseudonym') pseudonym: string,
+    @Query() query: unknown,
+  ) {
+    return this.privacy.auditTimeline(req.headers, pseudonym, query);
+  }
+
   @Post('identity')
   async identity(
     @Req() req: Request,
@@ -103,7 +124,7 @@ class PrivacyModule {}
 
 export interface PrivacyOverrides {
   readonly fetch?: typeof fetch;
-  readonly pools?: { readonly app: Pool };
+  readonly pools?: { readonly app: Pool; readonly auditor?: Pool };
   readonly keys?: PrivacyKeys;
 }
 
@@ -123,6 +144,15 @@ export function privacyModules(
     if (app === undefined) {
       app = createPool(config, { role: db.app, database: db.database });
       owned.push(app);
+    }
+    // Reading the audit log goes through its own role, never the app pool (spec privacy 3).
+    let auditor = overrides.pools?.auditor;
+    if (auditor === undefined) {
+      auditor = createPool(config, {
+        role: db.auditor ?? 'privpay_auditor',
+        database: db.database,
+      });
+      owned.push(auditor);
     }
     const http: HttpClient = createHttpClient({
       baseUrls: { idp: config.IDP_URL },
@@ -166,6 +196,10 @@ export function privacyModules(
       }),
       statuses: new TransactionStatusService({ pool: app, policy, clock }),
       vault,
+      auditLog: new AuditLogService({
+        operation: new AuditedOperation(app, new AuditWriter()),
+        reader: new AuditReader(auditor),
+      }),
       revocation: new RevocationService({
         operation: new AuditedOperation(app, new AuditWriter()),
         index: new BlindIndex(keys),

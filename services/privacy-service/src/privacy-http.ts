@@ -9,6 +9,7 @@ import {
   type JwksKeys,
 } from '@privpay/common';
 import { z } from 'zod';
+import type { AuditLogService, AuditPage } from './audit';
 import type { IdentityVault } from './identity';
 import type { RevocationService } from './revocation';
 import {
@@ -49,6 +50,30 @@ const pseudonymize = z.union([identity, exchange, fromTransaction]);
 const reIssue = z.strictObject({ pseudonym: text, transaction_id: text });
 const resolveDomain = z.strictObject({ notif_token: text });
 const noBody = z.strictObject({});
+
+// Query strings of the audit endpoints (spec privacy 4.8). Shape only; AuditLogService checks the formats again.
+const ISO_INSTANT = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,3})?Z$/;
+const CURSOR = /^[A-Za-z0-9_-]{1,512}$/;
+const number = z.string().regex(/^[0-9]{1,4}$/);
+const instant = z
+  .string()
+  .regex(ISO_INSTANT)
+  .transform((value) => new Date(value));
+const paging = { limit: number.optional(), cursor: z.string().regex(CURSOR).optional() };
+const auditList = z.strictObject({
+  ...paging,
+  service: text.optional(),
+  status: text.optional(),
+  reason: text.optional(),
+  pseudonym: text.optional(),
+  transaction_id: text.optional(),
+  action: text.optional(),
+  disclosure_id: text.optional(),
+  from: instant.optional(),
+  to: instant.optional(),
+});
+const auditTimeline = z.strictObject(paging);
+const auditSummary = z.strictObject({ from: instant.optional(), to: instant.optional() });
 const revokeSubject = z.strictObject({ subject_type: text, subject_id: text });
 const transactionStatus = z.strictObject({
   transaction_id: text,
@@ -99,6 +124,7 @@ export interface PrivacyHttpDeps {
   >;
   readonly statuses: Pick<TransactionStatusService, 'update'>;
   readonly vault: Pick<IdentityVault, 'store'>;
+  readonly auditLog: Pick<AuditLogService, 'list' | 'timeline' | 'summary'>;
   readonly revocation: Pick<RevocationService, 'revokeToken' | 'revokeSubject'>;
 }
 
@@ -122,6 +148,29 @@ const actorOf = (who: Authenticated) => ({
   requestingService: who.requestingService,
   ...(who.actor === undefined ? {} : { actorId: who.actor.actorId, actorRole: who.actor.role }),
 });
+
+/** The wire form of a page: snake_case, ISO instants, and only the fields a row has (PRD 10). */
+const pageBody = (page: AuditPage) => ({
+  items: page.items.map((row) => ({
+    id: row.id,
+    created_at: row.createdAt.toISOString(),
+    action: row.action,
+    status: row.status,
+    reason: row.reason,
+    requesting_service: row.requestingService,
+    ...(row.actorId === null ? {} : { actor_id: row.actorId }),
+    ...(row.pseudonym === null ? {} : { pseudonym: row.pseudonym }),
+    ...(row.purpose === null ? {} : { purpose: row.purpose }),
+    ...(row.transactionId === null ? {} : { transaction_id: row.transactionId }),
+    ...(row.mappingId === null ? {} : { mapping_id: row.mappingId }),
+    ...(row.disclosureId === null ? {} : { disclosure_id: row.disclosureId }),
+    ...(row.attributeNames === null ? {} : { attribute_names: row.attributeNames }),
+  })),
+  next_cursor: page.nextCursor,
+});
+
+const limitOf = (value: string | undefined): { limit?: number } =>
+  value === undefined ? {} : { limit: Number(value) };
 
 const single = (value: string | string[] | undefined): string | undefined =>
   Array.isArray(value) ? undefined : value;
@@ -255,6 +304,61 @@ export class PrivacyHttp {
       }),
     );
     return { revoked_count: result.revokedCount };
+  }
+
+  /** Spec privacy 4.8. The identity of the reader is the verified token; nothing in the query names it. */
+  async auditLog(headers: AuthHeaders, query: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(auditList, headers, query);
+    const page = await this.run(() =>
+      this.deps.auditLog.list(actorOf(who), {
+        ...limitOf(input.limit),
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+        ...(input.service === undefined ? {} : { service: input.service }),
+        ...(input.status === undefined ? {} : { status: input.status }),
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
+        ...(input.pseudonym === undefined ? {} : { pseudonym: input.pseudonym }),
+        ...(input.transaction_id === undefined ? {} : { transactionId: input.transaction_id }),
+        ...(input.action === undefined ? {} : { action: input.action }),
+        ...(input.disclosure_id === undefined ? {} : { disclosureId: input.disclosure_id }),
+        ...(input.from === undefined ? {} : { from: input.from }),
+        ...(input.to === undefined ? {} : { to: input.to }),
+      }),
+    );
+    return pageBody(page);
+  }
+
+  async auditTimeline(headers: AuthHeaders, pseudonym: string, query: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(auditTimeline, headers, query);
+    const page = await this.run(() =>
+      this.deps.auditLog.timeline(actorOf(who), pseudonym, {
+        ...limitOf(input.limit),
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+      }),
+    );
+    return pageBody(page);
+  }
+
+  async auditSummary(headers: AuthHeaders, query: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(auditSummary, headers, query);
+    const result = await this.run(() =>
+      this.deps.auditLog.summary(actorOf(who), {
+        ...(input.from === undefined ? {} : { from: input.from }),
+        ...(input.to === undefined ? {} : { to: input.to }),
+      }),
+    );
+    return {
+      total: result.total,
+      denied: result.denied,
+      alerts: result.alerts.map((alert) => ({
+        requesting_service: alert.requestingService,
+        reason: alert.reason,
+        count: alert.count,
+        window_start: alert.windowStart.toISOString(),
+      })),
+    };
   }
 
   async transactionStatus(headers: AuthHeaders, body: unknown) {

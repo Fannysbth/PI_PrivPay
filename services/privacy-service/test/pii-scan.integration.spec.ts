@@ -65,7 +65,10 @@ beforeEach(async () => {
   app = await createServiceApp(
     {
       service: 'privacy-service',
-      modules: privacyModules({ fetch: fetchStub, pools: { app: db.app } }),
+      modules: privacyModules({
+        fetch: fetchStub,
+        pools: { app: db.app, ...(db.auditor === undefined ? {} : { auditor: db.auditor }) },
+      }),
     },
     {
       PRIVACY_MODE: 'proposed',

@@ -519,6 +519,105 @@ describe('M3-02 POST /pseudonym/{pseudonym}/revoke and POST /subject/revoke', ()
   });
 });
 
+describe('M3-03 GET /audit-log, /audit-log/timeline/{pseudonym}, /audit-log/summary', () => {
+  const get = (path: string, token: string | undefined) => {
+    const call = server().get(path);
+    if (token !== undefined) void call.set('authorization', `Bearer ${token}`);
+    return call;
+  };
+
+  it('M3-03 AZ-13 AZ-14 AZ-15 N1 no credential is 401 and writes no row', async () => {
+    for (const path of ['/audit-log', '/audit-log/timeline/PSEU-00000001', '/audit-log/summary']) {
+      expect((await get(path, undefined)).status).toBe(401);
+    }
+    expect(await count('audit_log')).toBe(0);
+  });
+
+  it('M3-03 AZ-13 N2 an auditor and an admin read; a service is refused with one DENIED row, a fraud analyst at authentication', async () => {
+    const p1 = await issueP1();
+    const ok = await get('/audit-log?action=GENERATE_TOKEN', person('auditor'));
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({
+      items: [
+        {
+          id: expect.any(String) as unknown,
+          created_at: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T[\d:.]+Z$/) as unknown,
+          action: 'GENERATE_TOKEN',
+          status: 'SUCCESS',
+          reason: 'OK',
+          requesting_service: 'API_GATEWAY',
+          pseudonym: p1,
+          purpose: 'PAYMENT_PROCESSING',
+          transaction_id: 'TX-7001',
+          mapping_id: expect.any(String) as unknown,
+        },
+      ],
+      next_cursor: null,
+    });
+    expect((await get('/audit-log', person('admin'))).status).toBe(200);
+    const before = await count('audit_log');
+    const analyst = await get('/audit-log', person('fraud_analyst'));
+    expect(analyst.status).toBe(403);
+    expect(analyst.body).toMatchObject({ error: { reason: 'FORBIDDEN_ROLE' } });
+    const svc = await get('/audit-log', service('reconciliation'));
+    expect(svc.status).toBe(403);
+    expect(svc.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    // A fraud analyst has no business at Privacy at all: authenticate refuses before the service (not audited here).
+    expect(await count('audit_log')).toBe(before + 1);
+    expect(await lastAudit()).toMatchObject({ action: 'VIEW_AUDIT_LOG', status: 'DENIED' });
+  });
+
+  it('M3-03 AZ-13 N3 N4 an unknown query field, or a claimed requesting_service, is 422 and writes nothing', async () => {
+    const before = await count('audit_log');
+    for (const query of [
+      '?extra=1',
+      '?requesting_service=ADMIN_CONSOLE',
+      '?limit=201',
+      '?limit=0',
+      '?status=a&status=b',
+      '?cursor=%00',
+    ]) {
+      expect((await get(`/audit-log${query}`, person('auditor'))).status).toBe(422);
+    }
+    expect(await count('audit_log')).toBe(before);
+  });
+
+  it('M3-03 AZ-14 N2 the timeline is for an auditor: an admin is FORBIDDEN_ROLE, the auditor gets the history oldest first', async () => {
+    const p1 = await issueP1();
+    clock.advance(1);
+    await post(`/pseudonym/${p1}/revoke`, person('admin'), {});
+    const denied = await get(`/audit-log/timeline/${p1}`, person('admin'));
+    expect(denied.status).toBe(403);
+    expect(denied.body).toMatchObject({ error: { reason: 'FORBIDDEN_ROLE' } });
+    const ok = await get(`/audit-log/timeline/${p1}`, person('auditor'));
+    expect(ok.status).toBe(200);
+    expect((ok.body as { items: { action: string }[] }).items.map((row) => row.action)).toEqual([
+      'GENERATE_TOKEN',
+      'REVOKE_TOKEN',
+    ]);
+    expect((await get('/audit-log/timeline/not-a-token', person('auditor'))).status).toBe(422);
+  });
+
+  it('M3-03 AZ-15 N2 the summary is for an auditor and counts the refusals', async () => {
+    await post('/pseudonymize', service('transaction'), identityBody());
+    expect((await get('/audit-log/summary', person('admin'))).status).toBe(403);
+    const ok = await get('/audit-log/summary', person('auditor'));
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({
+      total: expect.any(Number) as unknown,
+      denied: expect.arrayContaining([{ reason: 'POLICY_NOT_ALLOWED', count: 1 }]) as unknown,
+      alerts: [],
+    });
+    expect((await get('/audit-log/summary?from=yesterday', person('auditor'))).status).toBe(422);
+  });
+
+  it('M3-03 the answers carry no identity value', async () => {
+    await issueP1();
+    const all = JSON.stringify((await get('/audit-log?limit=200', person('auditor'))).body);
+    expect(all).not.toContain(CUSTOMER);
+  });
+});
+
 describe('M2-12 POST /re-issue and PATCH /transaction-status', () => {
   it('M2-12 AZ-23 TRANSACTION re-issues an expired token; FRAUD gets POLICY_NOT_ALLOWED', async () => {
     const p1 = await issueP1();
