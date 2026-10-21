@@ -29,7 +29,7 @@ import type { Pool } from 'pg';
 import { AuditLogService, AuditReader, AuditedOperation, AuditWriter } from './audit';
 import { loadPrivacyConfig } from './config';
 import { BlindIndex, FieldCipher, TokenMint, loadKeys, type PrivacyKeys } from './crypto';
-import { DisclosureService } from './disclosure';
+import { DePseudonymizeService, DisclosureService } from './disclosure';
 import { IdentityVault } from './identity';
 import { PolicyEngine } from './policy';
 import { PrivacyHttp } from './privacy-http';
@@ -108,6 +108,18 @@ class PrivacyController {
   @HttpCode(200)
   rejectDisclosure(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
     return this.privacy.rejectDisclosure(req.headers, id, body);
+  }
+
+  @Post('de-pseudonymize')
+  @HttpCode(200)
+  dePseudonymize(
+    @Req() req: Request,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // The answer carries an identity: no cache or proxy may keep it, and a refusal is not worth keeping either.
+    res.setHeader('Cache-Control', 'no-store');
+    return this.privacy.dePseudonymize(req.headers, body);
   }
 
   @Post('identity')
@@ -223,6 +235,13 @@ export function privacyModules(
         clock,
         graceSeconds: config.GRACE_PERIOD_SECONDS,
         approvalTtlSeconds: config.DISCLOSURE_APPROVAL_TTL_SECONDS,
+      }),
+      opening: new DePseudonymizeService({
+        operation,
+        policy,
+        cipher: new FieldCipher(keys),
+        clock,
+        graceSeconds: config.GRACE_PERIOD_SECONDS,
       }),
       auditLog: new AuditLogService({
         operation,

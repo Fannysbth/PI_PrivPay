@@ -1,6 +1,43 @@
-# HANDOFF (2026-10-21): Gerbang 2 M3 LULUS (dua putaran hijau) dan di-merge ke `main` lokal
+# HANDOFF (2026-10-21): Gerbang 3 M3 LULUS (dua putaran hijau) dan di-merge ke `main` lokal
 
-Sumber kebenaran tetap `CLAUDE.md`, `docs/DESIGN_DECISIONS.md`, ADR, PRD. `main` (lokal, belum di-push) memuat M0, M1, M2, Gerbang 1 dan Gerbang 2 M3. Branch `feat/m3-gerbang-2` tidak dihapus.
+Sumber kebenaran tetap `CLAUDE.md`, `docs/DESIGN_DECISIONS.md`, ADR, PRD. `main` (lokal, belum di-push) memuat M0, M1, M2 dan Gerbang 1, 2, 3 M3. Branch gerbang tidak dihapus. Penutup M3 (`/security-review` milestone, centang checklist, `/retro`) belum dikerjakan.
+
+## Status Gerbang 3
+
+Commit: `8b6996c` M3-05 `POST /de-pseudonymize`, `3da2755` M3-06 suite keamanan (`pnpm test:security`), `b0bcbbb` header `Cache-Control: no-store`. `/code-review` (enam temuan, semua ditolak) dan `/security-review` (tanpa temuan) dijalankan; perubahan header sesudahnya hanya satu baris yang mengurangi paparan, jadi tidak ditinjau ulang.
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 52 suite, 1035 tes | 52 suite, 1035 tes |
+| integrasi (termasuk 23 tes keamanan) | 22 suite, 501 tes | 22 suite, 501 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks `--all` (tanpa allowlist) | bersih | bersih |
+
+Cabang `backup/m2-gerbang-3-sebelum-rewrite` dihapus atas keputusan Fanny; itu satu-satunya tempat tiga temuan gitleaks lama berada.
+
+### M3-05 (tes wajib, masing-masing punya tes sendiri)
+
+Token masih hidup saat dipakai; persetujuan berlaku tepat 600 detik dan ditolak 1 ms sesudahnya (FakeClock); pemakaian kedua ditolak; dua dan tiga pemakaian serentak: tepat satu berhasil (tes yang memaksa antre di baris persetujuan; mutasi dengan kunci baris dan penanda sekali pakai dihapus membuat tiga pemakaian berhasil dan tes gagal, kode sudah dikembalikan; menghapus salah satu saja tidak membuat tes gagal karena keduanya saling menutup); pencabutan token atau subjek di antara persetujuan dan pemakaian; pemohon dan token harus sama; hanya atribut yang disetujui, audit tanpa nilai.
+
+### Keputusan Fanny pada Gerbang 3
+
+- **N-29** diterima: penyimpangan dari spec 7.8. Pemanggil dan peran auditor diperiksa sebelum baris apa pun dibaca, karena gerbang 5 menuntut pemohon = aktor (selalu auditor) sehingga `FORBIDDEN_ROLE` (TK-08) tak terjangkau bila peran diperiksa sesudahnya. Tercatat di `OPEN_QUESTIONS.md` dan spec 7.8.
+- Persetujuan yang lewat 600 detik tidak ditandai `EXPIRED` di database (gerbang 5 memakai `now > expires_at`).
+- Respons `/de-pseudonymize` memakai `Cache-Control: no-store`.
+- TTL wajib di env, `reject` tanpa `approver_id`, pool `auditor` saat start: disetujui.
+- Lapis Gateway M3-06 dan Newman ditunda ke M4-07 dan M6-01.
+
+### Temuan `/code-review` Gerbang 3 yang ditolak
+
+Atribut kosong menjadi SUCCESS (tak terjangkau: daftar atribut dibatasi di `request` dan `chk_attribute_names`); batas `now > expires_at` (spec 7.8 menulis `≤`, diuji pada 600 detik tepat); dekripsi gagal setelah penanda `USED` (transaksi rollback, penanda ikut batal, 500 tanpa baris menurut spec 9.4); validasi bentuk tidak diaudit (spec 9.4); konstanta peran `'auditor'` (gaya, sama dengan `DisclosureService`); `no-store` (kemudian diterima dan dikerjakan).
+
+
+## Belum teruji / belum ada (Gerbang 3)
+
+- **Lapis Gateway M3-06 bukan end-to-end:** jawaban Privacy yang asli diteruskan oleh pengganti Reconciliation lewat Gateway asli; Gateway belum punya jalur klien ke operasi tukar atau buka identitas. Reconciliation sungguhan (M4-07) dan Newman lewat Gateway (M6-01) belum ada, jadi lapis Gateway belum teruji end-to-end.
+- Tabel layanan selain Privacy (transaction M4-01, fraud M4-04, notification M4-05, reconciliation M4-06) belum ada; `pnpm db:migrate` mengisinya setelah migrasinya dibuat.
 
 ## Status Gerbang 2
 
@@ -27,11 +64,7 @@ Peringatan "worker failed to exit gracefully" tidak muncul lagi di unit. `gitlea
 - N-28 diterima: kedua reason dihitung bersama per layanan, sesuai bunyi PRD 12 / spec 4.8.
 - Perbaikan `service-app.ts` dan merge Gerbang 2 ke `main` disetujui.
 
-## Catatan untuk M3-05 (wajib diuji)
-
-`approve` (M3-04) **tidak memeriksa bahwa token yang diminta masih hidup** (tidak dicabut, tidak kedaluwarsa, identitas belum dikosongkan); hanya `request` yang memeriksanya. Maka lima pemeriksaan `POST /de-pseudonymize` harus mencakup status token saat pemakaian (gerbang 4: `REVOKED`/`EXPIRED`, dan brankas hilang = `TOKEN_NOT_FOUND`, K-13), dan tes M3-05 harus membuktikan: permintaan yang disetujui lalu tokennya dicabut/kedaluwarsa/dikosongkan tidak dapat dibuka; persetujuan kedaluwarsa setelah 600 detik (`DISCLOSURE_EXPIRED` 410); pemakaian kedua (`DISCLOSURE_NOT_APPROVED`, status `USED`); dua pemakaian serentak, tepat satu berhasil. Tiga kasus terakhir diminta untuk Gerbang 2 tetapi membutuhkan endpoint M3-05; di M3-04 hanya diuji bahwa `expires_at = decided_at + 600 s`, bahwa persetujuan kedua adalah `DISCLOSURE_NOT_PENDING`, dan bahwa status APPROVED/USED/REJECTED/EXPIRED tidak bisa diputuskan lagi.
-
-## Keputusan yang masih butuh persetujuan
+## Keputusan yang masih butuh persetujuan (Gerbang 2, belum dijawab)
 
 - `DISCLOSURE_APPROVAL_TTL_SECONDS` kini wajib di env (tanpa nilai bawaan); `reject` tidak mengisi `approver_id`; pool `auditor` dibuka saat start.
 - Tafsir K-33 / ADR-0013 (lihat bagian Gerbang 1).
@@ -44,7 +77,7 @@ Peringatan "worker failed to exit gracefully" tidak muncul lagi di unit. `gitlea
 
 - Gerbang 1 (`feat/m3-gerbang-1`): M3-01 `resolve-domain`, M3-02 pencabutan token dan subjek. **Selesai.**
 - Gerbang 2 (`feat/m3-gerbang-2`): M3-03 pembacaan audit, M3-04 alur pembukaan identitas. Ditulis; gerbang penuh belum hijau (lihat atas).
-- Gerbang 3 (`feat/m3-gerbang-3`): M3-05 `de-pseudonymize`, M3-06 suite keamanan (`pnpm test:security`).
+- Gerbang 3 (`feat/m3-gerbang-3`): M3-05 `de-pseudonymize`, M3-06 suite keamanan (`pnpm test:security`). **Selesai dan di-merge ke `main`.**
 - Urutan mengikuti dependensi tiket; satu tiket satu commit, `/code-review` dan `/security-review` di akhir tiap gerbang, gerbang penuh dua putaran.
 
 ## Gerbang 1 M3
@@ -91,7 +124,7 @@ Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit m
 
 ## Langkah berikutnya
 
-1. Gerbang 3 (cabang baru `feat/m3-gerbang-3` dari `main`): M3-05 `de-pseudonymize` (dengan catatan di atas) dan M3-06 suite keamanan (`pnpm test:security`), lalu `/security-review` milestone M2/M3 dan `/retro`.
+1. Penutup M3: `/security-review` milestone M2/M3, centang bagian relevan di `docs/security/security-checklist.md`, persetujuan Fanny, lalu `/retro`.
 2. Sebelum M4: `/improve-codebase-architecture` setelah M4 dan M5; Docker menyusul setelah M4 stabil (ADR-0004).
 
 Aturan hemat tetap: dokumentasi singkat sekali per tiket, dua review hanya untuk tiket inti, keluaran ringkas, satu proses pada satu waktu, jangan menjalankan tes saat memori hampir habis. Sisa database tes dapat dibersihkan dengan `pnpm db:test-databases drop` (ketik `DROP <jumlah>`).

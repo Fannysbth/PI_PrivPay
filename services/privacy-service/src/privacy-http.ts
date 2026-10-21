@@ -10,7 +10,7 @@ import {
 } from '@privpay/common';
 import { z } from 'zod';
 import type { AuditLogService, AuditPage } from './audit';
-import type { DisclosureService } from './disclosure';
+import type { DePseudonymizeService, DisclosureService } from './disclosure';
 import type { IdentityVault } from './identity';
 import type { RevocationService } from './revocation';
 import {
@@ -51,6 +51,8 @@ const pseudonymize = z.union([identity, exchange, fromTransaction]);
 const reIssue = z.strictObject({ pseudonym: text, transaction_id: text });
 const resolveDomain = z.strictObject({ notif_token: text });
 const noBody = z.strictObject({});
+// Shape only: DePseudonymizeService checks the formats again (spec privacy 4.3, 9.4 order).
+const dePseudonymize = z.strictObject({ pseudonym: text, purpose: text, disclosure_id: text });
 // Shape only: DisclosureService checks the case reference, the basis and the attributes (spec privacy 9.4 order).
 const disclosureRequest = z.strictObject({
   audit_token: text,
@@ -134,6 +136,7 @@ export interface PrivacyHttpDeps {
   readonly vault: Pick<IdentityVault, 'store'>;
   readonly auditLog: Pick<AuditLogService, 'list' | 'timeline' | 'summary'>;
   readonly disclosure: Pick<DisclosureService, 'request' | 'approve' | 'reject'>;
+  readonly opening: Pick<DePseudonymizeService, 'open'>;
   readonly revocation: Pick<RevocationService, 'revokeToken' | 'revokeSubject'>;
 }
 
@@ -406,6 +409,21 @@ export class PrivacyHttp {
       this.deps.disclosure.reject({ ...actorOf(who), disclosureId }),
     );
     return { disclosure_id: result.disclosureId, status: result.status };
+  }
+
+  /** Spec privacy 4.3: only the attributes that were approved; no subject at the top level, no phone, no account. */
+  async dePseudonymize(headers: AuthHeaders, body: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(dePseudonymize, headers, body);
+    const result = await this.run(() =>
+      this.deps.opening.open({
+        ...actorOf(who),
+        pseudonym: input.pseudonym,
+        purpose: input.purpose,
+        disclosureId: input.disclosure_id,
+      }),
+    );
+    return { mapping_id: result.mappingId, attributes: result.attributes };
   }
 
   async transactionStatus(headers: AuthHeaders, body: unknown) {

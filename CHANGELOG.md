@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M3-06 (Gerbang 3 M3)
+
+- M3-06 `pnpm test:security` (`services/privacy-service/test/security/tk-two-layers.integration.spec.ts`): TK-01..TK-06, TK-08, TK-09, TK-13..TK-15 dalam dua lapis. Lapis layanan: Privacy asli lewat HTTP, kode dan `reason` rinci, tepat satu baris `DENIED` (dihitung lewat peran `privpay_auditor`), TK-06 tanpa baris mapping. Lapis Gateway: jawaban Privacy yang sebenarnya diteruskan oleh pengganti Reconciliation (M4-07 belum ada) lewat Gateway asli; klien hanya melihat `ACCESS_DENIED` 403 tanpa `reason`, dan token ada vs tidak ada identik kecuali `request_id` (NFR-10). Newman lewat Gateway menunggu M6-01.
+
+### M3-05 (Gerbang 3 M3)
+
+- M3-05 `POST /de-pseudonymize` (`DePseudonymizeService`): `RECONCILIATION` dengan aktor `auditor`; lima gerbang berurutan (token ada, milik pemanggil, purpose, status hidup saat dipakai, permintaan milik token dan pemohon, `APPROVED`, belum lewat 600 detik), lalu `boleh_dibuka`. Satu transaksi: kunci baris permintaan (`FOR UPDATE`) dan penanda sekali pakai (`UPDATE ... WHERE status = 'APPROVED'`), hanya kolom Tabel 5 dibaca dan didekripsi, status `USED`, audit `DE_PSEUDONYMIZE` dengan `attribute_names` dan `disclosure_id`. Token dibaca `FOR SHARE`, sehingga pencabutan di antara persetujuan dan pemakaian membuat pemakaian `REVOKED`. Urutan peran: N-29 (diterima, penyimpangan dari spec 7.8). Respons `/de-pseudonymize` (sukses dan penolakan) memakai `Cache-Control: no-store`. Tes: 24 integrasi layanan (antrean paksa di baris persetujuan; mutasi dengan kunci dan penanda dihapus membuat tiga pemakaian berhasil, tes gagal) dan 4 HTTP (AZ-22).
+
 ### M3-03 dan M3-04 (Gerbang 2 M3)
 
 - `pnpm db:migrate` (`packages/common/src/db-migrate.ts`, `bin/db-migrate.ts`): menerapkan file migrasi ke database layanan asli sebagai peran pemilik; idempoten, layanan tanpa folder `migrations` dilewati. Sebelumnya hanya tes yang memigrasi (database sementara), jadi `privpay_*` kosong. Dijalankan sekali pada 2026-10-21 (Privacy: 0001 sampai 0003).
