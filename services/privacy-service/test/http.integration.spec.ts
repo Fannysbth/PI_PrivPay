@@ -754,6 +754,17 @@ describe('M3-05 POST /de-pseudonymize', () => {
     expect(await count('audit_log')).toBe(before);
   });
 
+  it('M3-05 NFR-10 the answer that carries an identity is never cached (Cache-Control: no-store)', async () => {
+    const given = await approved();
+    const opened = await asReconciliation(bodyOf(given));
+    expect(opened.status).toBe(200);
+    expect(opened.headers['cache-control']).toBe('no-store');
+    // The refusal is not cached either: a proxy must not keep the answer of a first use for the second.
+    const again = await asReconciliation(bodyOf(given));
+    expect(again.status).toBe(403);
+    expect(again.headers['cache-control']).toBe('no-store');
+  });
+
   it('M3-05 AZ-22 TK-21 the auditor gets 200 with only the approved attribute and no subject; the log and the audit rows hold no value; a second use is 403', async () => {
     const given = await approved();
     const first = await asReconciliation(bodyOf(given));

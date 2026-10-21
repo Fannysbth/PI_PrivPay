@@ -112,7 +112,13 @@ class PrivacyController {
 
   @Post('de-pseudonymize')
   @HttpCode(200)
-  dePseudonymize(@Req() req: Request, @Body() body: unknown) {
+  dePseudonymize(
+    @Req() req: Request,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    // The answer carries an identity: no cache or proxy may keep it, and a refusal is not worth keeping either.
+    res.setHeader('Cache-Control', 'no-store');
     return this.privacy.dePseudonymize(req.headers, body);
   }
 
