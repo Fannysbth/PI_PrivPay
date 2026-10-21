@@ -1,11 +1,11 @@
-# HANDOFF (2026-10-21): Gerbang 3 M2 selesai, menunggu persetujuan merge
+# HANDOFF (2026-10-21): Gerbang 3 M2 selesai dan di-merge ke `main` lokal
 
 Untuk memulai sesi baru tanpa kehilangan konteks. Sumber kebenaran tetap `CLAUDE.md`, `docs/DESIGN_DECISIONS.md`, ADR, PRD.
 
 ## Status
 
-- `main` (lokal, **belum di-push**, di `491229e`) memuat M0, M1, M2 sampai M2-09 (tanpa M2-08, M2-10, M2-11), alat pembersih DB tes, lapisan HTTP Privacy (M2-12), tabel tautan transaksi (K-28, K-29; ADR-0013) dan `endOfLine: "auto"` untuk Prettier.
-- `feat/m2-gerbang-3` (lokal, **belum di-push, belum di-merge**, tujuh commit di atas `main`): M2-08 brankas identitas (`POST /identity`), M2-10 pemindai kenari v1 (`pnpm pii-scan`), M2-11 `Tokenizer` Gateway dengan rute AZ-03 (`POST /transaction`) dan AZ-09 (`POST /settlement/report`) dan enam vektor kontrak, perbaikan `/code-review`, keputusan N-25..N-27, dan dua perbaikan tes (UUID uji dibangun saat jalan; penantian job retensi tanpa batas polling).
+- `main` (lokal, **belum di-push**) memuat M0, M1, seluruh M2 (M2-01 sampai M2-12), alat pembersih DB tes, tabel tautan transaksi (K-28, K-29; ADR-0013), `endOfLine: "auto"` untuk Prettier, dan Gerbang 3 lewat merge commit dari `feat/m2-gerbang-3` (cabang tidak dihapus). Setelah merge hanya lint, typecheck, dan gitleaks yang dijalankan di `main`; gerbang penuh dijalankan dua kali di cabang yang sama sebelum merge.
+- Isi `feat/m2-gerbang-3` (tujuh commit sebelum catatan ini): M2-08 brankas identitas (`POST /identity`), M2-10 pemindai kenari v1 (`pnpm pii-scan`), M2-11 `Tokenizer` Gateway dengan rute AZ-03 (`POST /transaction`) dan AZ-09 (`POST /settlement/report`) dan enam vektor kontrak, perbaikan `/code-review`, keputusan N-25..N-27, dan dua perbaikan tes (UUID uji dibangun saat jalan; penantian job retensi tanpa batas polling).
 - `backup/m2-gerbang-3-sebelum-rewrite`: cadangan cabang di atas **sebelum** riwayat lokalnya ditulis ulang (supaya tiga UUID fiktif `Idempotency-Key` di berkas tes bawah `services/` tidak ada di commit mana pun; pohon akhir identik, `git diff` ke cadangan kosong). Cadangan itu masih memuat commit lama `094c77d`, jadi `gitleaks --log-opts="--all"` mentah menandainya. Pemindaian riwayat penuh tanpa cadangan: `--log-opts="--exclude=refs/heads/backup/* --all"`, bersih. Hapus cabang cadangan bila tidak dibutuhkan lagi, lalu `--all` bersih.
 
 ## Hasil gerbang penuh `feat/m2-gerbang-3` (dua putaran berturut-turut, satu proses pada satu waktu, tanpa lari tumpang tindih)
@@ -24,6 +24,7 @@ Untuk memulai sesi baru tanpa kehilangan konteks. Sumber kebenaran tetap `CLAUDE
 
 ### Catatan lari bermasalah (diamati, belum dibuktikan)
 
+- **Tes M2-09 `step 1 does not wait for a row in use` (`retention.integration.spec.ts`) dianggap berpotensi tidak stabil.** Gagal sekali pada lari penuh; dua putaran gerbang sesudah perbaikan tes hijau, tetapi itu tidak membuktikan penyebabnya. Awasi di lari berikutnya; bila gagal lagi, selidiki sebagai bug nyata (kode produksi `RETENTION_SQL.markExpired` dan tes), jangan di-skip.
 - Lari `test:integration` oleh pengguna di terminal gagal di 13 suite dengan gejala dua proses memakai database tes yang sama (`pg_database_datname_index` duplikat, tabel hilang di tengah tes, baris tes lain ikut terhitung). **Diduga** lari tumpang tindih pada database tes yang sama (mis. sisa gerbang latar belakang yang dihentikan sistem karena memori). Tidak dibuktikan dengan mengulang tumpang tindih; saat dijalankan sendirian suite yang sama hijau.
 - Satu kali, tes M2-09 `step 1 does not wait for a row in use` gagal (`expired` 2, seharusnya 1) saat lari penuh, padahal lulus 8 dari 8 saat sendirian dan tetap lulus ketika batas polling dipaksa 1. Penyebab **belum terbukti**; dugaan: batas 3000 polling `pg_locks` habis sebelum job mencapai `UPDATE` pada mesin berat, sehingga kunci baris dilepas terlalu cepat. Celahnya ditutup di tes (commit `250d020`); kode produksi tidak berubah. Bila muncul lagi, selidiki sebagai bug nyata.
 - Ada **39 database tes sisa** (`pnpm db:test-databases list`). Tidak menghalangi tes (`createTestDb` menghapus yang bernama sama), tetapi bersihkan dengan `pnpm db:test-databases drop` di terminal interaktif dan ketik `DROP 39` (alat menolak konfirmasi lewat pipa).
