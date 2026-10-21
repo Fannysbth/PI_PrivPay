@@ -137,7 +137,7 @@ STEP 0 `PolicyEngine.evaluate(..., cara='dari identitas')`; ditolak → audit DE
 
 ### 7.4 `generate_from_transaction` (bentuk 3)
 
-Seperti PRD 6.1 dengan pembaruan: baris sumber dicari lewat `idx_mapping_tx` (`transaction_id`, `subject_type`) dari baris P1 (CUSTOMER) atau P2 (ACCOUNT) termasuk yang `expired`; tidak ada atau `purged_at` terisi → audit DENIED `TOKEN_NOT_FOUND`, 404. Subjek didekripsi internal dengan AAD baris sumber; `buat_token` memakai `subject_id` itu.
+Seperti PRD 6.1 dengan pembaruan: **[Δ PRD, K-28/K-29, ADR-0013]** baris sumber dicari lewat `transaction_link` (`transaction_id`, `subject_type`, TRANSACTION, PAYMENT_PROCESSING) dari token P1 (CUSTOMER) atau P2 (ACCOUNT) termasuk yang `expired`; tidak ada tautan atau `purged_at` terisi → audit DENIED `TOKEN_NOT_FOUND`, 404; sumber `revoked` → DENIED `REVOKED`, 403. Setiap penerbitan atau pemakaian ulang (semua bentuk dan re-issue) menulis tautan konteks tujuannya; transaction id yang sama dengan pseudonym lain pada konteks yang sama → DENIED `IDEMPOTENCY_CONFLICT`, 409, operasi dibatalkan. Subjek didekripsi internal dengan AAD baris sumber; `buat_token` memakai `subject_id` itu.
 
 ### 7.5 `exchange_token` (bentuk 2)
 
@@ -225,7 +225,7 @@ Rancangan, tidak diimplementasikan: `row_hash = SHA-256(prev_hash ‖ isi baris 
 
 1. Hanya Gateway dan Privacy menerima `customer_id`/rekening mentah (bentuk 1 hanya `API_GATEWAY`); 2. hilir menukar dengan `source_pseudonym`; 3. tidak ada panggilan keluar; 4. satu layanan satu basis data; 5. token satu layanan tidak berlaku di layanan lain; 6. log hanya token dan `transaction_id`; 7. `requesting_service` hanya dari `azp` token layanan; 8. Privacy mati = 503 di Gateway.
 
-Tambahan: tidak ada fallback ke data mentah; tidak ada endpoint di luar daftar (kecuali yang disetujui di `01-perubahan-prd.md`); aplikasi tidak terhubung sebagai pemilik skema; tidak ada `DELETE` pada tabel mana pun; respons error tidak membedakan token tidak ada dan bukan milik pemanggil di sisi klien.
+Tambahan: tidak ada fallback ke data mentah; tidak ada endpoint di luar daftar (kecuali yang disetujui di `01-perubahan-prd.md`); aplikasi tidak terhubung sebagai pemilik skema; tidak ada `DELETE` pada tabel mana pun, kecuali `transaction_link` yang dihapus retensi (ADR-0013); respons error tidak membedakan token tidak ada dan bukan milik pemanggil di sisi klien.
 
 ## 11. Kasus gagal
 

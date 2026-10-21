@@ -48,7 +48,7 @@ GRANT  SELECT, INSERT, UPDATE ON pseudonym_mapping, transaction_status, identity
 REVOKE ALL ON identity_vault FROM privpay_auditor;             -- S-35
 ```
 
-Hasil prototipe: `privpay_app` tidak dapat UPDATE/DELETE/TRUNCATE `audit_log` dan tidak dapat membacanya; `privpay_auditor` hanya SELECT pada `audit_log` dan tidak dapat membaca `identity_vault` maupun `pseudonym_mapping`; `chk_four_eyes` menolak `approver_id = requester_id` meski ditulis langsung. Tidak ada `DELETE` untuk `privpay_app` pada tabel mana pun (penghapusan fisik di luar cakupan).
+Hasil prototipe: `privpay_app` tidak dapat UPDATE/DELETE/TRUNCATE `audit_log` dan tidak dapat membacanya; `privpay_auditor` hanya SELECT pada `audit_log` dan tidak dapat membaca `identity_vault` maupun `pseudonym_mapping`; `chk_four_eyes` menolak `approver_id = requester_id` meski ditulis langsung. Tidak ada `DELETE` untuk `privpay_app` pada tabel mana pun (penghapusan fisik di luar cakupan), kecuali `transaction_link` (migrasi 0003, ADR-0013: retensi menghapus tautan bersama pengosongan identitas barisnya).
 
 **Indeks:** semua indeks PRD 11 (`uq_mapping_active` unik parsial `WHERE status='active'`, `idx_mapping_pseudonym`, `idx_mapping_expiry`, `idx_mapping_tx`, `idx_mapping_purge`, `idx_audit_*`). Pencarian utama wajib memakai indeks (NFR-04), diverifikasi dengan `EXPLAIN` pada ≥ 20.000 baris dengan pengaturan planner bawaan (lulus di prototipe).
 
