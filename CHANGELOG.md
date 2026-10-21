@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-10 pemindai kenari v1 (Gerbang 3)
+
+- `tests/pii-scan/`: `buildCanary(i)` (nilai kenari K-24 dari indeks, enam atribut, unik, tidak saling memuat), `scanText`/`assertNoFindings` (pencocokan persis, juga bentuk percent-decoded; keluaran hanya `{atribut, lokasi, layanan}`), `ObservingProxy` (meneruskan lalu lintas, memindai URL, header, dan kedua body di memori; tanpa `node:fs`, dijaga tes), `scanDatabase` (semua kolom semua tabel schema public sebagai peran pemilik, bytea dibaca per byte; lokasi `tabel.kolom`).
+- `services/privacy-service/test/pii-scan.integration.spec.ts`: pendaftaran dan token pertama lewat HTTP, lalu nol temuan di `audit_log`, log Privacy, dan seluruh dump (NFR-15, FR-15, S-43); uji positif: kenari ditanam di log atau kolom polos terdeteksi. Letaknya di paket Privacy karena `tests/` bukan paket (tidak bisa me-resolve `@privpay/common`); harness hanya diimpor lewat jalur relatif dan tidak punya dependensi sendiri.
+- **Selisih kecil dari spec 6:** nama kenari `Kenari <enam huruf>`, bukan `Kenari <kata> <n>`; angka `n` diganti huruf karena brankas menolak angka pada nama (spec privacy 4.9). Tetap unik dan berformat valid.
+- `pnpm pii-scan` ditambahkan (unit + integrasi Privacy). Tidak ada dependensi baru.
+
 ### M2-08 brankas identitas `POST /identity` (Gerbang 3)
 
 - `IdentityVault` (`src/identity/`) dan `POST /identity` (201 pertama, 200 ulangan; hanya `API_GATEWAY`, lainnya `POLICY_NOT_ALLOWED` tanpa baris brankas, audit `STORE_IDENTITY` DENIED). Lima kolom dienkripsi dengan AAD `vaultBinding(kolom, id baris)`; audit hanya mencatat aksi, hasil, dan versi kunci.
