@@ -6,6 +6,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ### M3-03 dan M3-04 (Gerbang 2 M3)
 
+- `pnpm db:migrate` (`packages/common/src/db-migrate.ts`, `bin/db-migrate.ts`): menerapkan file migrasi ke database layanan asli sebagai peran pemilik; idempoten, layanan tanpa folder `migrations` dilewati. Sebelumnya hanya tes yang memigrasi (database sementara), jadi `privpay_*` kosong. Dijalankan sekali pada 2026-10-21 (Privacy: 0001 sampai 0003).
+- `Delay.wait` menerima `AbortSignal`; `stop()` membatalkan timer 10 detik begitu server selesai drain (penyebab peringatan "worker failed to exit gracefully").
+- N-28 dikoreksi mengikuti bunyi PRD 12: `SERVICE_MISMATCH` dan `TOKEN_NOT_FOUND` dihitung bersama per layanan.
+
 - M3-03 `GET /audit-log`, `/audit-log/timeline/{pseudonym}`, `/audit-log/summary` (`AuditLogService`, `AuditReader.list/timeline/summary`): dibaca lewat pool `auditor`, filter lengkap termasuk `action` dan `disclosure_id`, `limit` 50 (maks 200, lebih = 422) dan kursor opak dengan mikrodetik, ringkasan dengan peringatan tiga DENIED dalam lima menit (N-28), satu `VIEW_AUDIT_LOG` per pembacaan (SUCCESS atau DENIED). AZ-13..AZ-15.
 - M3-04 `POST /disclosure-requests` dan `/{id}/approve`, `/{id}/reject` (`DisclosureService`): empat mata, persetujuan 600 detik dari `DISCLOSURE_APPROVAL_TTL_SECONDS` (kini wajib di env), baris dikunci agar dua penyetuju serentak hanya satu yang menang, audit hanya nama atribut. AZ-10..AZ-12, TK-24, TK-25, TK-27. Pembantu `refuseUnlessPerson` dipakai bersama.
 
