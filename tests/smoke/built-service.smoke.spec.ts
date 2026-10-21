@@ -83,6 +83,8 @@ for (const [name, byte] of [
   writeFileSync(join(privacySecrets, name), Buffer.alloc(32, byte).toString('hex'));
 }
 writeFileSync(join(privacySecrets, 'privpay_app_password'), 'fake-password-for-the-smoke-run');
+// M3-03: the service opens the pool of the audit reader at start too (spec privacy 3), so it needs that role's password.
+writeFileSync(join(privacySecrets, 'privpay_auditor_password'), 'fake-password-for-the-smoke-run');
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
