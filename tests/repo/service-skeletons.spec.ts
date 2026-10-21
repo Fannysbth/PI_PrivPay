@@ -12,6 +12,10 @@ const HTTP_LAYER = ['@nestjs/common', '@privpay/common', 'reflect-metadata', 'zo
 const ALLOWED_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
   gateway: HTTP_LAYER,
   'privacy-service': HTTP_LAYER,
+  'transaction-service': HTTP_LAYER,
+  'fraud-service': HTTP_LAYER,
+  'notification-service': HTTP_LAYER,
+  'sms-simulator': HTTP_LAYER,
 };
 
 describe.each(SERVICE_IDS)('M0-06 %s is only the shared bootstrap', (id) => {
@@ -27,7 +31,15 @@ describe.each(SERVICE_IDS)('M0-06 %s is only the shared bootstrap', (id) => {
         ? "import { runService } from '@privpay/common/nest';\nimport { gatewayModules } from './gateway.module';\n\nvoid runService({ service: 'gateway', modules: gatewayModules() });\n"
         : id === 'privacy-service'
           ? "import { runService } from '@privpay/common/nest';\nimport { privacyModules } from './privacy.module';\n\nvoid runService({ service: 'privacy-service', modules: privacyModules() });\n"
-          : `import { runService } from '@privpay/common/nest';\n\nvoid runService({ service: '${id}' });\n`,
+          : id === 'notification-service'
+            ? "import { runService } from '@privpay/common/nest';\nimport { notificationModules } from './notification.module';\n\nvoid runService({ service: 'notification-service', modules: notificationModules() });\n"
+            : id === 'sms-simulator'
+              ? "import { runService } from '@privpay/common/nest';\nimport { smsSimulatorModules } from './sms-simulator.module';\n\nvoid runService({ service: 'sms-simulator', modules: smsSimulatorModules() });\n"
+              : id === 'fraud-service'
+                ? "import { runService } from '@privpay/common/nest';\nimport { fraudModules } from './fraud.module';\n\nvoid runService({ service: 'fraud-service', modules: fraudModules() });\n"
+                : id === 'transaction-service'
+                  ? "import { runService } from '@privpay/common/nest';\nimport { transactionModules } from './transaction.module';\n\nvoid runService({ service: 'transaction-service', modules: transactionModules() });\n"
+                  : `import { runService } from '@privpay/common/nest';\n\nvoid runService({ service: '${id}' });\n`,
     );
   });
 

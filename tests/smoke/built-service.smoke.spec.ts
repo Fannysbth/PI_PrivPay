@@ -85,6 +85,25 @@ for (const [name, byte] of [
 writeFileSync(join(privacySecrets, 'privpay_app_password'), 'fake-password-for-the-smoke-run');
 // M3-03: the service opens the pool of the audit reader at start too (spec privacy 3), so it needs that role's password.
 writeFileSync(join(privacySecrets, 'privpay_auditor_password'), 'fake-password-for-the-smoke-run');
+// M4-01: the transaction service stops at start without its threshold; its pool is lazy too.
+writeFileSync(
+  join(privacySecrets, 'privpay_transaction_app_password'),
+  'fake-password-for-the-smoke-run',
+);
+// M4-04: the fraud service needs its role password and its thresholds to start; its pool is lazy too.
+writeFileSync(
+  join(privacySecrets, 'privpay_fraud_app_password'),
+  'fake-password-for-the-smoke-run',
+);
+// M4-05: the notification service needs its role password and its client secret at the IdP to start.
+writeFileSync(
+  join(privacySecrets, 'privpay_notification_app_password'),
+  'fake-password-for-the-smoke-run',
+);
+writeFileSync(
+  join(privacySecrets, 'notification_client_secret'),
+  'fake-secret-notification-0123456789abcdef\n',
+);
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
@@ -117,7 +136,39 @@ const extraEnv = (id: string): Record<string, string> =>
           BLIND_INDEX_SECRET_FILE: join(privacySecrets, 'blind_index_secret'),
           FIELD_ENCRYPTION_KEY_FILE: join(privacySecrets, 'field_key'),
         }
-      : {};
+      : id === 'sms-simulator'
+        ? { IDP_URL: 'http://127.0.0.1:9' }
+        : id === 'notification-service'
+          ? {
+              PG_HOST: '127.0.0.1',
+              PG_PORT: '9',
+              PG_SECRETS_DIR: privacySecrets,
+              IDP_URL: 'http://127.0.0.1:9',
+              PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+              SMS_SIMULATOR_URL: 'http://127.0.0.1:9',
+              NOTIFICATION_CLIENT_SECRET_FILE: join(privacySecrets, 'notification_client_secret'),
+            }
+          : id === 'fraud-service'
+            ? {
+                PG_HOST: '127.0.0.1',
+                PG_PORT: '9',
+                PG_SECRETS_DIR: privacySecrets,
+                IDP_URL: 'http://127.0.0.1:9',
+                FRAUD_AMOUNT_THRESHOLD: '1000000',
+                FRAUD_ODD_HOUR_START: '22',
+                FRAUD_ODD_HOUR_END: '6',
+                FRAUD_HOLD_THRESHOLD: '50',
+                FRAUD_BLOCK_THRESHOLD: '90',
+              }
+            : id === 'transaction-service'
+              ? {
+                  PG_HOST: '127.0.0.1',
+                  PG_PORT: '9',
+                  PG_SECRETS_DIR: privacySecrets,
+                  IDP_URL: 'http://127.0.0.1:9',
+                  FRAUD_AMOUNT_THRESHOLD: '1000000',
+                }
+              : {};
 
 describe.each(SERVICE_IDS)('N-04 the built %s runs as a process', (id) => {
   const entry = join('services', id, 'dist', 'main.js');

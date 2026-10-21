@@ -23,19 +23,21 @@ Konvensi umum: `platform-dan-ci.md`.
 
 Pemanggil `API_GATEWAY`. Permintaan `{notification_domain_id, phone, channel}`: `notification_domain_id` `Pseudonym`; `phone` `^08[0-9]{8,12}$`; `channel` `"SMS"`. Respons 201 `{notification_domain_id, registered_at}`. **Idempoten (upsert berkunci pseudonim domain)** sehingga aman diulang pada pendaftaran (ADR-0005, A4): permintaan ulang memperbarui `phone` dan mengembalikan 200 dengan bentuk yang sama.
 
+**[M4-05]** `registered_at` tetap saat pendaftaran pertama pada pengulangan (hanya `phone` dan `channel` yang berubah); 201 dan 200 dibedakan oleh `xmax = 0` pada upsert yang sama (tanpa pembacaan terpisah).
+
 ### 3.2 `POST /notification/send`
 
 Pemanggil `TRANSACTION`. Permintaan `{notif_token, template, amount, transaction_id}`: `template` ∈ `TX_COMPLETED`, `TX_HELD_VERIFY`, `TX_REJECTED`; `amount` bilangan bulat ≥ 1. Respons 200 `{status: "SENT"|"FAILED"}`.
 
 Langkah: (1) `POST /resolve-domain` ke Privacy dengan JWT `NOTIFICATION` → `notification_domain_id` (hasilnya pseudonim domain, bukan identitas); kegagalan Privacy → `FAILED`; (2) cari kontak berkunci pseudonim domain, tidak ada → `FAILED`; (3) kirim SMS lewat `SmsGateway` (HP dari `contact_registry` + teks); (4) tulis satu baris `notification_log (sender_pseudonym=notif_token, recipient_pseudonym=notification_domain_id, template, channel, status)` tanpa isi pesan. **Operasi tidak idempoten** (SMS ganda): tidak ada retry otomatis pada langkah 3 dan tidak ada pengiriman ulang otomatis (PRD 20 no. 12); retry HTTP boleh hanya untuk `resolve-domain` (idempoten).
 
-Teks dibentuk dari templat tetap tanpa nama atau identitas, hanya nominal: mis. `TX_COMPLETED`: "Transaksi Rp{amount} berhasil."; `TX_HELD_VERIFY`: "Transaksi Rp{amount} sedang diverifikasi."; `TX_REJECTED`: "Transaksi Rp{amount} ditolak." Teks bukan dicatat di basis data maupun log (dapat menjadi profil).
+**[M4-05, N-30, N-31]** Kegagalan `resolve-domain` (langkah 1) tidak menulis baris `notification_log`, karena `recipient_pseudonym` NOT NULL dan penerimanya belum diketahui; Transaction yang mencatatnya dengan `transaction_id`. Hanya kegagalan Privacy dan SMS yang menjadi `FAILED`; galat basis data tetap galat (5xx), bukan notifikasi gagal. Teks dibentuk dari templat tetap tanpa nama atau identitas, hanya nominal: mis. `TX_COMPLETED`: "Transaksi Rp{amount} berhasil."; `TX_HELD_VERIFY`: "Transaksi Rp{amount} sedang diverifikasi."; `TX_REJECTED`: "Transaksi Rp{amount} ditolak." Teks bukan dicatat di basis data maupun log (dapat menjadi profil).
 
 Pada mode baseline: `send` menerima `customer_id` alih-alih `notif_token`, tanpa langkah 1; kontak dicari berkunci `customer_id` (ADR-0006).
 
 ## 4. SMS simulator
 
-Layanan NestJS kecil, hanya `127.0.0.1`: `POST /sms {to, text}` merekam pesan **di memori** dan mengembalikan 202; `GET /__test/messages` hanya aktif bila `SMS_SIMULATOR_TEST_ENDPOINTS=true` (env uji) dan tidak ada di lingkungan lain. Tidak menulis nomor HP atau teks ke log atau disk; dapat dikosongkan lewat `DELETE /__test/messages` (juga hanya pada env uji). Mendukung injeksi kegagalan (`SMS_SIMULATOR_FAIL=true`) untuk tes. HP "terkirim" diverifikasi di tes lewat `GET /__test/messages`.
+Layanan NestJS kecil, hanya `127.0.0.1`: `POST /sms {to, text}` merekam pesan **di memori** dan mengembalikan 202; `GET /__test/messages` hanya aktif bila `SMS_SIMULATOR_TEST_ENDPOINTS=true` (env uji) dan tidak ada di lingkungan lain. **[M4-05, N-30]** Rute yang tidak ada dijawab platform dengan jawaban seragamnya, 422 `VALIDATION_ERROR` (bukan 404: delapan `code` klien tidak memuat 404); yang diuji adalah rute itu tidak ada dan tidak memberi pesan. Nilai selain `true`/`false` pada kedua sakelar menghentikan start (gagal cepat). Tidak menulis nomor HP atau teks ke log atau disk; dapat dikosongkan lewat `DELETE /__test/messages` (juga hanya pada env uji). Mendukung injeksi kegagalan (`SMS_SIMULATOR_FAIL=true`) untuk tes. HP "terkirim" diverifikasi di tes lewat `GET /__test/messages`.
 
 ## 5. Invarian dan kasus gagal
 

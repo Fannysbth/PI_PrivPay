@@ -24,7 +24,7 @@ Cara: `/security-review` oleh agen terpisah yang hanya membaca, ambang keyakinan
 | --- | --- | --- |
 | <a id="s-01"></a>S-01 | ✔ lulus | `gitleaks detect --log-opts="--all"` nol temuan pada seluruh riwayat, tanpa allowlist (dijalankan pada `main` setelah merge Gerbang 3). Job CI belum pernah berjalan di GitHub. |
 | <a id="s-02"></a>S-02 | ✔ lulus | `git ls-files secrets .env*`: hanya `.env.example`, `.env.test.example`, `secrets/README.md`; `tests/repo/gitignore.spec.ts`. |
-| <a id="s-03"></a>S-03 | ◐ sebagian | `crypto.spec.ts` FR-30: tiga kunci berbeda dan 32 byte diterima, selain itu ditolak; `loadKeys(env)` dipasang di `privacy.module.ts`. Kegagalan start karena berkas tiga kunci hilang tidak diuji terpisah di tingkat proses. |
+| <a id="s-03"></a>S-03 | ✔ lulus | `crypto.spec.ts` FR-30: tiga kunci berbeda dan 32 byte diterima, selain itu ditolak; `startup.spec.ts` (Gerbang 1 M4): berkas tiap kunci yang hilang, atau variabel yang tidak diisi, menghentikan `createServiceApp` dengan nama variabelnya saja (tanpa jalur atau kunci). |
 | <a id="s-04"></a>S-04 | — belum | belum ada image (ADR-0004); fase Docker. |
 | <a id="s-05"></a>S-05 | — belum | belum ada compose; setara lokal dicatat di review-M1 (`make-secrets`). |
 | <a id="s-06"></a>S-06 | — belum | belum ada kontainer (DK-01). |
@@ -65,7 +65,7 @@ Cara: `/security-review` oleh agen terpisah yang hanya membaca, ambang keyakinan
 | <a id="s-52"></a>S-52 | — belum | M4 (uji injeksi keterlambatan belum ada). |
 | <a id="s-53"></a>S-53 | ✔ lulus | TF-07: 50 paralel x 5 putaran di `token-service.integration.spec.ts`. |
 | <a id="s-54"></a>S-54 | — belum | M4 (Transaction belum ada). |
-| <a id="s-55"></a>S-55 | ◐ sebagian | `limit` audit-log <= 200 diuji (`audit-log.integration.spec.ts`); batas body 16 KiB ada di kode (`MAX_BODY_BYTES`) tetapi saya tidak menemukan tes khususnya. |
+| <a id="s-55"></a>S-55 | ✔ lulus | `limit` audit-log <= 200 diuji (`audit-log.integration.spec.ts`); `http.integration.spec.ts` (Gerbang 1 M4): badan tepat 16 KiB diterima, satu byte lebih 422 tanpa baris; mutasi `MAX_BODY_BYTES` ke 32 KiB membuat tes gagal. |
 | <a id="s-60"></a>S-60 | ✔ lulus | `pnpm audit --prod --audit-level high`: tanpa kerentanan (dua putaran Gerbang 3). |
 | <a id="s-61"></a>S-61 | — belum | CodeQL dan Semgrep hanya di CI, belum berjalan. |
 | <a id="s-62"></a>S-62 | — belum | Trivy hanya di CI, belum berjalan. |

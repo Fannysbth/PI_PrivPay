@@ -1,4 +1,36 @@
-# HANDOFF (2026-10-21): M3 ditutup di `main` lokal; berikutnya M4
+# HANDOFF (2026-10-21): Gerbang 1 M4 LULUS (dua putaran hijau) dan di-merge ke `main` lokal; berikutnya Gerbang 2 M4
+
+## Status Gerbang 1 M4
+
+Commit di `feat/m4-gerbang-1` (di-merge ke `main`, cabang tidak dihapus): tes S-55 dan S-03; M4-01 Transaction (`POST /transaction`, idempotensi ADR-0009); M4-04 Fraud (`POST /fraud/assess`, `RiskEngine`); M4-05 Notification dan SMS simulator; perbaikan `/code-review`; premis tes `db:migrate`; pelajaran di `CLAUDE.md`. `/code-review`: 10 temuan, 3 diperbaiki, 7 ditolak (alasan di CHANGELOG dan laporan). `/security-review`: tanpa temuan keyakinan 8 ke atas.
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 56 suite, 1116 tes | 56 suite, 1116 tes |
+| integrasi | 34 suite, 692 tes | 34 suite, 692 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks `--all` (tanpa allowlist) | bersih | bersih |
+
+**Penulisan ulang riwayat (atas persetujuan Fanny, hanya `feat/m4-gerbang-1`):** UUID dan token contoh tertulis literal di lima berkas tes di `services/` pada commit M4-01 dan M4-04, sehingga `gitleaks --all` merah. Riwayat lokal cabang itu (belum di-push) ditulis ulang dengan `git filter-branch --tree-filter` supaya nilai itu dibentuk saat tes berjalan; ref `refs/original` dihapus; `main` dan cabang lain tidak disentuh. Verifikasi: pohon akhir `6bd6d08` identik dengan pohon sebelum penulisan ulang, dan terhadap pohon `cfec27a` hanya berbeda pada lima baris literal itu. Cadangan bundle di scratchpad sesi. Pelajarannya sudah di `CLAUDE.md`.
+
+### Keputusan Fanny pada Gerbang 1 M4
+
+N-30 (rute uji yang mati dijawab 422 seragam, bukan 404), N-31 (kegagalan Privacy pada `send` tanpa baris log; galat basis data tetap 5xx), perubahan lockfile (hanya entri importer untuk paket yang sudah ada), perubahan premis tes `db:migrate`, dan M4-04 lalu M4-05 dikerjakan berurutan.
+
+### Untuk Gerbang 2 (M4-02 dan M4-03)
+
+- `POST /fraud/assess` dan `POST /notification/send` tidak boleh di-retry oleh Transaction (`idempotent: false`); M4-02 wajib mengujinya (uji injeksi keterlambatan).
+- Sementara Fraud belum terpasang, `TransactionProcessor.decide` menjadikan jumlah di atas ambang `HELD` dengan `FRAUD_UNAVAILABLE`; M4-02 menggantinya dengan orkestrasi nyata.
+- `TransactionRepository.finish` hanya mengubah baris `PENDING` dan hasilnya tidak diperiksa; pembersih `PENDING` (M4-03) menandai `FAILED`, jadi pemenang yang terlambat harus menjawab status yang tersimpan (uji).
+- Boilerplate autentikasi dan pool terulang di lima layanan; kandidat `/improve-codebase-architecture` setelah M4 dan M5.
+
+### Belum teruji (Gerbang 1 M4)
+
+Orkestrasi Transaction dengan Fraud, Notification, dan Privacy (M4-02); pembersih `PENDING` (M4-03); rute `/register` Gateway ke Notification (M4-08); adapter baseline (M5); fail-closed dengan Docker; endpoint 3.4 untuk Reconciliation.
+
+# (Riwayat) M3 ditutup di `main` lokal; berikutnya M4
 
 ## Penutup M3
 
