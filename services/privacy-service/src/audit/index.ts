@@ -29,3 +29,4 @@ export {
   type OperationTx,
   type SuccessEntry,
 } from './audited-operation';
+export { refuseUnlessPerson, type PersonCaller } from './person-gate';

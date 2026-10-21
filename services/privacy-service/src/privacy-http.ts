@@ -10,6 +10,7 @@ import {
 } from '@privpay/common';
 import { z } from 'zod';
 import type { AuditLogService, AuditPage } from './audit';
+import type { DisclosureService } from './disclosure';
 import type { IdentityVault } from './identity';
 import type { RevocationService } from './revocation';
 import {
@@ -50,6 +51,13 @@ const pseudonymize = z.union([identity, exchange, fromTransaction]);
 const reIssue = z.strictObject({ pseudonym: text, transaction_id: text });
 const resolveDomain = z.strictObject({ notif_token: text });
 const noBody = z.strictObject({});
+// Shape only: DisclosureService checks the case reference, the basis and the attributes (spec privacy 9.4 order).
+const disclosureRequest = z.strictObject({
+  audit_token: text,
+  basis: text,
+  case_ref: text,
+  attributes: z.array(text).max(16),
+});
 
 // Query strings of the audit endpoints (spec privacy 4.8). Shape only; AuditLogService checks the formats again.
 const ISO_INSTANT = /^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]{1,3})?Z$/;
@@ -125,6 +133,7 @@ export interface PrivacyHttpDeps {
   readonly statuses: Pick<TransactionStatusService, 'update'>;
   readonly vault: Pick<IdentityVault, 'store'>;
   readonly auditLog: Pick<AuditLogService, 'list' | 'timeline' | 'summary'>;
+  readonly disclosure: Pick<DisclosureService, 'request' | 'approve' | 'reject'>;
   readonly revocation: Pick<RevocationService, 'revokeToken' | 'revokeSubject'>;
 }
 
@@ -359,6 +368,44 @@ export class PrivacyHttp {
         window_start: alert.windowStart.toISOString(),
       })),
     };
+  }
+
+  /** Spec privacy 4.10: 201 `{disclosure_id, status: PENDING}`. The requester is the person of the token. */
+  async requestDisclosure(headers: AuthHeaders, body: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(disclosureRequest, headers, body);
+    const result = await this.run(() =>
+      this.deps.disclosure.request({
+        ...actorOf(who),
+        auditToken: input.audit_token,
+        basis: input.basis,
+        caseRef: input.case_ref,
+        attributes: input.attributes,
+      }),
+    );
+    return { disclosure_id: result.disclosureId, status: result.status };
+  }
+
+  async approveDisclosure(headers: AuthHeaders, disclosureId: string, body: unknown) {
+    const who = await this.caller(headers);
+    shape(noBody, headers, body ?? {});
+    const result = await this.run(() =>
+      this.deps.disclosure.approve({ ...actorOf(who), disclosureId }),
+    );
+    return {
+      disclosure_id: result.disclosureId,
+      status: result.status,
+      expires_at: result.expiresAt.toISOString(),
+    };
+  }
+
+  async rejectDisclosure(headers: AuthHeaders, disclosureId: string, body: unknown) {
+    const who = await this.caller(headers);
+    shape(noBody, headers, body ?? {});
+    const result = await this.run(() =>
+      this.deps.disclosure.reject({ ...actorOf(who), disclosureId }),
+    );
+    return { disclosure_id: result.disclosureId, status: result.status };
   }
 
   async transactionStatus(headers: AuthHeaders, body: unknown) {

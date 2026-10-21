@@ -87,7 +87,7 @@ Pemanggil `ADMIN_CONSOLE` (token manusia sebagai `Authorization`, ADR-0007).
 - `.../reject`: peran `admin`; 200 `{disclosure_id, status: "REJECTED"}`.
 - Approve/reject pada status selain `PENDING`: 409 `DISCLOSURE_NOT_PENDING` (K-01). Tanpa peran admin: 403 `FORBIDDEN_ROLE` (TK-25). `disclosure_id` tak dikenal: 404 `DISCLOSURE_NOT_FOUND`.
 
-Audit: `DISCLOSURE_REQUESTED`, `DISCLOSURE_APPROVED`, `DISCLOSURE_REJECTED`. Penolakan 422 pada permintaan juga ditulis sebagai `DISCLOSURE_REQUESTED` DENIED (`INVALID_BASIS`/`ATTRIBUTE_NOT_ALLOWED`) tanpa baris `disclosure_request` (K-07).
+**[M3-04]** Urutan keputusan: `approve`/`reject` memeriksa pemanggil (`POLICY_NOT_ALLOWED`) dan peran (`FORBIDDEN_ROLE`), lalu baris ada (`DISCLOSURE_NOT_FOUND`, baris dikunci `FOR UPDATE`), lalu `PENDING` (`DISCLOSURE_NOT_PENDING`), lalu pada `approve` penyetuju ≠ pemohon (`SELF_APPROVAL`). `reject` mengisi `decided_at` dan tidak mengisi `approver_id` (pelaku ada di audit). Permintaan: pemanggil dan peran, `basis`, `attributes`, lalu token (`TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `PURPOSE_MISMATCH`, `REVOKED`, `EXPIRED`), semuanya `DISCLOSURE_REQUESTED` DENIED; atribut duplikat atau bukan teks = 422 bentuk. `case_ref` tidak masuk audit. Pemohon adalah `sub` token, bukan body. `DISCLOSURE_APPROVAL_TTL_SECONDS` wajib di env (tanpa nilai bawaan). Pemakaian dan kedaluwarsa persetujuan diuji di M3-05. Audit: `DISCLOSURE_REQUESTED`, `DISCLOSURE_APPROVED`, `DISCLOSURE_REJECTED`. Penolakan 422 pada permintaan juga ditulis sebagai `DISCLOSURE_REQUESTED` DENIED (`INVALID_BASIS`/`ATTRIBUTE_NOT_ALLOWED`) tanpa baris `disclosure_request` (K-07).
 
 ### 4.11 `GET /health`, `GET /metrics`
 

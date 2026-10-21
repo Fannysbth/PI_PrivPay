@@ -29,6 +29,7 @@ import type { Pool } from 'pg';
 import { AuditLogService, AuditReader, AuditedOperation, AuditWriter } from './audit';
 import { loadPrivacyConfig } from './config';
 import { BlindIndex, FieldCipher, TokenMint, loadKeys, type PrivacyKeys } from './crypto';
+import { DisclosureService } from './disclosure';
 import { IdentityVault } from './identity';
 import { PolicyEngine } from './policy';
 import { PrivacyHttp } from './privacy-http';
@@ -89,6 +90,24 @@ class PrivacyController {
     @Query() query: unknown,
   ) {
     return this.privacy.auditTimeline(req.headers, pseudonym, query);
+  }
+
+  @Post('disclosure-requests')
+  @HttpCode(201)
+  requestDisclosure(@Req() req: Request, @Body() body: unknown) {
+    return this.privacy.requestDisclosure(req.headers, body);
+  }
+
+  @Post('disclosure-requests/:id/approve')
+  @HttpCode(200)
+  approveDisclosure(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.privacy.approveDisclosure(req.headers, id, body);
+  }
+
+  @Post('disclosure-requests/:id/reject')
+  @HttpCode(200)
+  rejectDisclosure(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.privacy.rejectDisclosure(req.headers, id, body);
   }
 
   @Post('identity')
@@ -196,6 +215,13 @@ export function privacyModules(
       }),
       statuses: new TransactionStatusService({ pool: app, policy, clock }),
       vault,
+      disclosure: new DisclosureService({
+        operation: new AuditedOperation(app, new AuditWriter()),
+        policy,
+        clock,
+        graceSeconds: config.GRACE_PERIOD_SECONDS,
+        approvalTtlSeconds: config.DISCLOSURE_APPROVAL_TTL_SECONDS,
+      }),
       auditLog: new AuditLogService({
         operation: new AuditedOperation(app, new AuditWriter()),
         reader: new AuditReader(auditor),

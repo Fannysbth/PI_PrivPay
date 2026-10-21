@@ -103,6 +103,7 @@ async function start(pools: { app: Pool; auditor: Pool }): Promise<ServiceApp> {
       TTL_NOTIFICATION_REGISTRATION: '31536000',
       TTL_DAILY_RECONCILIATION: '86400',
       TTL_INTERNAL_AUDIT: '600',
+      DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
       PSEUDONYM_KEY_VERSION: '1',
       PSEUDONYM_HMAC_SECRET_FILE: join(dir, 'hmac'),
       BLIND_INDEX_SECRET_FILE: join(dir, 'index'),
@@ -516,6 +517,158 @@ describe('M3-02 POST /pseudonym/{pseudonym}/revoke and POST /subject/revoke', ()
     expect(
       (await post('/subject/revoke', person('admin'), { subject_type: 'CUSTOMER' })).status,
     ).toBe(422);
+  });
+});
+
+describe('M3-04 POST /disclosure-requests and its approve and reject', () => {
+  const p7 = async (): Promise<string> => {
+    await issueP1();
+    const answer = await post(
+      '/pseudonymize',
+      service('reconciliation'),
+      {
+        subject_type: 'CUSTOMER',
+        transaction_id: 'TX-7001',
+        target_service: 'RECONCILIATION',
+        purpose: 'INTERNAL_AUDIT',
+      },
+      person('auditor'),
+    );
+    return (answer.body as { pseudonym: string }).pseudonym;
+  };
+  const requestBody = (token: string, over: Record<string, unknown> = {}) => ({
+    audit_token: token,
+    basis: 'DISPUTE',
+    case_ref: 'KASUS-2026-014',
+    attributes: ['nama'],
+    ...over,
+  });
+  const open = async (): Promise<string> =>
+    (
+      (await post('/disclosure-requests', person('auditor'), requestBody(await p7()))).body as {
+        disclosure_id: string;
+      }
+    ).disclosure_id;
+
+  it('M3-04 AZ-10 N1 no credential is 401 and writes nothing', async () => {
+    const before = await count('audit_log');
+    expect(
+      (await post('/disclosure-requests', undefined, requestBody('PSEU-00000001'))).status,
+    ).toBe(401);
+    expect(await count('audit_log')).toBe(before);
+    expect(await count('disclosure_request')).toBe(0);
+  });
+
+  it('M3-04 AZ-10 N2 the auditor gets 201 PENDING; an admin is FORBIDDEN_ROLE, a service POLICY_NOT_ALLOWED, one DENIED row each', async () => {
+    const token = await p7();
+    const before = await count('audit_log');
+    const admin = await post('/disclosure-requests', person('admin'), requestBody(token));
+    expect(admin.status).toBe(403);
+    expect(admin.body).toMatchObject({ error: { reason: 'FORBIDDEN_ROLE' } });
+    const svc = await post('/disclosure-requests', service('reconciliation'), requestBody(token));
+    expect(svc.status).toBe(403);
+    expect(svc.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    expect(await count('audit_log')).toBe(before + 2);
+    expect(await count('disclosure_request')).toBe(0);
+
+    const ok = await post('/disclosure-requests', person('auditor'), requestBody(token));
+    expect(ok.status).toBe(201);
+    expect(ok.body).toEqual({ disclosure_id: expect.any(String) as unknown, status: 'PENDING' });
+  });
+
+  it('M3-04 AZ-10 TK-27 a basis or an attribute outside the tables is 422, with no request row and one DENIED row', async () => {
+    const token = await p7();
+    const before = await count('audit_log');
+    const basis = await post(
+      '/disclosure-requests',
+      person('auditor'),
+      requestBody(token, { basis: 'CURIOSITY' }),
+    );
+    const attribute = await post(
+      '/disclosure-requests',
+      person('auditor'),
+      requestBody(token, { attributes: ['hp'] }),
+    );
+    expect([basis.status, attribute.status]).toEqual([422, 422]);
+    expect(basis.body).toMatchObject({ error: { reason: 'INVALID_BASIS' } });
+    expect(attribute.body).toMatchObject({ error: { reason: 'ATTRIBUTE_NOT_ALLOWED' } });
+    expect(await count('disclosure_request')).toBe(0);
+    expect(await count('audit_log')).toBe(before + 2);
+  });
+
+  it('M3-04 AZ-10 N3 N4 an unknown field or a claimed requesting_service is 422 and nothing is written', async () => {
+    const token = await p7();
+    const before = await count('audit_log');
+    const extra = await post(
+      '/disclosure-requests',
+      person('auditor'),
+      requestBody(token, { extra: 1 }),
+    );
+    const claim = await post(
+      '/disclosure-requests',
+      person('auditor'),
+      requestBody(token, { requesting_service: 'ADMIN_CONSOLE' }),
+    );
+    const requester = await post(
+      '/disclosure-requests',
+      person('auditor'),
+      requestBody(token, { requester_id: 'usr-admin' }),
+    );
+    expect([extra.status, claim.status, requester.status]).toEqual([422, 422, 422]);
+    expect(await count('audit_log')).toBe(before);
+    expect(await count('disclosure_request')).toBe(0);
+  });
+
+  it('M3-04 AZ-11 TK-24 TK-25 the admin approves for 600 s; an auditor is FORBIDDEN_ROLE; the requester cannot approve their own', async () => {
+    const id = await open();
+    const path = `/disclosure-requests/${id}/approve`;
+    expect((await post(path, undefined, {})).status).toBe(401);
+    const auditor = await post(path, person('auditor'), {});
+    expect(auditor.status).toBe(403);
+    expect(auditor.body).toMatchObject({ error: { reason: 'FORBIDDEN_ROLE' } });
+    const ok = await post(path, person('admin'), {});
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({
+      disclosure_id: id,
+      status: 'APPROVED',
+      expires_at: '2026-10-20T08:10:00.000Z',
+    });
+    const again = await post(path, person('admin'), undefined);
+    expect(again.status).toBe(409);
+    expect(again.body).toMatchObject({ error: { reason: 'DISCLOSURE_NOT_PENDING' } });
+  });
+
+  it('M3-04 AZ-12 the admin rejects; a fraud analyst never reaches Privacy; an unknown id is 404; a field in the body is 422', async () => {
+    const id = await open();
+    const path = `/disclosure-requests/${id}/reject`;
+    expect((await post(path, person('fraud_analyst'), {})).status).toBe(403);
+    expect((await post(path, person('admin'), { reason: 'x' })).status).toBe(422);
+    const ok = await post(path, person('admin'), {});
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({ disclosure_id: id, status: 'REJECTED' });
+    const missing = await post(
+      '/disclosure-requests/00000000-0000-4000-8000-000000000000/reject',
+      person('admin'),
+      {},
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.body).toMatchObject({ error: { reason: 'DISCLOSURE_NOT_FOUND' } });
+    expect((await post('/disclosure-requests/not-a-uuid/reject', person('admin'), {})).status).toBe(
+      422,
+    );
+  });
+
+  it('M3-04 FR-15 the audit rows and the log of the whole flow carry attribute names only, never a value or the case reference', async () => {
+    const id = await open();
+    await post(`/disclosure-requests/${id}/approve`, person('admin'), {});
+    const rows = JSON.stringify(
+      (await db.owner.query('SELECT * FROM audit_log WHERE action LIKE $1', ['DISCLOSURE_%'])).rows,
+    );
+    expect(rows).toContain('"nama"');
+    for (const value of [CUSTOMER, 'KASUS-2026-014']) {
+      expect(rows).not.toContain(value);
+      expect(logLines.join(' ')).not.toContain(value);
+    }
   });
 });
 

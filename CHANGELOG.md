@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M3-03 dan M3-04 (Gerbang 2 M3)
+
+- M3-03 `GET /audit-log`, `/audit-log/timeline/{pseudonym}`, `/audit-log/summary` (`AuditLogService`, `AuditReader.list/timeline/summary`): dibaca lewat pool `auditor`, filter lengkap termasuk `action` dan `disclosure_id`, `limit` 50 (maks 200, lebih = 422) dan kursor opak dengan mikrodetik, ringkasan dengan peringatan tiga DENIED dalam lima menit (N-28), satu `VIEW_AUDIT_LOG` per pembacaan (SUCCESS atau DENIED). AZ-13..AZ-15.
+- M3-04 `POST /disclosure-requests` dan `/{id}/approve`, `/{id}/reject` (`DisclosureService`): empat mata, persetujuan 600 detik dari `DISCLOSURE_APPROVAL_TTL_SECONDS` (kini wajib di env), baris dikunci agar dua penyetuju serentak hanya satu yang menang, audit hanya nama atribut. AZ-10..AZ-12, TK-24, TK-25, TK-27. Pembantu `refuseUnlessPerson` dipakai bersama.
+
 ### M3-01 dan M3-02 (Gerbang 1 M3)
 
 - M3-01 `POST /resolve-domain` (`TokenService.resolveDomain`): hanya `NOTIFICATION`; gerbang berurutan caller, token, kepemilikan, purpose, status, identitas; P5 dicari lewat `subject_lookup` tanpa mendekripsi subjek; satu audit `RESOLVE_NOTIF_DOMAIN`. AZ-21.

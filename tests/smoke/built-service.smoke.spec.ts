@@ -110,6 +110,7 @@ const extraEnv = (id: string): Record<string, string> =>
           TTL_NOTIFICATION_REGISTRATION: '31536000',
           TTL_DAILY_RECONCILIATION: '86400',
           TTL_INTERNAL_AUDIT: '600',
+          DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
           PSEUDONYM_HMAC_SECRET_FILE: join(privacySecrets, 'hmac_secret'),
           BLIND_INDEX_SECRET_FILE: join(privacySecrets, 'blind_index_secret'),
           FIELD_ENCRYPTION_KEY_FILE: join(privacySecrets, 'field_key'),

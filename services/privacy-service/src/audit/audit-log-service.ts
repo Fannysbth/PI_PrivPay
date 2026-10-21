@@ -1,11 +1,7 @@
 import { DomainError } from '@privpay/common';
 import { AUDIT_FORMATS } from './audit-entry';
-import {
-  DeniedOperation,
-  type AuditedOperation,
-  type AuditedResult,
-  type SuccessEntry,
-} from './audited-operation';
+import { refuseUnlessPerson, type PersonCaller } from './person-gate';
+import { type AuditedOperation, type AuditedResult, type SuccessEntry } from './audited-operation';
 import type {
   AuditListFilter,
   AuditPage,
@@ -15,8 +11,6 @@ import type {
   AuditSummary,
 } from './audit-reader';
 
-/** Spec privacy 4.8 and ADR-0007: the admin console, acting as a person of the listed role. */
-const CALLER = 'ADMIN_CONSOLE';
 const LIST_ROLES = ['auditor', 'admin'] as const;
 const AUDITOR_ONLY = ['auditor'] as const;
 
@@ -24,12 +18,7 @@ const FILTER = /^[A-Za-z0-9_.:-]{1,64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const SERVICE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;
 
-export interface AuditCaller {
-  readonly requestingService: string;
-  readonly actorId?: string | undefined;
-  /** From the verified token, never from a request (invariant 7). */
-  readonly actorRole?: string | undefined;
-}
+export type AuditCaller = PersonCaller;
 
 export interface AuditLogServiceDeps {
   /** Writes the VIEW_AUDIT_LOG row through the pool of privpay_app. */
@@ -109,12 +98,7 @@ export class AuditLogService {
       ...(caller.actorId === undefined ? {} : { actorId: caller.actorId }),
     } as const;
     return this.deps.operation.run<T>(async (): Promise<AuditedResult<T>> => {
-      if (caller.requestingService !== CALLER) {
-        throw new DeniedOperation({ ...base, status: 'DENIED', reason: 'POLICY_NOT_ALLOWED' });
-      }
-      if (caller.actorRole === undefined || !roles.includes(caller.actorRole)) {
-        throw new DeniedOperation({ ...base, status: 'DENIED', reason: 'FORBIDDEN_ROLE' });
-      }
+      refuseUnlessPerson('VIEW_AUDIT_LOG', caller, roles);
       // Read first, so the row of this very read is not in its own answer; the row commits with the operation.
       const result = await work();
       const audit: SuccessEntry = { ...base, status: 'SUCCESS', reason: 'OK', ...named };
