@@ -248,26 +248,38 @@ export class AuditReader {
   /** GET /audit-log/summary (spec privacy 4.8). */
   async summary(range: AuditRange): Promise<AuditSummary> {
     const bounds = [range.from ?? null, range.to ?? null];
-    const [total, denied, alerts] = await Promise.all([
-      this.auditor.query<{ n: string }>(AUDIT_READ_SQL.total, bounds),
-      this.auditor.query<{ reason: string; n: string }>(AUDIT_READ_SQL.denied, bounds),
-      this.auditor.query<{
+    // One snapshot on one connection, so the total, the counts and the alerts describe the same rows.
+    const client = await this.auditor.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const total = await client.query<{ n: string }>(AUDIT_READ_SQL.total, bounds);
+      const denied = await client.query<{ reason: string; n: string }>(
+        AUDIT_READ_SQL.denied,
+        bounds,
+      );
+      const alerts = await client.query<{
         requesting_service: string;
         reason: string;
         n: string;
         window_start: Date;
-      }>(AUDIT_READ_SQL.alerts, bounds),
-    ]);
-    return {
-      total: Number(total.rows[0]?.n),
-      denied: denied.rows.map((row) => ({ reason: row.reason, count: Number(row.n) })),
-      alerts: alerts.rows.map((row) => ({
-        requestingService: row.requesting_service,
-        reason: row.reason,
-        count: Number(row.n),
-        windowStart: row.window_start,
-      })),
-    };
+      }>(AUDIT_READ_SQL.alerts, bounds);
+      await client.query('COMMIT');
+      return {
+        total: Number(total.rows[0]?.n),
+        denied: denied.rows.map((row) => ({ reason: row.reason, count: Number(row.n) })),
+        alerts: alerts.rows.map((row) => ({
+          requestingService: row.requesting_service,
+          reason: row.reason,
+          count: Number(row.n),
+          windowStart: row.window_start,
+        })),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   private page(rows: Row[], size: number): AuditPage {

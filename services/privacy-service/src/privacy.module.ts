@@ -187,8 +187,10 @@ export function privacyModules(
       DAILY_RECONCILIATION: config.TTL_DAILY_RECONCILIATION,
       INTERNAL_AUDIT: config.TTL_INTERNAL_AUDIT,
     });
+    // One writer path for every operation of the service (M2-04).
+    const operation = new AuditedOperation(app, new AuditWriter());
     const vault = new IdentityVault({
-      operation: new AuditedOperation(app, new AuditWriter()),
+      operation,
       index: new BlindIndex(keys),
       cipher: new FieldCipher(keys),
       clock,
@@ -204,7 +206,7 @@ export function privacyModules(
         source: idpJwksSource(http),
       }),
       tokens: new TokenService({
-        operation: new AuditedOperation(app, new AuditWriter()),
+        operation,
         policy,
         index: new BlindIndex(keys),
         cipher: new FieldCipher(keys),
@@ -216,18 +218,18 @@ export function privacyModules(
       statuses: new TransactionStatusService({ pool: app, policy, clock }),
       vault,
       disclosure: new DisclosureService({
-        operation: new AuditedOperation(app, new AuditWriter()),
+        operation,
         policy,
         clock,
         graceSeconds: config.GRACE_PERIOD_SECONDS,
         approvalTtlSeconds: config.DISCLOSURE_APPROVAL_TTL_SECONDS,
       }),
       auditLog: new AuditLogService({
-        operation: new AuditedOperation(app, new AuditWriter()),
+        operation,
         reader: new AuditReader(auditor),
       }),
       revocation: new RevocationService({
-        operation: new AuditedOperation(app, new AuditWriter()),
+        operation,
         index: new BlindIndex(keys),
         vault,
         clock,
