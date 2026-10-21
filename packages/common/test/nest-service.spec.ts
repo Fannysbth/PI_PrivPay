@@ -419,6 +419,22 @@ describe('M0-06 shutdown finishes running requests and closes the pools (qa E-08
     expect(waits).toEqual([10_000]);
   });
 
+  it('M0-06 the shutdown timer is cancelled once the server has drained, so nothing is left running', async () => {
+    const signals: AbortSignal[] = [];
+    // A wait that never ends is what a 10 s timer is while the server drains first.
+    const delay: Delay = {
+      wait: (_ms, signal) => {
+        if (signal !== undefined) signals.push(signal);
+        return new Promise<void>(() => undefined);
+      },
+    };
+    const { service } = await start('gateway', { delay });
+    await service.listen();
+    await service.close();
+    expect(signals).toHaveLength(1);
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
   it('M0-06 a pool that fails to close does not stop the others from closing', async () => {
     const closed: string[] = [];
     const { service } = await start('gateway', {
