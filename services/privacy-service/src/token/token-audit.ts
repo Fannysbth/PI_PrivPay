@@ -6,7 +6,10 @@ import type { CommonRequest, Issued, TokenResult } from './token-types';
 
 /** The fields of an audit row that do not depend on the outcome. */
 export interface AuditBase {
-  readonly action: Extract<AuditAction, 'GENERATE_TOKEN' | 'EXCHANGE_TOKEN' | 'RE_ISSUE'>;
+  readonly action: Extract<
+    AuditAction,
+    'GENERATE_TOKEN' | 'EXCHANGE_TOKEN' | 'RE_ISSUE' | 'RESOLVE_NOTIF_DOMAIN'
+  >;
   readonly requestingService: string;
   /** Known from the request, or, for re-issue, from the token once it has been read. */
   readonly purpose?: string;

@@ -50,6 +50,12 @@ class PrivacyController {
     return this.privacy.reIssue(req.headers, body);
   }
 
+  @Post('resolve-domain')
+  @HttpCode(200)
+  resolveDomain(@Req() req: Request, @Body() body: unknown) {
+    return this.privacy.resolveDomain(req.headers, body);
+  }
+
   @Post('identity')
   async identity(
     @Req() req: Request,

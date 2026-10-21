@@ -13,5 +13,7 @@ export type {
   FromTransactionRequest,
   GenerateRequest,
   ReIssueRequest,
+  ResolveDomainRequest,
+  ResolveDomainResult,
   TokenResult,
 } from './token-types';

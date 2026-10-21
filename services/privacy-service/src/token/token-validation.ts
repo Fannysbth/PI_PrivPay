@@ -6,6 +6,7 @@ import type {
   FromTransactionRequest,
   GenerateRequest,
   ReIssueRequest,
+  ResolveDomainRequest,
 } from './token-types';
 
 // Formats of platform-dan-ci.md 3.1; the shape of a request is checked before anything is decided or audited.
@@ -57,6 +58,11 @@ export function assertReIssue(request: ReIssueRequest): void {
   assertCommon(request);
   textMatching(request.pseudonym, AUDIT_FORMATS.pseudonym);
   textMatching(request.transactionId, AUDIT_FORMATS.transactionId);
+}
+
+export function assertResolveDomain(request: ResolveDomainRequest): void {
+  assertCommon(request);
+  textMatching(request.notifToken, AUDIT_FORMATS.pseudonym);
 }
 
 export function assertFromTransaction(request: FromTransactionRequest): void {

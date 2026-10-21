@@ -145,7 +145,7 @@ PRD 7.2 tanpa perubahan logika: STEP 0 pasangan Tabel 2 (`POLICY_NOT_ALLOWED`); 
 
 ### 7.6 `resolve_domain_pseudonym`
 
-PRD 7.3: hanya `NOTIFICATION`; mengembalikan pseudonim domain P5 aktif untuk subjek yang sama, bukan `subject_id`.
+PRD 7.3: hanya `NOTIFICATION`; mengembalikan pseudonim domain P5 aktif untuk subjek yang sama, bukan `subject_id`. **[M3-01]** Urutan: pemanggil (`POLICY_NOT_ALLOWED`, sebelum token dibaca), token ada, milik pemanggil (`SERVICE_MISMATCH`), `purpose = NOTIFICATION` (`PURPOSE_MISMATCH`), status (`REVOKED`/`EXPIRED`), identitas belum dikosongkan; lalu P5 dicari lewat `subject_lookup` baris itu (subjek tidak didekripsi). P5 yang tidak ada, dicabut, atau lewat TTL: `TOKEN_NOT_FOUND`. Baris audit SUCCESS menyebut token yang diajukan.
 
 ### 7.7 `re_issue`
 

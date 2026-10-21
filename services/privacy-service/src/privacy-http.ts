@@ -46,6 +46,7 @@ const fromTransaction = z.strictObject({
 // The three forms have different required fields, so a body that mixes them matches none (spec privacy 4.1).
 const pseudonymize = z.union([identity, exchange, fromTransaction]);
 const reIssue = z.strictObject({ pseudonym: text, transaction_id: text });
+const resolveDomain = z.strictObject({ notif_token: text });
 const transactionStatus = z.strictObject({
   transaction_id: text,
   status: z.enum(TRANSACTION_STATUSES),
@@ -91,7 +92,7 @@ export interface PrivacyHttpDeps {
   readonly keys: JwksKeys;
   readonly tokens: Pick<
     TokenService,
-    'generate' | 'exchange' | 'generateFromTransaction' | 'reIssue'
+    'generate' | 'exchange' | 'generateFromTransaction' | 'reIssue' | 'resolveDomain'
   >;
   readonly statuses: Pick<TransactionStatusService, 'update'>;
   readonly vault: Pick<IdentityVault, 'store'>;
@@ -204,6 +205,19 @@ export class PrivacyHttp {
         }),
       ),
     );
+  }
+
+  async resolveDomain(headers: AuthHeaders, body: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(resolveDomain, headers, body);
+    const result = await this.run(() =>
+      this.deps.tokens.resolveDomain({
+        requestingService: who.requestingService,
+        ...(who.actor === undefined ? {} : { actorId: who.actor.actorId }),
+        notifToken: input.notif_token,
+      }),
+    );
+    return { notification_domain_id: result.notificationDomainId };
   }
 
   async transactionStatus(headers: AuthHeaders, body: unknown) {

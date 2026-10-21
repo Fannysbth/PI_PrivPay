@@ -12,6 +12,8 @@ import type {
   GenerateRequest,
   Issued,
   ReIssueRequest,
+  ResolveDomainRequest,
+  ResolveDomainResult,
   TokenResult,
 } from './token-types';
 import {
@@ -19,6 +21,7 @@ import {
   assertFromTransaction,
   assertGenerate,
   assertReIssue,
+  assertResolveDomain,
 } from './token-validation';
 
 /**
@@ -52,6 +55,12 @@ export const TOKEN_SQL = {
      FROM pseudonym_mapping WHERE pseudonym = $1 FOR UPDATE`,
   // Re-issue STEP 3 (PRD 7.5): the old token stops being the active one before buat_token looks for an active token.
   markExpired: `UPDATE pseudonym_mapping SET status = 'expired' WHERE id = $1 AND status = 'active'`,
+  // Resolve-domain STEP 3 (PRD 7.3): the active P5 token of the subject of the presented row, matched on the blind index
+  // already stored on that row, so the subject is not decrypted at all. FOR SHARE: a revocation of the P5 token cannot
+  // commit between this read and the audit row.
+  findDomain: `SELECT d.pseudonym, d.expires_at FROM pseudonym_mapping m
+     JOIN pseudonym_mapping d ON d.subject_lookup = m.subject_lookup
+     WHERE m.id = $1 AND d.service_id = $2 AND d.purpose = $3 AND d.status = 'active' FOR SHARE OF d`,
   // Form 3 STEP 1 (PRD 6.1 generate_from_transaction): the P1/P2 row of the transaction, expired ones included, found
   // through transaction_link (K-28, ADR-0013) because a reused token keeps only its first transaction id. Only the
   // context Gateway issues from: a token of another service that carries the same transaction id is never a source
@@ -73,6 +82,11 @@ export const TOKEN_SQL = {
 
 /** Spec privacy 7.2 step 6: the limit chosen by the spec (K-12). */
 const MAX_PSEUDONYM_ATTEMPTS = 20;
+
+/** PRD 7.3: the only token Notification may resolve (P4), and the one it gets back (P5). */
+const NOTIFICATION_SERVICE = 'NOTIFICATION';
+const NOTIFICATION_PURPOSE = 'NOTIFICATION';
+const DOMAIN_PURPOSE = 'NOTIFICATION_REGISTRATION';
 
 /** The context the Gateway issues P1 and P2 for, the only source of form 3 (PRD Tabel 1). */
 const SOURCE_SERVICE = 'TRANSACTION';
@@ -291,6 +305,62 @@ export class TokenService {
         purpose: request.purpose,
       });
       return { result: resultOf(issued), audit: successEntry(base, issued) };
+    });
+  }
+
+  /** Resolve-domain (NOTIFICATION only; Tabel 3): spec 7.6, PRD 7.3. The answer is a P5 pseudonym, never a subject id. */
+  async resolveDomain(request: ResolveDomainRequest): Promise<ResolveDomainResult> {
+    assertResolveDomain(request);
+    const base = baseOf('RESOLVE_NOTIF_DOMAIN', request);
+    const presented = { pseudonym: request.notifToken };
+    return this.deps.operation.run<ResolveDomainResult>(async (tx) => {
+      // STEP 0: the caller, before any token is read, so another service learns nothing about which tokens exist.
+      decide(base, presented, () => {
+        this.deps.policy.authorizeCaller('RESOLVE_NOTIF_DOMAIN', request.requestingService);
+      });
+
+      // STEP 1, one gate after the other, each refusal the first that applies.
+      const { source, named } = await this.ownedSource(
+        tx,
+        TOKEN_SQL.findSource,
+        { requestingService: request.requestingService, sourcePseudonym: request.notifToken },
+        base,
+        presented,
+      );
+      const known = { ...base, purpose: source.purpose };
+      if (source.purpose !== NOTIFICATION_PURPOSE) throw denied(known, 'PURPOSE_MISMATCH', named);
+      const status = effectiveStatus(
+        { status: source.status, expiresAt: source.expires_at },
+        this.deps.clock.now(),
+        this.deps.graceSeconds,
+      );
+      if (status === 'revoked') throw denied(known, 'REVOKED', named);
+      if (status === 'expired') throw denied(known, 'EXPIRED', named);
+      // Retention empties the identity of an old row; without it there is no subject to look the P5 token up by.
+      if (source.subject_id_enc === null || source.purged_at !== null) {
+        throw denied(known, 'TOKEN_NOT_FOUND', named);
+      }
+
+      // STEP 2 and 3: only a P5 token that is active now; one past its TTL is not handed out.
+      const found = await tx.query<{ pseudonym: string; expires_at: Date }>(TOKEN_SQL.findDomain, [
+        source.id,
+        NOTIFICATION_SERVICE,
+        DOMAIN_PURPOSE,
+      ]);
+      const domain = found.rows[0];
+      if (domain === undefined || domain.expires_at.getTime() <= this.deps.clock.now().getTime()) {
+        throw denied(known, 'TOKEN_NOT_FOUND', named);
+      }
+      return {
+        result: { notificationDomainId: domain.pseudonym },
+        audit: {
+          ...known,
+          status: 'SUCCESS',
+          reason: 'OK',
+          pseudonym: request.notifToken,
+          mappingId: source.id,
+        },
+      };
     });
   }
 
