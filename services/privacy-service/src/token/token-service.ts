@@ -377,8 +377,9 @@ export class TokenService {
   /**
    * K-28, ADR-0013: ties the transaction id to the token this operation issued or gave back, in the context it was
    * issued for. A repeat is a no-op; another token for the same transaction id and context is a conflict
-   * (IDEMPOTENCY_CONFLICT, audited, the whole operation rolled back); a re-issue may move the link from the token it
-   * replaces (`supersedes`) to its successor and from nothing else.
+   * (IDEMPOTENCY_CONFLICT, audited, the whole operation rolled back). A re-issue (`supersedes`) never creates a link:
+   * it may only move the link that already points to the token it replaces, so a transaction id taken from the body
+   * cannot plant a link in the context Gateway issues from (form 3 reads it).
    */
   private async link(
     tx: OperationTx,
@@ -397,15 +398,20 @@ export class TokenService {
     const where = [key.transactionId, key.subjectType, key.serviceId, key.purpose];
     // Twice at most: the second round is for a link that retention removed between the insert and the read.
     for (let round = 0; round < 2; round += 1) {
-      const inserted = await tx.query(TOKEN_SQL.insertLink, [
-        ...where,
-        issued.pseudonym,
-        this.deps.clock.now(),
-      ]);
-      if (inserted.rowCount === 1) return;
+      if (supersedes === undefined) {
+        const inserted = await tx.query(TOKEN_SQL.insertLink, [
+          ...where,
+          issued.pseudonym,
+          this.deps.clock.now(),
+        ]);
+        if (inserted.rowCount === 1) return;
+      }
       const found = await tx.query<{ pseudonym: string }>(TOKEN_SQL.findLink, where);
       const existing = found.rows[0]?.pseudonym;
-      if (existing === undefined) continue;
+      if (existing === undefined) {
+        if (supersedes !== undefined) throw denied(base, 'IDEMPOTENCY_CONFLICT', named);
+        continue;
+      }
       if (existing === issued.pseudonym) return;
       if (supersedes !== undefined && existing === supersedes) {
         await tx.query(TOKEN_SQL.moveLink, [...where, issued.pseudonym, supersedes]);

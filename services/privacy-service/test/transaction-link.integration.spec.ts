@@ -233,6 +233,25 @@ describe('K-28 a re-issue may only take over the link of the token it replaces',
   });
 });
 
+describe('K-28 a re-issue never plants a link', () => {
+  it('K-28 re-issuing for a transaction id that has no link to this token is refused, and no link appears', async () => {
+    const own = await service.generate(p1('TX-8027'));
+    clock.advance(1_000);
+    expect(
+      await reasonOf(
+        service.reIssue({
+          requestingService: 'TRANSACTION',
+          pseudonym: own.pseudonym,
+          transactionId: 'TX-8099',
+        }),
+      ),
+    ).toBe('IDEMPOTENCY_CONFLICT');
+    expect(await linkOf('TX-8099')).toBeUndefined();
+    expect(await count('transaction_link')).toBe(1);
+    expect(await rowOf(own.pseudonym)).toMatchObject({ status: 'active' });
+  });
+});
+
 describe('K-29 form 3 from a revoked source', () => {
   it('K-29 is refused as REVOKED and audited, nothing is issued', async () => {
     const first = await service.generate(p1('TX-8030'));
