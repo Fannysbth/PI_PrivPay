@@ -5,6 +5,19 @@ export {
   type TransactionRequest,
 } from './processor';
 export {
+  privacyStatusOf,
+  TokenExpiredError,
+  type FraudClient,
+  type FraudVerdict,
+  type NotificationClient,
+  type NotificationTemplate,
+  type PrivacyStatusClient,
+  type PrivacyTransactionStatus,
+  type SubjectReferencePort,
+  type SubjectRow,
+} from './ports';
+export { assertTransition, canTransition } from './status-machine';
+export {
   TRANSACTION_SQL,
   TransactionRepository,
   type FraudDecision,

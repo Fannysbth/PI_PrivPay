@@ -14,6 +14,14 @@ import {
   TransactionRepository,
   type TransactionRequest,
 } from '../src/transaction';
+import {
+  FakeFraud,
+  FakeNotifications,
+  FakePrivacy,
+  FakeSubjects,
+  neighbours,
+  recordingLogger,
+} from './fakes';
 
 // Seam: TransactionProcessor.process (spec transaction 3.1, 5.1) on the real transaction database, as the real runtime
 // role, with a FakeClock and a FakeDelay. The pseudonyms are invented. Needs PostgreSQL and scripts/db/bootstrap.ps1.
@@ -35,6 +43,12 @@ const build = (using: Delay): TransactionProcessor =>
     delay: using,
     fraudAmountThreshold: THRESHOLD,
     waitMs: WAIT_MS,
+    subjects: new FakeSubjects(),
+    // These M4-01 cases are about Fraud being away (NFR-24); the decisions of a Fraud that answers are in M4-02.
+    fraud: Object.assign(new FakeFraud(), { fail: true }),
+    notifications: new FakeNotifications(),
+    privacy: new FakePrivacy(),
+    logger: recordingLogger().logger,
   });
 
 beforeEach(async () => {
@@ -191,6 +205,8 @@ describe('M4-01 NFR-23 S-02 T-13 the same key at the same time', () => {
               delay: new FakeDelay(),
               fraudAmountThreshold: THRESHOLD,
               waitMs: 600_000,
+              ...neighbours({ fraudDown: true }),
+              logger: recordingLogger().logger,
             }).process(request({ idempotencyKey: key })),
           ),
         );
@@ -221,6 +237,8 @@ describe('M4-01 NFR-23 S-02 T-13 the same key at the same time', () => {
             delay: new FakeDelay(),
             fraudAmountThreshold: THRESHOLD,
             waitMs: 600_000,
+            ...neighbours({ fraudDown: true }),
+            logger: recordingLogger().logger,
           }).process(request({ idempotencyKey: key, amount })),
         ),
       );

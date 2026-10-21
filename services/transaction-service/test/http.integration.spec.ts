@@ -5,6 +5,7 @@ import { createTestDb, type TestDb } from '@privpay/common/testing';
 import { join } from 'node:path';
 import request from 'supertest';
 import { transactionModules } from '../src/transaction.module';
+import { neighbours } from './fakes';
 
 // Seam: POST /transaction over HTTP, with the service's real module on the real database and the IdP's keys served
 // by a stub (AZ-26, spec transaction 3.1). Every value is invented. Needs PostgreSQL and scripts/db/bootstrap.ps1.
@@ -44,7 +45,11 @@ beforeEach(async () => {
   app = await createServiceApp(
     {
       service: 'transaction-service',
-      modules: transactionModules({ fetch: fetchStub, pools: { app: db.app } }),
+      modules: transactionModules({
+        fetch: fetchStub,
+        pools: { app: db.app },
+        neighbours: neighbours({ fraudDown: true }),
+      }),
     },
     {
       PRIVACY_MODE: 'proposed',
@@ -55,6 +60,9 @@ beforeEach(async () => {
       IDP_URL: 'http://idp.test',
       IDP_ISSUER: ISSUER,
       FRAUD_AMOUNT_THRESHOLD: '1000000',
+      PRIVACY_SERVICE_URL: 'http://privacy.test',
+      FRAUD_SERVICE_URL: 'http://fraud.test',
+      NOTIFICATION_SERVICE_URL: 'http://notification.test',
     },
     { clock, logDestination: { write: (line) => void logLines.push(line) } },
   );

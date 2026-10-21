@@ -8,6 +8,7 @@ import { buildCanary } from '../../../tests/pii-scan/canary';
 import { assertNoFindings, scanText } from '../../../tests/pii-scan/scan';
 import { scanDatabase } from '../../../tests/pii-scan/scan-database';
 import { transactionModules } from '../src/transaction.module';
+import { neighbours } from './fakes';
 
 // Seam: the transaction service over HTTP, then the three scan targets of spec pengujian 6 on what it left behind: the
 // answers, the log lines and the whole dump. A service that only receives tokens must hold no canary even when a
@@ -22,6 +23,7 @@ const person = buildCanary(41);
 let db: TestDb;
 let app: ServiceApp;
 let logLines: string[];
+let near: ReturnType<typeof neighbours>;
 const clock = new FakeClock('2026-10-20T08:00:00.000Z');
 
 const gateway = (): string => {
@@ -44,6 +46,7 @@ beforeEach(async () => {
   db = await createTestDb(pg, { service: 'transaction', suffix: 'm401p' });
   await migrate(db.owner, { root: migrations, mode: 'proposed' });
   logLines = [];
+  near = neighbours();
   const jwk = { ...pair.publicKey.export({ format: 'jwk' }), kid: KID, alg: 'RS256', use: 'sig' };
   const fetchStub: typeof fetch = () =>
     Promise.resolve(
@@ -55,7 +58,12 @@ beforeEach(async () => {
   app = await createServiceApp(
     {
       service: 'transaction-service',
-      modules: transactionModules({ fetch: fetchStub, pools: { app: db.app } }),
+      modules: transactionModules({
+        fetch: fetchStub,
+        pools: { app: db.app },
+        neighbours: near,
+        logDestination: { write: (line) => void logLines.push(line) },
+      }),
     },
     {
       PRIVACY_MODE: 'proposed',
@@ -66,6 +74,9 @@ beforeEach(async () => {
       IDP_URL: 'http://idp.test',
       IDP_ISSUER: ISSUER,
       FRAUD_AMOUNT_THRESHOLD: '1000000',
+      PRIVACY_SERVICE_URL: 'http://privacy.test',
+      FRAUD_SERVICE_URL: 'http://fraud.test',
+      NOTIFICATION_SERVICE_URL: 'http://notification.test',
     },
     { clock, logDestination: { write: (line) => void logLines.push(line) } },
   );
@@ -122,6 +133,58 @@ describe('M4-01 NFR-15 FR-16 S-38 the three targets on the transaction service',
       }),
     );
     assertNoFindings(scanText(logLines.join('\n'), [person], { ...where, location: 'log' }));
+    assertNoFindings(await scanDatabase(db.owner, [person], 'transaction'));
+  });
+});
+
+describe('M4-02 NFR-15 FR-16 the full orchestration leaves no identity anywhere', () => {
+  it('M4-02 NFR-15 FR-16 S-38 completed, held, blocked and failed paths: no canary in the answers, the log, the calls to the neighbours or the dump', async () => {
+    const key = (n: number): string => `${String(n).padStart(8, '0')}-aaaa-4bbb-8ccc-dddddddddddd`;
+    const answers = [
+      await send(valid({ idempotency_key: key(1), amount: 35000 })),
+      await send(
+        valid({ idempotency_key: key(2), transaction_id: 'TX-1000000000002', amount: 2_000_000 }),
+      ),
+    ];
+    near.fraud.decision = 'BLOCK';
+    answers.push(
+      await send(
+        valid({ idempotency_key: key(3), transaction_id: 'TX-1000000000003', amount: 3_000_000 }),
+      ),
+    );
+    near.fraud.fail = true;
+    near.notifications.fail = true;
+    near.privacy.fail = true;
+    answers.push(
+      await send(
+        valid({ idempotency_key: key(4), transaction_id: 'TX-1000000000004', amount: 4_000_000 }),
+      ),
+    );
+    expect(answers.map((answer) => answer.status)).toEqual([201, 201, 201, 201]);
+    expect(answers.map((answer) => (answer.body as { status: string }).status)).toEqual([
+      'COMPLETED',
+      'COMPLETED',
+      'FAILED',
+      'HELD',
+    ]);
+    expect(logLines.some((line) => line.includes('fraud_unavailable'))).toBe(true);
+
+    const where = { service: 'transaction' };
+    const outbound = JSON.stringify([
+      near.fraud.calls,
+      near.notifications.sent,
+      near.privacy.patches,
+      near.subjects.fraudRows,
+      near.subjects.notificationRows,
+    ]);
+    assertNoFindings(
+      scanText(JSON.stringify(answers.map((answer): unknown => answer.body)), [person], {
+        ...where,
+        location: 'response',
+      }),
+    );
+    assertNoFindings(scanText(logLines.join('\n'), [person], { ...where, location: 'log' }));
+    assertNoFindings(scanText(outbound, [person], { ...where, location: 'payload' }));
     assertNoFindings(await scanDatabase(db.owner, [person], 'transaction'));
   });
 });

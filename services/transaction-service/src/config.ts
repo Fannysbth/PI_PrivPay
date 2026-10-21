@@ -7,6 +7,9 @@ import {
 } from '@privpay/common';
 import { z } from 'zod';
 
+// Addresses of the other processes come from configuration only (API7): no caller names a URL.
+const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname });
+
 /**
  * What the transaction service reads from the environment, on top of the shared bootstrap (spec transaction, PRD 17).
  * No default for the fraud threshold: a missing value stops the start (fail fast). The database password is a file
@@ -18,6 +21,9 @@ export const transactionConfigSchema = z.object({
   ...idpConfigShape,
   // PRD 17: an amount under it is completed without asking Fraud; at or over it, Fraud decides.
   FRAUD_AMOUNT_THRESHOLD: z.coerce.number().int().min(1),
+  PRIVACY_SERVICE_URL: serviceUrl,
+  FRAUD_SERVICE_URL: serviceUrl,
+  NOTIFICATION_SERVICE_URL: serviceUrl,
 });
 export type TransactionConfig = z.output<typeof transactionConfigSchema>;
 
