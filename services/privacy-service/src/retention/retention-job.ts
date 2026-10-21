@@ -22,8 +22,9 @@ export const RETENTION_SQL = {
         SET subject_id_enc = NULL, subject_lookup = NULL, purged_at = $3
        FROM picked WHERE m.id = picked.id
      RETURNING m.id, m.pseudonym, m.purpose, m.key_version`,
-  // The check of PRD 6.2 (TF-14): no row that stopped being valid long ago still holds an identity.
+  // K-28, ADR-0013: a link goes with the identity of its row.
   deleteLinks: 'DELETE FROM transaction_link WHERE pseudonym = ANY($1::text[])',
+  // The check of PRD 6.2 (TF-14): no row that stopped being valid long ago still holds an identity.
   overdue: `SELECT count(*) AS n FROM pseudonym_mapping
      WHERE subject_id_enc IS NOT NULL AND status IN ('expired', 'revoked') AND COALESCE(revoked_at, expires_at) < $1`,
 } as const;
