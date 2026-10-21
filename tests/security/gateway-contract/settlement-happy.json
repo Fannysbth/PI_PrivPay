@@ -1,0 +1,26 @@
+{
+  "name": "FR-32 TF-13 a settlement report carries account tokens; the same account is asked once",
+  "route": "settlement",
+  "canary": 64,
+  "body": {
+    "batch_date": "2026-10-18",
+    "items": [
+      { "account_number": "{{rekening}}", "amount": 1500, "bank_reference": "BANK-REF-1" },
+      { "account_number": "{{rekening}}", "amount": 2500, "bank_reference": "BANK-REF-2" }
+    ]
+  },
+  "privacy": {
+    "pseudonyms": { "ACCOUNT:{{rekening}}": "PSEU-CCCC0003" },
+    "errors": {}
+  },
+  "expect": {
+    "outbound": {
+      "batch_date": "2026-10-18",
+      "items": [
+        { "account_pseudonym": "PSEU-CCCC0003", "amount": 1500, "bank_reference": "BANK-REF-1" },
+        { "account_pseudonym": "PSEU-CCCC0003", "amount": 2500, "bank_reference": "BANK-REF-2" }
+      ]
+    },
+    "privacy_calls": 1
+  }
+}

@@ -9,6 +9,7 @@ import {
   type JwksKeys,
 } from '@privpay/common';
 import { z } from 'zod';
+import type { IdentityVault } from './identity';
 import {
   TRANSACTION_STATUSES,
   type TokenResult,
@@ -50,6 +51,15 @@ const transactionStatus = z.strictObject({
   status: z.enum(TRANSACTION_STATUSES),
 });
 
+// Shape only; the patterns of the five values are checked again by IdentityVault (spec privacy 4.9).
+const storeIdentity = z.strictObject({
+  customer_id: text,
+  nik: text,
+  nama: z.string().min(1).max(100),
+  hp: text,
+  rekening: text,
+});
+
 /** Errors of the connection to PostgreSQL, as `pg` and Node report them: the database is away, not the request wrong. */
 const UNREACHABLE_CODES = new Set([
   'ECONNREFUSED',
@@ -84,6 +94,7 @@ export interface PrivacyHttpDeps {
     'generate' | 'exchange' | 'generateFromTransaction' | 'reIssue'
   >;
   readonly statuses: Pick<TransactionStatusService, 'update'>;
+  readonly vault: Pick<IdentityVault, 'store'>;
 }
 
 function shape<T>(schema: z.ZodType<T>, headers: AuthHeaders, body: unknown): T {
@@ -209,6 +220,26 @@ export class PrivacyHttp {
       transaction_id: result.transactionId,
       status: result.status,
       updated_at: result.updatedAt.toISOString(),
+    };
+  }
+
+  /** Spec privacy 4.9: 201 for the first call of a customer, 200 for a repeat; the values are never echoed. */
+  async storeIdentity(headers: AuthHeaders, body: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(storeIdentity, headers, body);
+    const result = await this.run(() =>
+      this.deps.vault.store({
+        requestingService: who.requestingService,
+        customerId: input.customer_id,
+        nik: input.nik,
+        nama: input.nama,
+        hp: input.hp,
+        rekening: input.rekening,
+      }),
+    );
+    return {
+      created: result.created,
+      body: { customer_id: input.customer_id, stored: [...result.storedAttributes] },
     };
   }
 }

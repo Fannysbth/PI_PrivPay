@@ -1,0 +1,19 @@
+{
+  "name": "FR-38 a refusal by Privacy is passed on as the refusal (the client sees ACCESS_DENIED)",
+  "route": "transaction",
+  "canary": 62,
+  "claims": { "customer_id": "{{customer_id}}" },
+  "idempotency_key": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "transaction_id": "TX-1760000000000003",
+  "body": {
+    "source_account": "{{rekening}}",
+    "merchant_id": "MRC-001",
+    "amount": 150000,
+    "geohash": "qqguy"
+  },
+  "privacy": {
+    "pseudonyms": { "ACCOUNT:{{rekening}}": "PSEU-BBBB0002" },
+    "errors": { "CUSTOMER:{{customer_id}}": "POLICY_NOT_ALLOWED" }
+  },
+  "expect": { "error": "POLICY_NOT_ALLOWED", "privacy_calls": 2 }
+}

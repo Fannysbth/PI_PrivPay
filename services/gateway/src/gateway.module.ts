@@ -17,6 +17,9 @@ import { ErrorMasker } from './error-masker';
 import { Gateway } from './gateway';
 import { RateLimiter } from './rate-limiter';
 import { RouteTable, type Route, type Upstream } from './routes';
+import { HttpPrivacyPort } from './tokenizer/http-privacy-port';
+import { Tokenizer } from './tokenizer/tokenizer';
+import { TransactionIdGenerator } from './tokenizer/transaction-id';
 
 const GATEWAY = Symbol('GATEWAY');
 const CLIENT_ID = 'api-gateway';
@@ -123,6 +126,12 @@ export function gatewayModules(
         },
       });
 
+    const serviceTokens = Object.fromEntries(
+      UPSTREAMS.map((upstream) => [upstream, tokenFor(upstream)]),
+    ) as Record<Upstream, TokenCache>;
+    const masker = new ErrorMasker();
+    const ids = new TransactionIdGenerator(clock);
+
     const gateway = new Gateway({
       clock,
       issuer: config.IDP_ISSUER,
@@ -139,10 +148,16 @@ export function gatewayModules(
         source: idpJwksSource(http),
       }),
       http,
-      masker: new ErrorMasker(),
-      serviceTokens: Object.fromEntries(
-        UPSTREAMS.map((upstream) => [upstream, tokenFor(upstream)]),
-      ) as Record<Upstream, TokenCache>,
+      masker,
+      tokenizer: new Tokenizer({
+        privacy: new HttpPrivacyPort({
+          http,
+          masker,
+          serviceToken: serviceTokens['privacy-service'],
+        }),
+        newTransactionId: () => ids.generate(),
+      }),
+      serviceTokens,
     });
 
     return [

@@ -9,6 +9,7 @@ import {
   Patch,
   Post,
   Req,
+  Res,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import {
@@ -20,11 +21,12 @@ import {
   type HttpClient,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { AuditedOperation, AuditWriter } from './audit';
 import { loadPrivacyConfig } from './config';
 import { BlindIndex, FieldCipher, TokenMint, loadKeys, type PrivacyKeys } from './crypto';
+import { IdentityVault } from './identity';
 import { PolicyEngine } from './policy';
 import { PrivacyHttp } from './privacy-http';
 import { TokenService, TransactionStatusService } from './token';
@@ -46,6 +48,17 @@ class PrivacyController {
   @HttpCode(200)
   reIssue(@Req() req: Request, @Body() body: unknown) {
     return this.privacy.reIssue(req.headers, body);
+  }
+
+  @Post('identity')
+  async identity(
+    @Req() req: Request,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const stored = await this.privacy.storeIdentity(req.headers, body);
+    res.status(stored.created ? 201 : 200);
+    return stored.body;
   }
 
   @Patch('transaction-status')
@@ -125,6 +138,13 @@ export function privacyModules(
         keyVersion: config.PSEUDONYM_KEY_VERSION,
       }),
       statuses: new TransactionStatusService({ pool: app, policy, clock }),
+      vault: new IdentityVault({
+        operation: new AuditedOperation(app, new AuditWriter()),
+        index: new BlindIndex(keys),
+        cipher: new FieldCipher(keys),
+        clock,
+        keyVersion: config.PSEUDONYM_KEY_VERSION,
+      }),
     });
     return [
       {

@@ -4,6 +4,27 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-11 modul `Tokenizer` dan rute tokenisasi (tiket inti, Gerbang 3)
+
+- `services/gateway/src/tokenizer/`: `Tokenizer` murni (tanpa NestJS; payload keluar dibangun dari daftar putih), `PrivacyPort` dengan adapter HTTP (`HttpPrivacyPort`, `POST /pseudonymize` bentuk 1, idempoten sehingga boleh di-retry; 5xx, timeout, dan jawaban yang bukan pseudonym menjadi 503) dan adapter palsu (`FakePrivacyPort`), `TransactionIdGenerator` (K-17), skema zod bersama dengan tabel rute (`schemas.ts`).
+- Rute baru `TOKENIZING_ROUTES` (AZ-03 `POST /transaction` untuk nasabah, wajib `Idempotency-Key` UUID; AZ-09 `POST /settlement/report` untuk bank, diteruskan ke `/reconciliation/settlement-report`) dan jenis autentikasi hilir `gateway-token` (token layanan saja; token nasabah dan bank tidak pernah diteruskan). `customer_id` hanya dari klaim token. Privacy mati, timeout, atau 5xx: 503 dan tidak ada panggilan ke Transaction atau Reconciliation; penolakan Privacy: `ACCESS_DENIED`.
+- Vektor kontrak `tests/security/gateway-contract/*.json` (6 berkas; nilai kenari diisi saat tes dari `canary`, tidak ditulis tangan) dan pelarinya `gateway-contract.spec.ts`; plugin Lua nanti harus lulus berkas yang sama (DK-02).
+- Tes M1-03 yang menyatakan `POST /transaction` dan `POST /settlement/report` tidak ada disesuaikan (kini rute); fixture rute buatan tangan mendapat tiga bidang baru. Tes integrasi dengan Privacy dan basis data asli (`gateway-privacy.integration.spec.ts`): token yang diterima Transaction sama dengan baris di basis data, nol kenari di payload hilir, log gateway, dan dump Privacy; Privacy dimatikan: 503 tanpa panggilan hilir.
+- **N-27 (diputuskan Fanny):** batas badan settlement tetap 64 KiB; jumlah item diturunkan dari 5.000 ke 500 (`MAX_SETTLEMENT_ITEMS`), spec gateway-tokenizer 5 dan reconciliation diperbarui. Bagian modul `RegistrationFlow` dan rute `/register`, `/notification/register` bukan bagian tiket ini (M4-08). Tidak ada dependensi baru.
+
+### M2-10 pemindai kenari v1 (Gerbang 3)
+
+- `tests/pii-scan/`: `buildCanary(i)` (nilai kenari K-24 dari indeks, enam atribut, unik, tidak saling memuat), `scanText`/`assertNoFindings` (pencocokan persis, juga bentuk percent-decoded; keluaran hanya `{atribut, lokasi, layanan}`), `ObservingProxy` (meneruskan lalu lintas, memindai URL, header, dan kedua body di memori; tanpa `node:fs`, dijaga tes), `scanDatabase` (semua kolom semua tabel schema public sebagai peran pemilik, bytea dibaca per byte; lokasi `tabel.kolom`).
+- `services/privacy-service/test/pii-scan.integration.spec.ts`: pendaftaran dan token pertama lewat HTTP, lalu nol temuan di `audit_log`, log Privacy, dan seluruh dump (NFR-15, FR-15, S-43); uji positif: kenari ditanam di log atau kolom polos terdeteksi. Letaknya di paket Privacy karena `tests/` bukan paket (tidak bisa me-resolve `@privpay/common`); harness hanya diimpor lewat jalur relatif dan tidak punya dependensi sendiri.
+- **Selisih kecil dari spec 6:** nama kenari `Kenari <enam huruf>`, bukan `Kenari <kata> <n>`; angka `n` diganti huruf karena brankas menolak angka pada nama (spec privacy 4.9). Tetap unik dan berformat valid.
+- `pnpm pii-scan` ditambahkan (unit + integrasi Privacy). Tidak ada dependensi baru.
+
+### M2-08 brankas identitas `POST /identity` (Gerbang 3)
+
+- `IdentityVault` (`src/identity/`) dan `POST /identity` (201 pertama, 200 ulangan; hanya `API_GATEWAY`, lainnya `POLICY_NOT_ALLOWED` tanpa baris brankas, audit `STORE_IDENTITY` DENIED). Lima kolom dienkripsi dengan AAD `vaultBinding(kolom, id baris)`; audit hanya mencatat aksi, hasil, dan versi kunci.
+- **Selisih kecil dari spec 4.9:** bukan satu `INSERT ... ON CONFLICT DO UPDATE`, melainkan kunci penasihat pada `customer_lookup`, `SELECT ... FOR UPDATE`, lalu `INSERT` atau `UPDATE`. Alasan: AAD terikat id baris (ADR-0011), jadi ulangan harus mengenkripsi untuk id baris yang sudah ada, yang tidak diketahui `ON CONFLICT`. Perilaku luar sama (K-10); dua panggilan pertama serentak menyisakan satu baris (dites). Tidak ada dependensi baru, tidak ada kode galat baru.
+- Tes: `identity-vault.integration.spec.ts` (16) dan blok `M2-08` di `http.integration.spec.ts` (AZ-25 N1..N4, tidak ada nilai identitas di log atau audit).
+
 ### K-28 dan K-29: tabel tautan transaksi (tiket inti, ADR-0013)
 
 - Migrasi `0003_transaction_link.sql`: `transaction_link` (`transaction_id`, `subject_type`, `service_id`, `purpose`, `pseudonym` FK, `created_at`; tanpa kolom identitas). Setiap penerbitan atau pemakaian ulang token untuk sebuah transaction id menulis tautannya di transaksi operasi (`ON CONFLICT DO NOTHING`, lalu pembacaan; ulangan tidak berbuat apa-apa). Transaction id yang sama dengan pseudonym lain pada konteks yang sama: `IDEMPOTENCY_CONFLICT` 409, diaudit DENIED, seluruh operasi dibatalkan (tidak ada baris mapping setengah jadi).

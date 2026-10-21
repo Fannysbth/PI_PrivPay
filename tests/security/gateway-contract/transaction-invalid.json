@@ -1,0 +1,17 @@
+{
+  "name": "FR-02 a field nobody declared is VALIDATION_ERROR and Privacy is not asked",
+  "route": "transaction",
+  "canary": 63,
+  "claims": { "customer_id": "{{customer_id}}" },
+  "idempotency_key": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "transaction_id": "TX-1760000000000004",
+  "body": {
+    "source_account": "{{rekening}}",
+    "merchant_id": "MRC-001",
+    "amount": 150000,
+    "geohash": "qqguy",
+    "customer_id": "{{customer_id}}"
+  },
+  "privacy": { "pseudonyms": {}, "errors": {} },
+  "expect": { "error": "VALIDATION_ERROR", "privacy_calls": 0 }
+}

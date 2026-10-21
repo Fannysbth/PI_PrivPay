@@ -383,8 +383,10 @@ describe('M2-09 NFR-18 batches, atomicity and rows in use', () => {
         return result;
       });
       // If the job queues behind the holder it is waiting, and the holder is only released below: that would be the
-      // circular wait that SKIP LOCKED avoids. It is observed in pg_locks, bounded, without a sleep.
-      for (let polls = 0; polls < 3000 && !state.settled && !state.queued; polls += 1) {
+      // circular wait that SKIP LOCKED avoids. It is observed in pg_locks, without a sleep. The wait ends only when the
+      // job has settled or is seen queued (a bounded poll count could end before the job reached its UPDATE on a loaded
+      // machine and release the lock too early); the test timeout bounds it if neither ever happens.
+      while (!state.settled && !state.queued) {
         const { rows } = await db.owner.query(
           `SELECT 1 FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')`,
         );

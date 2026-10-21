@@ -19,7 +19,7 @@ Mencocokkan settlement harian dengan transaksi memakai token rekening, menerima 
 
 ### 3.1 `POST /reconciliation/settlement-report` (D3, setelah tokenisasi Gateway)
 
-Pemanggil `API_GATEWAY`. `{batch_date, items:[{account_pseudonym, amount, bank_reference}]}`; validasi: tanggal ISO, 1..5.000 item, `Pseudonym`, `amount` bilangan bulat ≥ 1, `bank_reference` `^[A-Z0-9-]{1,32}$`, `UNIQUE (batch_id, bank_reference)` (K-05). Laporan disimpan sebagai `settlement_items` untuk batch tanggal itu. **Satu laporan per tanggal; pengiriman ulang dengan isi identik 200, dengan isi berbeda 409 `IDEMPOTENCY_CONFLICT`** (K-22). Respons 202 `{batch_date, item_count}`. Tidak ada nomor rekening di muatan maupun basis data (FR-32).
+Pemanggil `API_GATEWAY`. `{batch_date, items:[{account_pseudonym, amount, bank_reference}]}`; validasi: tanggal ISO, 1..500 item, `Pseudonym`, `amount` bilangan bulat ≥ 1, `bank_reference` `^[A-Z0-9-]{1,32}$`, `UNIQUE (batch_id, bank_reference)` (K-05). Laporan disimpan sebagai `settlement_items` untuk batch tanggal itu. **Satu laporan per tanggal; pengiriman ulang dengan isi identik 200, dengan isi berbeda 409 `IDEMPOTENCY_CONFLICT`** (K-22). Respons 202 `{batch_date, item_count}`. Tidak ada nomor rekening di muatan maupun basis data (FR-32).
 
 ### 3.2 `POST /reconciliation/run` (D1..D4, FR-41)
 

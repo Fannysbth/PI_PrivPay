@@ -6,6 +6,7 @@ import {
   unverifiedKid,
   type JwksKeys,
   type AuthHeaders,
+  type Authenticated,
   type Clock,
   type HttpClient,
   type TokenCache,
@@ -13,6 +14,7 @@ import {
 import type { ErrorMasker } from './error-masker';
 import type { RateLimiter } from './rate-limiter';
 import type { Route, RouteMatch, RouteTable, Upstream } from './routes';
+import type { Tokenizer } from './tokenizer/tokenizer';
 
 export interface GatewayRequest {
   readonly method: string;
@@ -37,6 +39,7 @@ export interface GatewayDependencies {
   readonly keys: JwksKeys;
   readonly http: HttpClient;
   readonly masker: ErrorMasker;
+  readonly tokenizer: Tokenizer;
   /** The gateway's own service token, one cache per upstream (the token's `aud` is that upstream). */
   readonly serviceTokens: Readonly<Record<Upstream, TokenCache>>;
 }
@@ -89,17 +92,17 @@ export class Gateway {
       throw new DomainError('VALIDATION_ERROR', 'no_route');
     const { route } = match;
 
-    if (
-      caller.requestingService !== 'ADMIN_CONSOLE' ||
-      caller.actor === undefined ||
-      !route.who.includes(caller.actor.role)
-    ) {
-      throw new DomainError('FORBIDDEN_ROLE', 'route_role');
-    }
+    if (!this.mayCall(route, caller)) throw new DomainError('FORBIDDEN_ROLE', 'route_role');
 
     this.assertSize(route, request.headers['content-length']);
-    const body = this.validatedBody(route, request.body);
+    const validated = this.validatedBody(route, request.body);
     const query = this.validatedQuery(route, request.query);
+    // Gateway spec 4 and 5: the identifiers are replaced by tokens here, and only what the tokenizer returns goes on.
+    // If it cannot (Privacy away or refusing) it throws and nothing is sent: no fallback to raw data (invariant 8).
+    const body =
+      route.tokenize === null
+        ? validated
+        : (await this.tokenized(route, request, caller, validated)).outbound;
 
     const response = await this.deps.http.request({
       service: route.upstream,
@@ -112,7 +115,7 @@ export class Gateway {
         ? { authorization: `Bearer ${person}` }
         : {
             authorization: `Bearer ${await this.deps.serviceTokens[route.upstream].get()}`,
-            actorToken: person,
+            ...(route.auth === 'gateway-token+actor' ? { actorToken: person } : {}),
           }),
     });
 
@@ -120,6 +123,43 @@ export class Gateway {
       throw this.deps.masker.fromDownstream(response.status, response.body);
     }
     return { status: response.status, body: response.body };
+  }
+
+  /** Who may use the route (gateway spec 3): people by role, a customer with a customer id, or the bank. */
+  private mayCall(route: Route, caller: Authenticated): boolean {
+    switch (route.caller) {
+      case 'customer':
+        return caller.requestingService === 'CUSTOMER' && caller.customerId !== undefined;
+      case 'bank':
+        return caller.requestingService === 'BANK';
+      case 'person':
+        return (
+          caller.requestingService === 'ADMIN_CONSOLE' &&
+          caller.actor !== undefined &&
+          route.who.includes(caller.actor.role)
+        );
+    }
+  }
+
+  private async tokenized(
+    route: Route,
+    request: GatewayRequest,
+    caller: Authenticated,
+    validated: unknown,
+  ) {
+    if (route.tokenize === 'settlement') {
+      return this.deps.tokenizer.tokenize({ route: 'settlement', body: validated });
+    }
+    const key = request.headers['idempotency-key'];
+    // A repeated header arrives as an array or a comma-joined text; neither is a UUID.
+    if (typeof key !== 'string') throw new DomainError('VALIDATION_ERROR', 'idempotency_key');
+    return this.deps.tokenizer.tokenize({
+      route: 'transaction',
+      // The customer id comes from the verified token, never from the body (invariant 7).
+      claims: { customerId: caller.customerId ?? '' },
+      idempotencyKey: key,
+      body: validated,
+    });
   }
 
   /** The size the client declared, checked against the route's limit before the body is looked at. */
