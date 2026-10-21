@@ -13,7 +13,7 @@ Controller tipis di depan `TokenService` dan `TransactionStatusService`. `reques
 
 ## Kriteria penerimaan
 
-- [ ] Resolver JWKS (`JwksKeys`, `unverifiedKid`) ada di `packages/common`; Gateway dan Privacy memakai satu salinan.
+- [x] Resolver JWKS (`JwksKeys`, `unverifiedKid`) ada di `packages/common`; Gateway dan Privacy memakai satu salinan.
 - [ ] Penjaga M0-06 berupa daftar putih per layanan (`@nestjs/common`, `reflect-metadata`, `zod` untuk gateway dan privacy-service), tetap ketat untuk layanan lain.
 - [ ] Tanpa token, token kedaluwarsa, `alg=none`, HS256 bertanda kunci publik, tanda tangan kunci asing: 401, tanpa baris audit atau mapping (TK-19).
 - [ ] AZ-18, AZ-19, AZ-20, AZ-23, AZ-24 di tingkat HTTP; field `requesting_service` di body ditolak 422.

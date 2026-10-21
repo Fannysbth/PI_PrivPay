@@ -17,8 +17,9 @@ import {
 } from './token';
 
 const SERVICE = 'privacy-service';
-// K-12 (16 KiB per body) needs no check of its own: every field is at most 64 characters and no schema has more than
-// five fields, so a body that passes the shape is far below the limit, and the JSON parser caps what is read first.
+/** K-12: the largest body any endpoint of this service accepts. The shared parser's own limit is wider (100 kB). */
+const MAX_BODY_BYTES = 16 * 1024;
+
 const text = z.string().min(1).max(64);
 // Shape only. The patterns of Pseudonym, TransactionId and the subject ids are checked again by TokenService, so a
 // value that is the right kind of text but the wrong format is a 422 there, before anything is read or audited.
@@ -60,13 +61,15 @@ const UNREACHABLE_CODES = new Set([
   '57P02',
   '57P03',
 ]);
+// SQLSTATE classes 08 (connection exception) and 53 (insufficient resources, for example too many connections).
+const SQLSTATE_CLASSES = /^(08|53)/;
 const UNREACHABLE_TEXT =
   /timeout exceeded when trying to connect|connection terminated|pool after calling end/i;
 
-function isUnreachable(error: unknown): boolean {
+export function isUnreachable(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const { code, message } = error as { code?: unknown; message?: unknown };
-  if (typeof code === 'string' && (UNREACHABLE_CODES.has(code) || code.startsWith('08'))) {
+  if (typeof code === 'string' && (UNREACHABLE_CODES.has(code) || SQLSTATE_CLASSES.test(code))) {
     return true;
   }
   return typeof message === 'string' && UNREACHABLE_TEXT.test(message);
@@ -83,9 +86,13 @@ export interface PrivacyHttpDeps {
   readonly statuses: Pick<TransactionStatusService, 'update'>;
 }
 
-function shape<T>(schema: z.ZodType<T>, body: unknown): T {
+function shape<T>(schema: z.ZodType<T>, headers: AuthHeaders, body: unknown): T {
+  // The declared length: a valid body padded with white space is small once parsed but still over the limit.
+  const declared = Number(single(headers['content-length']));
   const parsed = schema.safeParse(body);
-  if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
+  if (!parsed.success || (Number.isFinite(declared) && declared > MAX_BODY_BYTES)) {
+    throw new DomainError('VALIDATION_ERROR');
+  }
   return parsed.data;
 }
 
@@ -131,7 +138,7 @@ export class PrivacyHttp {
 
   async pseudonymize(headers: AuthHeaders, body: unknown) {
     const who = await this.caller(headers);
-    const input = shape(pseudonymize, body);
+    const input = shape(pseudonymize, headers, body);
     const common = {
       requestingService: who.requestingService,
       ...(who.actor === undefined ? {} : { actorId: who.actor.actorId }),
@@ -175,7 +182,7 @@ export class PrivacyHttp {
 
   async reIssue(headers: AuthHeaders, body: unknown) {
     const who = await this.caller(headers);
-    const input = shape(reIssue, body);
+    const input = shape(reIssue, headers, body);
     return this.run(async () =>
       answer(
         await this.deps.tokens.reIssue({
@@ -190,7 +197,7 @@ export class PrivacyHttp {
 
   async transactionStatus(headers: AuthHeaders, body: unknown) {
     const who = await this.caller(headers);
-    const input = shape(transactionStatus, body);
+    const input = shape(transactionStatus, headers, body);
     const result = await this.run(() =>
       this.deps.statuses.update({
         requestingService: who.requestingService,

@@ -177,6 +177,20 @@ describe('M2-12 the callers are proven before anything is read (TK-19, invariant
     expect(await count('pseudonym_mapping')).toBe(0);
   });
 
+  it('M2-12 TK-19 an expired token is 401 and writes nothing', async () => {
+    const token = service('api-gateway');
+    clock.advance(301);
+    const answer = await post('/pseudonymize', token, body);
+    expect(answer.status).toBe(401);
+    expect(await count('pseudonym_mapping')).toBe(0);
+  });
+
+  it('M2-12 ADR-0007 a person at Authorization takes no X-Actor-Token', async () => {
+    const answer = await post('/pseudonymize', person('admin'), body, person('auditor'));
+    expect(answer.status).toBe(403);
+    expect(await count('pseudonym_mapping')).toBe(0);
+  });
+
   it('M2-12 a token made for another service is refused', async () => {
     const answer = await post(
       '/pseudonymize',
@@ -292,6 +306,16 @@ describe('M2-12 POST /pseudonymize', () => {
     const answer = await post('/pseudonymize', service('api-gateway'), body);
     expect(answer.status).toBe(422);
     expect(await count('audit_log')).toBe(0);
+  });
+
+  it('M2-12 K-12 a valid body padded with white space past 16 KiB is 422, not 200', async () => {
+    const answer = await server()
+      .post('/pseudonymize')
+      .set('authorization', `Bearer ${service('api-gateway')}`)
+      .set('content-type', 'application/json')
+      .send(JSON.stringify(identityBody()) + ' '.repeat(17_000));
+    expect(answer.status).toBe(422);
+    expect(await count('pseudonym_mapping')).toBe(0);
   });
 
   it('M2-12 K-12 a body over 16 KiB is 422', async () => {
