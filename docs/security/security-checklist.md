@@ -10,7 +10,7 @@ Kolom "Status (penutup M3)" diisi pada penutup milestone M3 (2026-10-21): ✔ ha
 | --- | --- | --- | --- | --- |
 | S-01 | Tidak ada secret/kunci/kata sandi di git (termasuk riwayat) | `gitleaks detect --log-opts="--all"` nol temuan; TK-18 | Tiap PR, akhir | ✔ lulus, [bukti](review-M3.md#s-01) |
 | S-02 | `.env` dan `secrets/*` ter-ignore; hanya `*.example` | `git ls-files secrets .env*` | M0 | ✔ lulus, [bukti](review-M3.md#s-02) |
-| S-03 | Tiga kunci Privacy Service dari berkas rahasia/Docker secret (`*_FILE`), berbeda satu sama lain, panjang 32 byte; start gagal bila hilang/sama | tes unit konfigurasi, FR-30 | M2 | ◐ sebagian, [bukti](review-M3.md#s-03) |
+| S-03 | Tiga kunci Privacy Service dari berkas rahasia/Docker secret (`*_FILE`), berbeda satu sama lain, panjang 32 byte; start gagal bila hilang/sama | tes unit konfigurasi, FR-30 | M2 | ✔ lulus, [bukti](review-M3.md#s-03) |
 | S-04 | Tidak ada secret di image (`docker history`, ENV, ARG) | Trivy secret scan, TK-18 | M0, akhir | — belum, [bukti](review-M3.md#s-04) |
 | S-05 | Kata sandi DB/Keycloak/Grafana tidak default; kredensial dev ≠ kredensial VPS | inspeksi compose | M1 | — belum, [bukti](review-M3.md#s-05) |
 | S-06 | Kontainer non-root, filesystem baca-saja bila mungkin, `cap_drop: [ALL]`, `no-new-privileges` | inspeksi compose | M0 | — belum, [bukti](review-M3.md#s-06) |
@@ -76,7 +76,7 @@ Kolom "Status (penutup M3)" diisi pada penutup milestone M3 (2026-10-21): ✔ ha
 | S-52 | Timeout 3 detik, maks 2 retry, hanya idempoten | NFR-12, uji injeksi keterlambatan | M4 | — belum, [bukti](review-M3.md#s-52) |
 | S-53 | Tidak ada race penerbitan token ganda | uji paralel (TF-07) | M2 | ✔ lulus, [bukti](review-M3.md#s-53) |
 | S-54 | `Idempotency-Key` mencegah transaksi ganda (sekuensial dan paralel) | TF-08, NFR-23 | M4 | — belum, [bukti](review-M3.md#s-54) |
-| S-55 | Batas ukuran body dan `limit` pagination ≤ 200 | tes | M3 | ◐ sebagian, [bukti](review-M3.md#s-55) |
+| S-55 | Batas ukuran body dan `limit` pagination ≤ 200 | tes | M3 | ✔ lulus, [bukti](review-M3.md#s-55) |
 
 ## G. Rantai pasok dan CI
 
