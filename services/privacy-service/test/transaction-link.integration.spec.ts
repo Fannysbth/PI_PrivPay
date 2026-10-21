@@ -212,6 +212,27 @@ describe('K-28 re-issue keeps the original transaction id of the row', () => {
   });
 });
 
+describe('K-28 a re-issue may only take over the link of the token it replaces', () => {
+  it('K-28 re-issuing a token for a transaction id that is linked to another token is refused and changes nothing', async () => {
+    const owner = await service.generate(p1('TX-8025', CUSTOMER));
+    const other = await service.generate(p1('TX-8026', OTHER_CUSTOMER));
+    clock.advance(1_000);
+    expect(
+      await reasonOf(
+        service.reIssue({
+          requestingService: 'TRANSACTION',
+          pseudonym: other.pseudonym,
+          transactionId: 'TX-8025',
+        }),
+      ),
+    ).toBe('IDEMPOTENCY_CONFLICT');
+    expect((await linkOf('TX-8025'))?.pseudonym).toBe(owner.pseudonym);
+    expect((await linkOf('TX-8026'))?.pseudonym).toBe(other.pseudonym);
+    expect(await rowOf(other.pseudonym)).toMatchObject({ status: 'active' });
+    expect(await count('pseudonym_mapping')).toBe(2);
+  });
+});
+
 describe('K-29 form 3 from a revoked source', () => {
   it('K-29 is refused as REVOKED and audited, nothing is issued', async () => {
     const first = await service.generate(p1('TX-8030'));
