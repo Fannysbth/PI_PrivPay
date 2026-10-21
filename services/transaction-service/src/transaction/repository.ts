@@ -91,9 +91,9 @@ export const TRANSACTION_SQL = {
      WHERE status = 'HELD'
        AND ($1::text IS NULL OR (created_at, transaction_id) > ($1::timestamptz, $2::text))
      ORDER BY created_at ASC, transaction_id ASC LIMIT $3`,
-  // Re-issue in the middle of a transaction (spec transaction 5, step 5): only while it is still being decided.
+  // Re-issue in the middle of a transaction (spec transaction 5, step 5): while it is still open, PENDING or HELD.
   updateTokens: `UPDATE transactions SET customer_pseudonym = $2, account_pseudonym = $3
-     WHERE transaction_id = $1 AND status = 'PENDING'`,
+     WHERE transaction_id = $1 AND status IN ('PENDING', 'HELD')`,
   findById: `SELECT transaction_id, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash, status
      FROM transactions WHERE transaction_id = $1`,
 } as const;
@@ -176,6 +176,7 @@ export class TransactionRepository {
 
   /** Failed rows come back so the caller can tell Privacy; a row a winner finished first is not among them. */
   async sweepPending(olderThan: Date): Promise<string[]> {
+    assertTransition('PENDING', 'FAILED');
     const swept = await this.pool.query<{ transaction_id: string }>(TRANSACTION_SQL.sweepPending, [
       olderThan,
     ]);

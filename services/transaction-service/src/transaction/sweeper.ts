@@ -1,4 +1,5 @@
 import type { Clock, Logger } from '@privpay/common';
+import { reasonOf } from './followups';
 import type { PrivacyStatusClient } from './ports';
 import type { TransactionRepository } from './repository';
 
@@ -26,10 +27,10 @@ export class PendingSweeper {
     for (const transactionId of swept) {
       try {
         await this.deps.privacy.patchStatus(transactionId, 'FAILED');
-      } catch {
+      } catch (error) {
         this.deps.logger.warn('status_patch_failed', {
           transaction_id: transactionId,
-          reason: 'SERVICE_UNAVAILABLE',
+          reason: reasonOf(error),
         });
       }
     }

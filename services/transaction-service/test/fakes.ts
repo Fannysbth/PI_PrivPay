@@ -1,3 +1,4 @@
+import { DomainError } from '@privpay/common';
 import {
   TokenExpiredError,
   type FraudClient,
@@ -26,7 +27,7 @@ export class FakeSubjects implements SubjectReferencePort {
 
   forFraud(row: SubjectRow): Promise<string> {
     this.fraudRows.push(row);
-    if (this.failFraudExchange) return Promise.reject(new Error('exchange'));
+    if (this.failFraudExchange) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
     if (this.expireFraud > 0) {
       this.expireFraud -= 1;
       return Promise.reject(new TokenExpiredError());
@@ -36,7 +37,8 @@ export class FakeSubjects implements SubjectReferencePort {
 
   forNotification(row: SubjectRow): Promise<string> {
     this.notificationRows.push(row);
-    if (this.failNotificationExchange) return Promise.reject(new Error('exchange'));
+    if (this.failNotificationExchange)
+      return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
     if (this.expireNotification > 0) {
       this.expireNotification -= 1;
       return Promise.reject(new TokenExpiredError());
@@ -46,7 +48,7 @@ export class FakeSubjects implements SubjectReferencePort {
 
   reissue(row: SubjectRow): Promise<{ customerToken: string; accountToken: string }> {
     this.reissued.push(row);
-    if (this.failReissue) return Promise.reject(new Error('terminal'));
+    if (this.failReissue) return Promise.reject(new DomainError('TX_TERMINAL'));
     return Promise.resolve({ customerToken: 'PSEU-0000AAA1', accountToken: 'PSEU-0000AAA2' });
   }
 }
@@ -62,7 +64,7 @@ export class FakeFraud implements FraudClient {
   async assess(request: { subject: string; amount: number; txHour: number; geohash: string }) {
     this.calls.push(request);
     await this.onAssess?.();
-    if (this.fail) throw new Error('down');
+    if (this.fail) throw new DomainError('SERVICE_UNAVAILABLE');
     return { riskScore: this.riskScore, decision: this.decision };
   }
 }
@@ -78,10 +80,13 @@ export class FakeNotifications implements NotificationClient {
   fail = false;
   answer: 'SENT' | 'FAILED' = 'SENT';
   readonly sent: SentNotification[] = [];
+  /** Shared with FakePrivacy by a test that cares about the order of the two. */
+  trace: string[] | undefined;
 
   send(request: SentNotification) {
+    this.trace?.push('notify');
     this.sent.push(request);
-    if (this.fail) return Promise.reject(new Error('down'));
+    if (this.fail) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
     return Promise.resolve(this.answer);
   }
 }
@@ -89,10 +94,12 @@ export class FakeNotifications implements NotificationClient {
 export class FakePrivacy implements PrivacyStatusClient {
   fail = false;
   readonly patches: { transactionId: string; status: PrivacyTransactionStatus }[] = [];
+  trace: string[] | undefined;
 
   patchStatus(transactionId: string, status: PrivacyTransactionStatus): Promise<void> {
+    this.trace?.push('patch');
     this.patches.push({ transactionId, status });
-    return this.fail ? Promise.reject(new Error('down')) : Promise.resolve();
+    return this.fail ? Promise.reject(new DomainError('SERVICE_UNAVAILABLE')) : Promise.resolve();
   }
 }
 

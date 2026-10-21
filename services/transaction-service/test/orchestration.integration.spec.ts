@@ -207,6 +207,33 @@ describe('M4-02 FR-17 TF-04 Notification and Privacy away do not undo the transa
   });
 });
 
+describe('M4-02 TF-04 FR-17 order, persistence and the reason of a failure', () => {
+  it('M4-02 TF-04 the customer is told before Privacy hears the end, so a re-issue is still possible', async () => {
+    const trace: string[] = [];
+    notifications.trace = trace;
+    privacy.trace = trace;
+    await processor.process(request());
+    expect(trace).toEqual(['notify', 'patch']);
+  });
+
+  it('M4-02 TF-04 tokens issued again for the held notice are stored on the HELD row', async () => {
+    fraud.decision = 'HOLD_FOR_VERIFICATION';
+    subjects.expireNotification = 1;
+    await processor.process(request({ amount: THRESHOLD }));
+    expect(await row()).toMatchObject({ status: 'HELD', customer_pseudonym: 'PSEU-0000AAA1' });
+  });
+
+  it('M4-02 NFR-24 a bug in an adapter is logged as INTERNAL_ERROR, not as a neighbour that is away', async () => {
+    fraud.assess = () => Promise.reject(new TypeError('adapter bug'));
+    const r = request({ amount: THRESHOLD });
+    expect((await processor.process(r)).status).toBe('HELD');
+    expect(log.entries.find((e) => e.event === 'fraud_unavailable')?.fields).toEqual({
+      transaction_id: r.transactionId,
+      reason: 'INTERNAL_ERROR',
+    });
+  });
+});
+
 describe('M4-02 FR-39 a winner that answers after the sweeper has failed its row', () => {
   it('M4-02 FR-39 answers the stored FAILED once: no overwrite, no PATCH, no message, no second answer', async () => {
     // The sweeper acts while Fraud is thinking: the row is FAILED before the winner can finish it.

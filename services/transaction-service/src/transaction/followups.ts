@@ -1,4 +1,4 @@
-import type { Logger } from '@privpay/common';
+import { DomainError, type Logger, type Reason } from '@privpay/common';
 import {
   privacyStatusOf,
   TokenExpiredError,
@@ -9,6 +9,13 @@ import {
   type SubjectRow,
 } from './ports';
 import type { TransactionRepository, TransactionStatus } from './repository';
+
+/**
+ * The only thing a log line may say about a failure (invariant 6): the reason of a DomainError, or INTERNAL_ERROR for
+ * anything else, so a bug in an adapter is not mistaken for a neighbour that is away.
+ */
+export const reasonOf = (error: unknown): Reason =>
+  error instanceof DomainError ? error.reason : 'INTERNAL_ERROR';
 
 export type Settled = Exclude<TransactionStatus, 'PENDING'>;
 export type MutableSubject = { -readonly [K in keyof SubjectRow]: SubjectRow[K] };
@@ -39,10 +46,10 @@ export class Followups {
   async patchPrivacy(transactionId: string, status: Settled): Promise<void> {
     try {
       await this.deps.privacy.patchStatus(transactionId, privacyStatusOf(status));
-    } catch {
+    } catch (error) {
       this.deps.logger.warn('status_patch_failed', {
         transaction_id: transactionId,
-        reason: 'SERVICE_UNAVAILABLE',
+        reason: reasonOf(error),
       });
     }
   }
@@ -59,13 +66,16 @@ export class Followups {
         }),
       );
       if (sent === 'SENT') return;
-    } catch {
-      // Falls through to the same record as an answer of FAILED.
+      this.deps.logger.warn('notification_failed', {
+        transaction_id: subject.transactionId,
+        reason: 'SERVICE_UNAVAILABLE',
+      });
+    } catch (error) {
+      this.deps.logger.warn('notification_failed', {
+        transaction_id: subject.transactionId,
+        reason: reasonOf(error),
+      });
     }
-    this.deps.logger.warn('notification_failed', {
-      transaction_id: subject.transactionId,
-      reason: 'SERVICE_UNAVAILABLE',
-    });
   }
 
   /**

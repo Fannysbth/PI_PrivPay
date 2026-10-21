@@ -1,5 +1,5 @@
 import { DomainError, type Clock, type Delay, type Logger } from '@privpay/common';
-import { Followups, type MutableSubject, type Settled } from './followups';
+import { Followups, reasonOf, type MutableSubject, type Settled } from './followups';
 import type {
   FraudClient,
   NotificationClient,
@@ -115,8 +115,10 @@ export class TransactionProcessor {
       }
       return answer(201, stored.transactionId, stored.status);
     }
-    await this.followups.patchPrivacy(request.transactionId, decision.status);
+    // The customer first: Privacy refuses a re-issue once it sees the transaction as final (TX_TERMINAL), and a token
+    // that expired meanwhile (TF-04) can only be issued again before that.
     await this.followups.notify(subject, request.amount, decision.status);
+    await this.followups.patchPrivacy(request.transactionId, decision.status);
     return answer(201, request.transactionId, decision.status);
   }
 
@@ -141,11 +143,11 @@ export class TransactionProcessor {
             ? 'FAILED'
             : 'HELD';
       return { status, fraudDecision: verdict.decision, riskScore: verdict.riskScore };
-    } catch {
+    } catch (error) {
       // NFR-24, TF-11: no answer from Fraud (or no token for it) never turns into a completion.
       this.deps.logger.warn('fraud_unavailable', {
         transaction_id: request.transactionId,
-        reason: 'SERVICE_UNAVAILABLE',
+        reason: reasonOf(error),
       });
       return { status: 'HELD', fraudDecision: 'FRAUD_UNAVAILABLE', riskScore: null };
     }
