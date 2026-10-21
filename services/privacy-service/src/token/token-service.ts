@@ -43,21 +43,32 @@ export const TOKEN_SQL = {
   // Exchange STEP 1 (PRD 7.2): the token the caller presents, found by its value (UNIQUE on pseudonym). FOR SHARE keeps
   // a revocation or a retention purge from committing between the checks of STEP 1 and the insert of STEP 3: it waits
   // for this transaction, or has already committed and is seen here.
-  findSource: `SELECT id, subject_type, subject_id_enc, service_id, purpose, status, expires_at, purged_at
+  findSource: `SELECT id, subject_type, subject_id_enc, service_id, purpose, transaction_id, status, expires_at, purged_at
      FROM pseudonym_mapping WHERE pseudonym = $1 FOR SHARE`,
   // Re-issue STEP 1 (PRD 7.5): the same row, but FOR UPDATE, because this transaction goes on to update it (markExpired).
   // With FOR SHARE, two re-issues of one token would both hold the share lock and then both wait to update: a deadlock
   // (40P01). FOR UPDATE queues them instead, and the second finds the old token expired and the new one active.
-  findSourceForUpdate: `SELECT id, subject_type, subject_id_enc, service_id, purpose, status, expires_at, purged_at
+  findSourceForUpdate: `SELECT id, subject_type, subject_id_enc, service_id, purpose, transaction_id, status, expires_at, purged_at
      FROM pseudonym_mapping WHERE pseudonym = $1 FOR UPDATE`,
   // Re-issue STEP 3 (PRD 7.5): the old token stops being the active one before buat_token looks for an active token.
   markExpired: `UPDATE pseudonym_mapping SET status = 'expired' WHERE id = $1 AND status = 'active'`,
-  // Form 3 STEP 1 (PRD 6.1 generate_from_transaction): the P1/P2 row of the transaction, expired ones included
-  // (idx_mapping_tx). Only a row of the service and purpose that Gateway issues from: a token of another service that
-  // carries the same transaction id is never a source (invariant 5).
-  findByTransaction: `SELECT id, subject_type, subject_id_enc, purged_at FROM pseudonym_mapping
-     WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4
-     ORDER BY created_at DESC LIMIT 1 FOR SHARE`,
+  // Form 3 STEP 1 (PRD 6.1 generate_from_transaction): the P1/P2 row of the transaction, expired ones included, found
+  // through transaction_link (K-28, ADR-0013) because a reused token keeps only its first transaction id. Only the
+  // context Gateway issues from: a token of another service that carries the same transaction id is never a source
+  // (invariant 5).
+  findByTransaction: `SELECT m.id, m.pseudonym, m.subject_type, m.subject_id_enc, m.purged_at, m.status, m.expires_at
+     FROM transaction_link l JOIN pseudonym_mapping m ON m.pseudonym = l.pseudonym
+     WHERE l.transaction_id = $1 AND l.subject_type = $2 AND l.service_id = $3 AND l.purpose = $4
+     FOR SHARE OF m`,
+  // K-28: the link is written whenever a token is issued or given back for a transaction id. DO NOTHING lets a
+  // parallel request that wrote it first win; the reader below then tells a repeat from a conflict.
+  insertLink: `INSERT INTO transaction_link (transaction_id, subject_type, service_id, purpose, pseudonym, created_at)
+     VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING`,
+  findLink: `SELECT pseudonym FROM transaction_link
+     WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4 FOR UPDATE`,
+  // Re-issue only: the successor takes the place of the token it replaces, nothing else.
+  moveLink: `UPDATE transaction_link SET pseudonym = $5
+     WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4 AND pseudonym = $6`,
 } as const;
 
 /** Spec privacy 7.2 step 6: the limit chosen by the spec (K-12). */
@@ -98,6 +109,7 @@ interface SourceRow {
   subject_id_enc: Buffer | null;
   service_id: string;
   purpose: string;
+  transaction_id: string | null;
   status: StoredStatus;
   expires_at: Date;
   purged_at: Date | null;
@@ -105,9 +117,12 @@ interface SourceRow {
 
 interface TransactionSourceRow {
   id: string;
+  pseudonym: string;
   subject_type: string;
   subject_id_enc: Buffer | null;
   purged_at: Date | null;
+  status: StoredStatus;
+  expires_at: Date;
 }
 
 /**
@@ -150,6 +165,12 @@ export class TokenService {
         purpose: request.purpose,
         transactionId: request.transactionId,
         ttlSeconds: context.ttlSeconds,
+      });
+      await this.link(tx, base, {}, issued, {
+        transactionId: request.transactionId,
+        subjectType: request.subjectType,
+        serviceId: request.targetService,
+        purpose: request.purpose,
       });
       return { result: resultOf(issued), audit: successEntry(base, issued) };
     });
@@ -207,6 +228,12 @@ export class TokenService {
         transactionId: request.transactionId,
         ttlSeconds: target.ttlSeconds,
       });
+      await this.link(tx, base, presented, issued, {
+        transactionId: request.transactionId,
+        subjectType: source.subject_type,
+        serviceId: request.targetService,
+        purpose: request.purpose,
+      });
       return { result: resultOf(issued), audit: successEntry(base, issued) };
     });
   }
@@ -242,6 +269,13 @@ export class TokenService {
       if (source.subject_id_enc === null || source.purged_at !== null) {
         throw denied(base, 'TOKEN_NOT_FOUND', { mappingId: source.id });
       }
+      // K-29: an identity whose token was revoked does not give birth to a new token. Expired is fine (spec 7.4).
+      const sourceStatus = effectiveStatus(
+        { status: source.status, expiresAt: source.expires_at },
+        this.deps.clock.now(),
+        this.deps.graceSeconds,
+      );
+      if (sourceStatus === 'revoked') throw denied(base, 'REVOKED', { mappingId: source.id });
 
       // STEP 2 (the subject is decrypted inside and never leaves) and STEP 3 (buat_token), PRD 6.1.
       const issued = await this.issueFromSource(tx, source, source.subject_id_enc, {
@@ -249,6 +283,12 @@ export class TokenService {
         purpose: request.purpose,
         transactionId: request.transactionId,
         ttlSeconds: context.ttlSeconds,
+      });
+      await this.link(tx, base, {}, issued, {
+        transactionId: request.transactionId,
+        subjectType: source.subject_type,
+        serviceId: request.targetService,
+        purpose: request.purpose,
       });
       return { result: resultOf(issued), audit: successEntry(base, issued) };
     });
@@ -313,11 +353,73 @@ export class TokenService {
       const issued = await this.issueFromSource(tx, source, source.subject_id_enc, {
         targetService: source.service_id,
         purpose: source.purpose,
-        transactionId: request.transactionId,
+        // K-28 (d): the row keeps the transaction id it was first issued for; the link below carries this request's.
+        transactionId: source.transaction_id ?? request.transactionId,
         ttlSeconds: context.ttlSeconds,
       });
+      await this.link(
+        tx,
+        known,
+        named,
+        issued,
+        {
+          transactionId: request.transactionId,
+          subjectType: source.subject_type,
+          serviceId: source.service_id,
+          purpose: source.purpose,
+        },
+        request.pseudonym,
+      );
       return { result: resultOf(issued), audit: successEntry(known, issued) };
     });
+  }
+
+  /**
+   * K-28, ADR-0013: ties the transaction id to the token this operation issued or gave back, in the context it was
+   * issued for. A repeat is a no-op; another token for the same transaction id and context is a conflict
+   * (IDEMPOTENCY_CONFLICT, audited, the whole operation rolled back). A re-issue (`supersedes`) never creates a link:
+   * it may only move the link that already points to the token it replaces, so a transaction id taken from the body
+   * cannot plant a link in the context Gateway issues from (form 3 reads it).
+   */
+  private async link(
+    tx: OperationTx,
+    base: AuditBase,
+    named: { pseudonym?: string; mappingId?: string },
+    issued: Issued,
+    key: {
+      transactionId: string | undefined;
+      subjectType: string;
+      serviceId: string;
+      purpose: string;
+    },
+    supersedes?: string,
+  ): Promise<void> {
+    if (key.transactionId === undefined) return;
+    const where = [key.transactionId, key.subjectType, key.serviceId, key.purpose];
+    // Twice at most: the second round is for a link that retention removed between the insert and the read.
+    for (let round = 0; round < 2; round += 1) {
+      if (supersedes === undefined) {
+        const inserted = await tx.query(TOKEN_SQL.insertLink, [
+          ...where,
+          issued.pseudonym,
+          this.deps.clock.now(),
+        ]);
+        if (inserted.rowCount === 1) return;
+      }
+      const found = await tx.query<{ pseudonym: string }>(TOKEN_SQL.findLink, where);
+      const existing = found.rows[0]?.pseudonym;
+      if (existing === undefined) {
+        if (supersedes !== undefined) throw denied(base, 'IDEMPOTENCY_CONFLICT', named);
+        continue;
+      }
+      if (existing === issued.pseudonym) return;
+      if (supersedes !== undefined && existing === supersedes) {
+        await tx.query(TOKEN_SQL.moveLink, [...where, issued.pseudonym, supersedes]);
+        return;
+      }
+      throw denied(base, 'IDEMPOTENCY_CONFLICT', named);
+    }
+    throw new DomainError('INTERNAL_ERROR', 'link_retry');
   }
 
   /** STEP 1 of exchange and re-issue: the presented token exists and belongs to the caller. */

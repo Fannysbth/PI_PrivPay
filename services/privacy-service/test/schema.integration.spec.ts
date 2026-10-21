@@ -73,7 +73,7 @@ const insertAudit = (): Promise<unknown> =>
   );
 
 describe('M2-01 FR-15 the final privacy schema', () => {
-  it('M2-01 FR-15 creates the five tables and records the migration', async () => {
+  it('M2-01 FR-15 creates the five tables of PRD 11, the K-28 link and the migration record', async () => {
     const { rows } = await db.owner.query<{ tablename: string }>(
       "SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY 1",
     );
@@ -83,6 +83,7 @@ describe('M2-01 FR-15 the final privacy schema', () => {
       'identity_vault',
       'pseudonym_mapping',
       'schema_migrations',
+      'transaction_link',
       'transaction_status',
     ]);
   });
@@ -239,7 +240,7 @@ describe('M2-01 S-22 the database itself rejects half-purged and self-approved r
 });
 
 describe('M2-01 FR-15 FR-25 every index of PRD 11 exists', () => {
-  it('M2-01 FR-15 FR-25 the indexes of the mapping table and the audit log are all there', async () => {
+  it('M2-01 FR-15 FR-25 the indexes of the mapping table, the audit log and the K-28 link are all there', async () => {
     const { rows } = await db.owner.query<{ indexname: string }>(
       "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND (indexname LIKE 'idx%' OR indexname = 'uq_mapping_active') ORDER BY 1",
     );
@@ -247,6 +248,7 @@ describe('M2-01 FR-15 FR-25 every index of PRD 11 exists', () => {
       'idx_audit_denied',
       'idx_audit_pseu',
       'idx_audit_time',
+      'idx_link_pseudonym',
       'idx_mapping_expiry',
       'idx_mapping_pseudonym',
       'idx_mapping_purge',
