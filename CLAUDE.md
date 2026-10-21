@@ -134,6 +134,8 @@ Subagent mematuhi berkas ini. Satu subagent satu tiket. Tidak menyentuh berkas b
 - Commit hanya setelah lint dan typecheck hijau (rangkai dengan `&&`). Baca tanda tangan dan satuan API (mis. `FakeClock.advance` memakai detik) sebelum menulis fixture; fixture salah bukan alasan mengubah kode.
 - Sisa database tes: pengguna menjalankan `! corepack pnpm db:test-databases drop` (butuh terminal interaktif). Jangan menyimpan branch cadangan berisi fixture lama; `gitleaks --all` harus bersih tanpa allowlist.
 
+- Sebelum setiap commit yang menyentuh `services/`: jalankan `gitleaks detect --no-git --redact --config .gitleaks.toml` pada pohon kerja. UUID dan token contoh dibentuk saat tes berjalan (mis. `['7c9e6679', '7425', '40de', '944b', 'e07fc1f90ae7'].join('-')`), tidak ditulis literal di `services/` (allowlist hanya untuk `docs/` dan `tests/`); literal yang terlanjur masuk commit membuat `gitleaks --all` merah dan hanya bisa dibersihkan dengan menulis ulang riwayat.
+
 ## Menjaga berkas ini tetap berguna
 
 Singkat dan faktual. Tambahkan aturan baru hanya dari kesalahan yang benar-benar berulang (hasil `/retro`), dengan persetujuan user.
