@@ -17,6 +17,7 @@ import { HOSTS, startGateway, type Harness } from './harness';
 const pg = loadConfig(pgConfigSchema, process.env);
 const migrations = join(__dirname, '..', '..', 'privacy-service', 'migrations');
 const person = buildCanary(70);
+// Built at run time: a literal UUID under services/ would be reported by the secret scan.
 const KEY = ['7c9e6679', '7425', '40de', '944b', 'e07fc1f90ae7'].join('-');
 const hex = (byte: number): string => Buffer.alloc(32, byte).toString('hex');
 

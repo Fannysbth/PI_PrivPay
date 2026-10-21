@@ -6,6 +6,7 @@ import { Tokenizer } from '../src/tokenizer/tokenizer';
 
 // Seam: Tokenizer.tokenize (pure, no NestJS) against the fake PrivacyPort. Values are the generated canaries.
 const person = buildCanary(41);
+// Built at run time: a literal UUID under services/ would be reported by the secret scan.
 const IDEMPOTENCY_KEY = ['3f2b8c1e', '6a4d', '4e7b', '9c1a', '0d5e7f9a1b2c'].join('-');
 const body = {
   source_account: person.rekening,

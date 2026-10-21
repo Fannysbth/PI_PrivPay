@@ -6,6 +6,7 @@ import { HOSTS, startGateway, type Harness, type Recorded } from './harness';
 // Seam: the gateway over HTTP with fake hosts for the IdP, Privacy, Transaction and Reconciliation. The customer is
 // CUST-000101 of the harness token; the other values are the generated canaries.
 const person = buildCanary(51);
+// Built at run time: a literal UUID under services/ would be reported by the secret scan.
 const KEY = ['3f2b8c1e', '6a4d', '4e7b', '9c1a', '0d5e7f9a1b2c'].join('-');
 const body = {
   source_account: person.rekening,
