@@ -26,6 +26,8 @@ export const privacyConfigSchema = z.object({
   TTL_NOTIFICATION_REGISTRATION: seconds,
   TTL_DAILY_RECONCILIATION: seconds,
   TTL_INTERNAL_AUDIT: seconds,
+  // PRD 17: how long an approved disclosure can be used (600 s); no default, like the TTLs.
+  DISCLOSURE_APPROVAL_TTL_SECONDS: seconds,
 });
 export type PrivacyConfig = z.output<typeof privacyConfigSchema>;
 

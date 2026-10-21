@@ -234,10 +234,15 @@ export async function createServiceApp(
         });
       });
       server.closeIdleConnections();
+      // The timer is cancelled as soon as the server has drained: left running it would hold the process for the
+      // whole SHUTDOWN_TIMEOUT_MS after everything else had stopped.
+      const stopWaiting = new AbortController();
       const outcome = await Promise.race([
         drained.then(() => 'drained' as const),
-        delay.wait(config.SHUTDOWN_TIMEOUT_MS).then(() => 'timeout' as const),
-      ]);
+        delay.wait(config.SHUTDOWN_TIMEOUT_MS, stopWaiting.signal).then(() => 'timeout' as const),
+      ]).finally(() => {
+        stopWaiting.abort();
+      });
       if (outcome === 'timeout') {
         server.closeAllConnections();
         await drained;

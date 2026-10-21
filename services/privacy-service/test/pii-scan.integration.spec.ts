@@ -65,7 +65,10 @@ beforeEach(async () => {
   app = await createServiceApp(
     {
       service: 'privacy-service',
-      modules: privacyModules({ fetch: fetchStub, pools: { app: db.app } }),
+      modules: privacyModules({
+        fetch: fetchStub,
+        pools: { app: db.app, ...(db.auditor === undefined ? {} : { auditor: db.auditor }) },
+      }),
     },
     {
       PRIVACY_MODE: 'proposed',
@@ -82,6 +85,7 @@ beforeEach(async () => {
       TTL_NOTIFICATION_REGISTRATION: '31536000',
       TTL_DAILY_RECONCILIATION: '86400',
       TTL_INTERNAL_AUDIT: '600',
+      DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
       PSEUDONYM_KEY_VERSION: '1',
       PSEUDONYM_HMAC_SECRET_FILE: join(dir, 'hmac'),
       BLIND_INDEX_SECRET_FILE: join(dir, 'index'),

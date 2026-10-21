@@ -83,6 +83,8 @@ for (const [name, byte] of [
   writeFileSync(join(privacySecrets, name), Buffer.alloc(32, byte).toString('hex'));
 }
 writeFileSync(join(privacySecrets, 'privpay_app_password'), 'fake-password-for-the-smoke-run');
+// M3-03: the service opens the pool of the audit reader at start too (spec privacy 3), so it needs that role's password.
+writeFileSync(join(privacySecrets, 'privpay_auditor_password'), 'fake-password-for-the-smoke-run');
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
@@ -110,6 +112,7 @@ const extraEnv = (id: string): Record<string, string> =>
           TTL_NOTIFICATION_REGISTRATION: '31536000',
           TTL_DAILY_RECONCILIATION: '86400',
           TTL_INTERNAL_AUDIT: '600',
+          DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
           PSEUDONYM_HMAC_SECRET_FILE: join(privacySecrets, 'hmac_secret'),
           BLIND_INDEX_SECRET_FILE: join(privacySecrets, 'blind_index_secret'),
           FIELD_ENCRYPTION_KEY_FILE: join(privacySecrets, 'field_key'),

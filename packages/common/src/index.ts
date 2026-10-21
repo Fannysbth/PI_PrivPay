@@ -1,6 +1,7 @@
 export * from './clock';
 export * from './config';
 export * from './db';
+export * from './db-migrate';
 export * from './migrate';
 export * from './mode';
 export * from './delay';

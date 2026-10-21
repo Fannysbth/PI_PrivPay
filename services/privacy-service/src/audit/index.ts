@@ -10,7 +10,18 @@ export {
   type SuccessReason,
 } from './audit-entry';
 export { AuditWriter } from './audit-writer';
-export { AuditReader, type AuditFilter, type AuditRow } from './audit-reader';
+export {
+  AUDIT_READ_SQL,
+  AuditReader,
+  type AuditFilter,
+  type AuditListFilter,
+  type AuditPage,
+  type AuditPaging,
+  type AuditRange,
+  type AuditRow,
+  type AuditSummary,
+} from './audit-reader';
+export { AuditLogService, type AuditCaller, type AuditLogServiceDeps } from './audit-log-service';
 export {
   AuditedOperation,
   DeniedOperation,
@@ -18,3 +29,4 @@ export {
   type OperationTx,
   type SuccessEntry,
 } from './audited-operation';
+export { refuseUnlessPerson, type PersonCaller } from './person-gate';

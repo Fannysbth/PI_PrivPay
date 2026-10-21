@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   Inject,
   Injectable,
@@ -9,6 +10,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   Res,
   type OnModuleDestroy,
@@ -24,9 +26,10 @@ import {
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
-import { AuditedOperation, AuditWriter } from './audit';
+import { AuditLogService, AuditReader, AuditedOperation, AuditWriter } from './audit';
 import { loadPrivacyConfig } from './config';
 import { BlindIndex, FieldCipher, TokenMint, loadKeys, type PrivacyKeys } from './crypto';
+import { DisclosureService } from './disclosure';
 import { IdentityVault } from './identity';
 import { PolicyEngine } from './policy';
 import { PrivacyHttp } from './privacy-http';
@@ -70,6 +73,43 @@ class PrivacyController {
     return this.privacy.revokeSubject(req.headers, body);
   }
 
+  @Get('audit-log')
+  auditLog(@Req() req: Request, @Query() query: unknown) {
+    return this.privacy.auditLog(req.headers, query);
+  }
+
+  @Get('audit-log/summary')
+  auditSummary(@Req() req: Request, @Query() query: unknown) {
+    return this.privacy.auditSummary(req.headers, query);
+  }
+
+  @Get('audit-log/timeline/:pseudonym')
+  auditTimeline(
+    @Req() req: Request,
+    @Param('pseudonym') pseudonym: string,
+    @Query() query: unknown,
+  ) {
+    return this.privacy.auditTimeline(req.headers, pseudonym, query);
+  }
+
+  @Post('disclosure-requests')
+  @HttpCode(201)
+  requestDisclosure(@Req() req: Request, @Body() body: unknown) {
+    return this.privacy.requestDisclosure(req.headers, body);
+  }
+
+  @Post('disclosure-requests/:id/approve')
+  @HttpCode(200)
+  approveDisclosure(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.privacy.approveDisclosure(req.headers, id, body);
+  }
+
+  @Post('disclosure-requests/:id/reject')
+  @HttpCode(200)
+  rejectDisclosure(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.privacy.rejectDisclosure(req.headers, id, body);
+  }
+
   @Post('identity')
   async identity(
     @Req() req: Request,
@@ -103,7 +143,7 @@ class PrivacyModule {}
 
 export interface PrivacyOverrides {
   readonly fetch?: typeof fetch;
-  readonly pools?: { readonly app: Pool };
+  readonly pools?: { readonly app: Pool; readonly auditor?: Pool };
   readonly keys?: PrivacyKeys;
 }
 
@@ -124,6 +164,15 @@ export function privacyModules(
       app = createPool(config, { role: db.app, database: db.database });
       owned.push(app);
     }
+    // Reading the audit log goes through its own role, never the app pool (spec privacy 3).
+    let auditor = overrides.pools?.auditor;
+    if (auditor === undefined) {
+      auditor = createPool(config, {
+        role: db.auditor ?? 'privpay_auditor',
+        database: db.database,
+      });
+      owned.push(auditor);
+    }
     const http: HttpClient = createHttpClient({
       baseUrls: { idp: config.IDP_URL },
       timeoutMs: config.HTTP_TIMEOUT_MS,
@@ -138,8 +187,10 @@ export function privacyModules(
       DAILY_RECONCILIATION: config.TTL_DAILY_RECONCILIATION,
       INTERNAL_AUDIT: config.TTL_INTERNAL_AUDIT,
     });
+    // One writer path for every operation of the service (M2-04).
+    const operation = new AuditedOperation(app, new AuditWriter());
     const vault = new IdentityVault({
-      operation: new AuditedOperation(app, new AuditWriter()),
+      operation,
       index: new BlindIndex(keys),
       cipher: new FieldCipher(keys),
       clock,
@@ -155,7 +206,7 @@ export function privacyModules(
         source: idpJwksSource(http),
       }),
       tokens: new TokenService({
-        operation: new AuditedOperation(app, new AuditWriter()),
+        operation,
         policy,
         index: new BlindIndex(keys),
         cipher: new FieldCipher(keys),
@@ -166,8 +217,19 @@ export function privacyModules(
       }),
       statuses: new TransactionStatusService({ pool: app, policy, clock }),
       vault,
+      disclosure: new DisclosureService({
+        operation,
+        policy,
+        clock,
+        graceSeconds: config.GRACE_PERIOD_SECONDS,
+        approvalTtlSeconds: config.DISCLOSURE_APPROVAL_TTL_SECONDS,
+      }),
+      auditLog: new AuditLogService({
+        operation,
+        reader: new AuditReader(auditor),
+      }),
       revocation: new RevocationService({
-        operation: new AuditedOperation(app, new AuditWriter()),
+        operation,
         index: new BlindIndex(keys),
         vault,
         clock,
