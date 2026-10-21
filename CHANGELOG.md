@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M4-01 (Gerbang 1 M4)
+
+- M4-01 `POST /transaction` (`TransactionProcessor`, `TransactionRepository`, `TransactionHttp`): skema transaction-db proposed (PRD 11 dengan CHECK K-04, seed tiga merchant, hak `privpay_transaction_app` tanpa DELETE), idempotensi ADR-0009 (`INSERT ... ON CONFLICT DO NOTHING` tanpa target, sehingga bentrok `transaction_id` menjadi 409 bukan 500; pembanding lima kolom; penantian pemenang lewat `Delay` hingga `HTTP_TIMEOUT_MS`, K-25), hanya `API_GATEWAY` (AZ-26), zod ketat. Sementara Fraud belum terpasang (M4-02), jumlah di atas atau sama dengan `FRAUD_AMOUNT_THRESHOLD` menjadi `HELD` dengan `FRAUD_UNAVAILABLE`, tidak pernah `COMPLETED` (NFR-24). Tes: 6 skema (kolom identitas dimutasi: tes gagal), 25 prosesor (2 dan 20 serentak × 20 putaran, isi beda serentak, pemenang macet; mutasi tanpa `ON CONFLICT`, tanpa pembanding isi, dan tanpa penantian membuat tes gagal), 30 HTTP (mutasi pemeriksa pemanggil dan skema ketat), 2 pemindaian kenari (jawaban, log, seluruh dump; kontrol positif). `pnpm pii-scan` kini juga memindai Transaction. Dependensi: tidak ada paket baru; `@nestjs/common`, `reflect-metadata`, `zod`, dan dev `supertest`, `@types/*` sudah ada di lockfile (hanya entri importer yang bertambah), MIT; `pnpm audit --prod` bersih. Penjaga `tests/repo/service-skeletons.spec.ts` diperbarui untuk modul Transaction. Smoke menambah variabel Transaction.
+
 ### M3-06 (Gerbang 3 M3)
 
 - M3-06 `pnpm test:security` (`services/privacy-service/test/security/tk-two-layers.integration.spec.ts`): TK-01..TK-06, TK-08, TK-09, TK-13..TK-15 dalam dua lapis. Lapis layanan: Privacy asli lewat HTTP, kode dan `reason` rinci, tepat satu baris `DENIED` (dihitung lewat peran `privpay_auditor`), TK-06 tanpa baris mapping. Lapis Gateway: jawaban Privacy yang sebenarnya diteruskan oleh pengganti Reconciliation (M4-07 belum ada) lewat Gateway asli; klien hanya melihat `ACCESS_DENIED` 403 tanpa `reason`, dan token ada vs tidak ada identik kecuali `request_id` (NFR-10). Newman lewat Gateway menunggu M6-01.
