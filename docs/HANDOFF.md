@@ -1,4 +1,47 @@
-# HANDOFF (2026-10-21): Gerbang 1 M4 LULUS (dua putaran hijau) dan di-merge ke `main` lokal; berikutnya Gerbang 2 M4
+# HANDOFF (2026-10-21): Gerbang 2 M4 LULUS (dua putaran hijau), di-merge ke `main` lokal; berikutnya Gerbang 3 M4
+
+## Status Gerbang 2 M4
+
+Commit di `feat/m4-gerbang-2` (cabang tidak dihapus): `131ec26` M4-02 orkestrasi, `2838ace` M4-03 review `HELD` dan pembersih `PENDING`, `d58f852` perbaikan `/code-review`. `/code-review`: 9 temuan, 4 diperbaiki, 5 ditolak. `/security-review`: tanpa temuan keyakinan 8 ke atas.
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 57 suite, 1127 tes | 57 suite, 1127 tes |
+| integrasi (2 worker) | 39 suite, 803 tes (lihat catatan) | 39 suite, 803 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks `--all` | bersih | bersih |
+| pii-scan | 35 + 16 tes | 35 + 16 tes |
+
+Catatan putaran 1: lari integrasi pertama gagal satu tes, `M0-04 a runner waits while another one holds the migration lock` (`packages/common/test/migrate.integration.spec.ts`, tidak diubah di gerbang ini). Suite itu sendirian lulus 15/15 dua kali dan seluruh integrasi diulang hijau. Penyebab tidak diselidiki; dianggap flake bergantung waktu saat beban penuh. Bila terulang, perlakukan sebagai bug.
+
+### Yang dibangun
+
+- M4-02: `TransactionProcessor` mengorkestrasi Fraud (X1), `PATCH` status ke Privacy, dan notifikasi (X2) lewat port (`SubjectReferencePort` dengan adapter proposed, `FraudClient`, `NotificationClient`, `PrivacyStatusClient`, adapter HTTP di `clients.ts`). Fraud mati, timeout, atau pertukaran gagal: `HELD` + `FRAUD_UNAVAILABLE`. Fraud dan Notification `idempotent: false` (satu panggilan, diuji dengan hilir lambat, 503, dan galat jaringan). Token kedaluwarsa: re-issue kedua token, coba sekali lagi. Mesin status di `status-machine.ts`, dijaga di SQL (`WHERE status = $asal`); pemenang terlambat menjawab status tersimpan.
+- M4-03: `GET /transaction/held` (kursor keyset opak), `POST /transaction/{id}/review` (baris dikunci `FOR UPDATE`, aktor dari token), `PendingSweeper`.
+- Env baru, semuanya wajib (gagal cepat): `PRIVACY_SERVICE_URL`, `FRAUD_SERVICE_URL`, `NOTIFICATION_SERVICE_URL`, `TX_PENDING_TIMEOUT_SECONDS`, `TRANSACTION_CLIENT_SECRET_FILE`.
+
+### Keputusan yang butuh persetujuan Fanny
+
+1. **Urutan notifikasi dan `PATCH` dibalik** (notifikasi dulu) di jalur orkestrasi dan review. Spec 5 menulis PATCH (langkah 3) lalu notifikasi (langkah 4), tetapi Privacy menolak re-issue (`TX_TERMINAL`) setelah transaksi final, sehingga TF-04 tak terpenuhi bila PATCH lebih dulu. Catatan sudah ditambahkan di spec 5; ubah atau kembalikan bila tidak setuju.
+2. **Review pada id yang tidak ada dijawab `NOT_HELD`** (409), bukan 404: spec 3.3 hanya menyebut "bukan `HELD`".
+3. **`reason_code` review divalidasi tetapi tidak disimpan**: tabel `transactions` (PRD 11) tidak punya kolomnya. Bila jejak alasan diperlukan, butuh kolom (ADR).
+4. **`COMPLETED` lewat review mengisi `completed_at`, `FAILED` (REJECT) tidak**, mengikuti jalur otomatis.
+
+### Temuan `/code-review` yang ditolak
+
+`PendingSweeper` belum dijadwalkan (sengaja, seperti `RetentionJob`; tiket menyuruh dicatat); re-issue dua token berurutan (Privacy mengembalikan token baru yang sama pada panggilan kedua, jadi gagal sebagian aman diulang); penantian pemenang tetap `HTTP_TIMEOUT_MS` (ADR-0009 / K-25, 409 aman diulang); env baru wajib (CLAUDE.md: gagal cepat); `MutableSubject` (gaya, berurutan, tidak ada balapan).
+
+### Belum teruji
+
+Penjadwalan `PendingSweeper` ke siklus hidup proses (`TX_SWEEP_INTERVAL_SECONDS`, K-19, belum ada); adapter baseline `SubjectReferencePort` (M5); rute Gateway ke `held` dan `review` (AZ-04, AZ-05 di sisi Gateway; hanya sisi layanan AZ-27 dan AZ-28 yang diuji); Privacy, Fraud, Notification asli di belakang Transaction end-to-end (M4-09); endpoint 3.4 untuk Reconciliation (M4-06); fail-closed dengan Docker.
+
+### Untuk Gerbang 3 (M4-06, M4-07)
+
+Urutan menurut `docs/tickets/README.md`. Boilerplate autentikasi dan pool terulang di enam layanan (kandidat `/improve-codebase-architecture` setelah M4 dan M5).
+
+# (Riwayat) Gerbang 1 M4 LULUS (dua putaran hijau)
 
 ## Status Gerbang 1 M4
 

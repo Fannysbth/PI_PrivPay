@@ -4,6 +4,12 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M4-02 dan M4-03 (Gerbang 2 M4)
+
+- M4-02 orkestrasi `POST /transaction`: keputusan Fraud (`ALLOW`, `HOLD_FOR_VERIFICATION`, `BLOCK`; skor disimpan), Fraud mati menjadi `HELD` + `FRAUD_UNAVAILABLE`, `PATCH /transaction-status` ke Privacy, notifikasi (gagal tidak mengubah status), re-issue sekali bila token kedaluwarsa; `fraud/assess` dan `notification/send` tidak pernah di-retry. Mesin status dijaga di SQL. Env baru wajib: tiga URL layanan, `TRANSACTION_CLIENT_SECRET_FILE`, `TX_PENDING_TIMEOUT_SECONDS`.
+- M4-03 `GET /transaction/held`, `POST /transaction/{id}/review` (peran `fraud_analyst` dari token aktor, baris dikunci), `PendingSweeper` (belum dijadwalkan). Notifikasi dikirim sebelum `PATCH` status final (lihat HANDOFF).
+- Gerbang: dua putaran hijau (unit 1127, integrasi 803, smoke 20, audit dan gitleaks bersih).
+
 ### M4-05 (Gerbang 1 M4)
 
 - M4-05 `POST /notification/register` dan `POST /notification/send` (`NotificationService`, `ContactRepository`, `HttpPrivacyClient`, `HttpSmsGateway`, `NotificationHttp`) dan SMS simulator (`POST /sms`, `GET`/`DELETE /__test/messages`): kontak berkunci pseudonim domain (upsert, 201 lalu 200, `registered_at` tetap), kirim = `resolve-domain` lewat Privacy, kontak, SMS, satu baris log tanpa isi pesan; `FAILED` pada kegagalan Privacy, kontak, atau SMS, SMS dicoba sekali dan tidak diulang (`idempotent: false`). Simulator menyimpan pesan di memori saja; endpoint uji hanya bila `SMS_SIMULATOR_TEST_ENDPOINTS=true` (selain `true`/`false` menghentikan start), kegagalan disuntik dengan `SMS_SIMULATOR_FAIL`. Hanya `API_GATEWAY` mendaftar (AZ-32), `TRANSACTION` mengirim (AZ-33), `NOTIFICATION` memakai simulator (AZ-41). Skema notification-db: HP hanya di `contact_registry.phone`, `notification_log` tanpa isi pesan dan hanya INSERT. Tes: 5 skema, 12 layanan, 47 HTTP, 14 adapter, 8 alur nyata (Privacy asli + Notification + simulator: HP ditemukan hanya di `contact_registry` dan simulator, tidak di log, audit, dump Privacy, atau jawaban; Privacy mati, token dicabut, simulator menolak: `FAILED`), 24 simulator; mutasi pemeriksa pemanggil, skema ketat, pengulangan SMS, domain bukan dari Privacy, dan sakelar uji semuanya membuat tes gagal. Penyimpangan dicatat N-30 dan N-31. Dependensi: tidak ada paket baru. `pnpm pii-scan` kini juga menjalankan alur Notification.
