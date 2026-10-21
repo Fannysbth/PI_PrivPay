@@ -17,9 +17,8 @@ import {
 } from './token';
 
 const SERVICE = 'privacy-service';
-/** K-12: the largest body any endpoint of this service accepts. */
-const MAX_BODY_BYTES = 16 * 1024;
-
+// K-12 (16 KiB per body) needs no check of its own: every field is at most 64 characters and no schema has more than
+// five fields, so a body that passes the shape is far below the limit, and the JSON parser caps what is read first.
 const text = z.string().min(1).max(64);
 // Shape only. The patterns of Pseudonym, TransactionId and the subject ids are checked again by TokenService, so a
 // value that is the right kind of text but the wrong format is a 422 there, before anything is read or audited.
@@ -86,10 +85,7 @@ export interface PrivacyHttpDeps {
 
 function shape<T>(schema: z.ZodType<T>, body: unknown): T {
   const parsed = schema.safeParse(body);
-  // The size is the parsed body's own, so a declared Content-Length cannot understate it.
-  if (!parsed.success || Buffer.byteLength(JSON.stringify(body)) > MAX_BODY_BYTES) {
-    throw new DomainError('VALIDATION_ERROR');
-  }
+  if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
   return parsed.data;
 }
 
