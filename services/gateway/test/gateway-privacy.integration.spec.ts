@@ -199,3 +199,79 @@ describe('M2-11 the gateway with the real Privacy Service', () => {
     );
   });
 });
+
+describe('M3-02 the revocation routes through the gateway (TK-17, second layer)', () => {
+  const revokeSubject = (token: string) =>
+    request(gateway.app.httpServer)
+      .post('/subject/revoke')
+      .set('authorization', `Bearer ${token}`)
+      .send({ subject_type: 'CUSTOMER', subject_id: 'CUST-000101' });
+  const revokeToken = (token: string, pseudonym: string) =>
+    request(gateway.app.httpServer)
+      .post(`/pseudonym/${pseudonym}/revoke`)
+      .set('authorization', `Bearer ${token}`)
+      .send({});
+  // The request id is per call; everything else of the answer must be the same.
+  const withoutId = (body: unknown): unknown => {
+    const { error } = body as { error: Record<string, unknown> };
+    return { error: { ...error, request_id: undefined } };
+  };
+  const auditCount = async (): Promise<number> =>
+    Number((await db.owner.query<{ n: string }>('SELECT count(*) AS n FROM audit_log')).rows[0]?.n);
+
+  it('M3-02 TK-17 AZ-17 the admin revokes a customer through the gateway and the count comes back', async () => {
+    expect((await pay()).status).toBe(201);
+    const answer = await revokeSubject(gateway.tokens.person('admin'));
+    expect(answer.status).toBe(200);
+    expect(answer.body).toEqual({ revoked_count: 1 });
+    const rows = await db.owner.query<{ subject_type: string; status: string }>(
+      'SELECT subject_type, status FROM pseudonym_mapping',
+    );
+    expect(
+      Object.fromEntries(rows.rows.map((row) => [row.subject_type.trim(), row.status])),
+    ).toEqual({
+      ACCOUNT: 'active',
+      CUSTOMER: 'revoked',
+    });
+  });
+
+  it('M3-02 AZ-16 AZ-17 N2 an auditor is refused at the gateway as ACCESS_DENIED and Privacy is not asked', async () => {
+    expect((await pay()).status).toBe(201);
+    const before = await auditCount();
+    const auditor = gateway.tokens.person('auditor');
+    const subject = await revokeSubject(auditor);
+    const token = await revokeToken(auditor, 'PSEU-00000000');
+    expect([subject.status, token.status]).toEqual([403, 403]);
+    expect(subject.body).toMatchObject({ error: { code: 'ACCESS_DENIED' } });
+    expect(withoutId(token.body)).toEqual(withoutId(subject.body));
+    expect(await auditCount()).toBe(before);
+  });
+
+  it('M3-02 NFR-10 a token that exists and one that does not look alike to a caller who may not revoke', async () => {
+    expect((await pay()).status).toBe(201);
+    const { pseudonym } = (
+      await db.owner.query<{ pseudonym: string }>('SELECT pseudonym FROM pseudonym_mapping LIMIT 1')
+    ).rows[0] ?? { pseudonym: '' };
+    const auditor = gateway.tokens.person('auditor');
+    const real = await revokeToken(auditor, pseudonym);
+    const none = await revokeToken(auditor, 'PSEU-00000000');
+    expect(real.status).toBe(none.status);
+    expect(withoutId(real.body)).toEqual(withoutId(none.body));
+  });
+
+  it('M3-02 AZ-16 the admin revokes one token; an unknown one says nothing of its reason', async () => {
+    expect((await pay()).status).toBe(201);
+    const { pseudonym } = (
+      await db.owner.query<{ pseudonym: string }>(
+        "SELECT pseudonym FROM pseudonym_mapping WHERE subject_type = 'CUSTOMER'",
+      )
+    ).rows[0] ?? { pseudonym: '' };
+    const ok = await revokeToken(gateway.tokens.person('admin'), pseudonym);
+    expect(ok.status).toBe(200);
+    expect(ok.body).toMatchObject({ pseudonym, status: 'revoked' });
+    const missing = await revokeToken(gateway.tokens.person('admin'), 'PSEU-00000000');
+    expect(missing.status).toBeGreaterThanOrEqual(400);
+    expect(missing.body).toMatchObject({ error: { code: expect.any(String) as unknown } });
+    expect(JSON.stringify(missing.body)).not.toContain('TOKEN_NOT_FOUND');
+  });
+});

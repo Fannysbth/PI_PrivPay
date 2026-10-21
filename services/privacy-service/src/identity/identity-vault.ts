@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DomainError, type Clock } from '@privpay/common';
-import { DeniedOperation, type AuditedOperation } from '../audit';
+import { DeniedOperation, type AuditedOperation, type OperationTx } from '../audit';
 import { vaultBinding, type BlindIndex, type FieldCipher } from '../crypto';
 
 /** Spec privacy 4.9: the formats of platform-dan-ci.md 3.1 (`CustomerId`, `Nik`, `Phone`, `AccountNumber`) and the name. */
@@ -55,6 +55,12 @@ export const VAULT_SQL = {
   update: `UPDATE identity_vault
      SET customer_id_enc = $2, nik_enc = $3, nama_enc = $4, hp_enc = $5, rekening_enc = $6, key_version = $7
      WHERE id = $1`,
+  // Spec privacy 7.10, PRD 6.2 revoke_subject STEP 4: every encrypted column and the lookup go together with
+  // purged_at (chk_vault_purged); the row stays.
+  purge: `UPDATE identity_vault
+     SET customer_id_enc = NULL, nik_enc = NULL, nama_enc = NULL, hp_enc = NULL, rekening_enc = NULL,
+         customer_lookup = NULL, purged_at = $2
+     WHERE customer_lookup = $1 AND purged_at IS NULL RETURNING id`,
 } as const;
 
 const invalid = (): DomainError => new DomainError('VALIDATION_ERROR');
@@ -71,6 +77,16 @@ export class IdentityVault {
 
   constructor(private readonly deps: IdentityVaultDeps) {
     this.newId = deps.newId ?? randomUUID;
+  }
+
+  /**
+   * Empties the vault row of a customer inside the caller's transaction (revoke_subject). The same advisory lock as
+   * `store` keeps a registration in progress from writing into a row while it is emptied. True when a row was emptied.
+   */
+  async purge(tx: OperationTx, lookup: Buffer): Promise<boolean> {
+    await tx.query(VAULT_SQL.lock, [`identity:${lookup.toString('hex')}`]);
+    const purged = await tx.query(VAULT_SQL.purge, [lookup, this.deps.clock.now()]);
+    return purged.rowCount === 1;
   }
 
   async store(request: StoreIdentityRequest): Promise<StoreIdentityResult> {

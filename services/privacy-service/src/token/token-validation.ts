@@ -10,8 +10,8 @@ import type {
 } from './token-types';
 
 // Formats of platform-dan-ci.md 3.1; the shape of a request is checked before anything is decided or audited.
-const CUSTOMER_ID = /^CUST-[0-9]{6}$/;
-const ACCOUNT_NUMBER = /^[0-9]{8,20}$/;
+export const CUSTOMER_ID = /^CUST-[0-9]{6}$/;
+export const ACCOUNT_NUMBER = /^[0-9]{8,20}$/;
 export const SERVICE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;
 
 const invalid = (): DomainError => new DomainError('VALIDATION_ERROR');
@@ -22,7 +22,7 @@ export function textMatching(value: unknown, pattern: RegExp): void {
 }
 
 /** The text fields are checked as text first: the type says string, but the data comes from outside (CLAUDE.md). */
-function assertCommon(request: CommonRequest): void {
+export function assertCommon(request: CommonRequest): void {
   textMatching(request.requestingService, SERVICE_ID);
   if (request.actorId !== undefined) textMatching(request.actorId, AUDIT_FORMATS.actorId);
 }

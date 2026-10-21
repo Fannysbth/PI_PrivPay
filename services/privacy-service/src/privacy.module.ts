@@ -6,6 +6,7 @@ import {
   Inject,
   Injectable,
   Module,
+  Param,
   Patch,
   Post,
   Req,
@@ -29,6 +30,7 @@ import { BlindIndex, FieldCipher, TokenMint, loadKeys, type PrivacyKeys } from '
 import { IdentityVault } from './identity';
 import { PolicyEngine } from './policy';
 import { PrivacyHttp } from './privacy-http';
+import { RevocationService } from './revocation';
 import { TokenService, TransactionStatusService } from './token';
 
 const PRIVACY_HTTP = Symbol('PRIVACY_HTTP');
@@ -54,6 +56,18 @@ class PrivacyController {
   @HttpCode(200)
   resolveDomain(@Req() req: Request, @Body() body: unknown) {
     return this.privacy.resolveDomain(req.headers, body);
+  }
+
+  @Post('pseudonym/:pseudonym/revoke')
+  @HttpCode(200)
+  revokeToken(@Req() req: Request, @Param('pseudonym') pseudonym: string, @Body() body: unknown) {
+    return this.privacy.revokeToken(req.headers, pseudonym, body);
+  }
+
+  @Post('subject/revoke')
+  @HttpCode(200)
+  revokeSubject(@Req() req: Request, @Body() body: unknown) {
+    return this.privacy.revokeSubject(req.headers, body);
   }
 
   @Post('identity')
@@ -124,6 +138,13 @@ export function privacyModules(
       DAILY_RECONCILIATION: config.TTL_DAILY_RECONCILIATION,
       INTERNAL_AUDIT: config.TTL_INTERNAL_AUDIT,
     });
+    const vault = new IdentityVault({
+      operation: new AuditedOperation(app, new AuditWriter()),
+      index: new BlindIndex(keys),
+      cipher: new FieldCipher(keys),
+      clock,
+      keyVersion: config.PSEUDONYM_KEY_VERSION,
+    });
     const privacy = new PrivacyHttp({
       clock,
       issuer: config.IDP_ISSUER,
@@ -144,12 +165,12 @@ export function privacyModules(
         keyVersion: config.PSEUDONYM_KEY_VERSION,
       }),
       statuses: new TransactionStatusService({ pool: app, policy, clock }),
-      vault: new IdentityVault({
+      vault,
+      revocation: new RevocationService({
         operation: new AuditedOperation(app, new AuditWriter()),
         index: new BlindIndex(keys),
-        cipher: new FieldCipher(keys),
+        vault,
         clock,
-        keyVersion: config.PSEUDONYM_KEY_VERSION,
       }),
     });
     return [
