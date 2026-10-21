@@ -109,18 +109,19 @@ export const AUDIT_READ_SQL = {
       WHERE status = 'DENIED'
         AND ($1::timestamptz IS NULL OR created_at >= $1) AND ($2::timestamptz IS NULL OR created_at < $2)
       GROUP BY reason ORDER BY n DESC, reason`,
-  // The simple alert (PRD 12, mitigation of Q-11): three DENIED rows of one reason, SERVICE_MISMATCH or TOKEN_NOT_FOUND,
-  // from one service within five minutes. The window ends at each row and includes its five-minute boundary.
+  // The simple alert (PRD 12, "Peringatan sederhana", mitigation of Q-11): three DENIED rows, SERVICE_MISMATCH or
+  // TOKEN_NOT_FOUND (together, the PRD does not separate them), from one service within five minutes. The window ends at
+  // each row and includes its five-minute boundary; `reason` is that of the row that completes the window.
   alerts: `WITH watched AS (
        SELECT requesting_service, reason, created_at, count(*) OVER w AS n, min(created_at) OVER w AS window_start
          FROM audit_log
         WHERE status = 'DENIED' AND reason IN ('SERVICE_MISMATCH', 'TOKEN_NOT_FOUND')
           AND ($1::timestamptz IS NULL OR created_at >= $1) AND ($2::timestamptz IS NULL OR created_at < $2)
-       WINDOW w AS (PARTITION BY requesting_service, reason ORDER BY created_at
+       WINDOW w AS (PARTITION BY requesting_service ORDER BY created_at
                     RANGE BETWEEN INTERVAL '5 minutes' PRECEDING AND CURRENT ROW))
-     SELECT DISTINCT ON (requesting_service, reason) requesting_service, reason, n, window_start
+     SELECT DISTINCT ON (requesting_service) requesting_service, reason, n, window_start
        FROM watched WHERE n >= 3
-      ORDER BY requesting_service, reason, n DESC, created_at`,
+      ORDER BY requesting_service, n DESC, created_at`,
 } as const;
 
 const CURSOR_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;

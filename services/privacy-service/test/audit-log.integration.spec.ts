@@ -338,6 +338,16 @@ describe('M3-03 summary: totals, denied by reason, and the simple alert (spec pr
     ]);
   });
 
+  it('M3-03 US-13 the two watched reasons count together, as the PRD sentence says (PRD 12, Peringatan sederhana)', async () => {
+    await denied('SERVICE_MISMATCH', 0);
+    await denied('TOKEN_NOT_FOUND', 60);
+    await denied('SERVICE_MISMATCH', 120);
+    const { alerts } = await service.summary(AUDITOR, {});
+    expect(alerts).toEqual([
+      { requestingService: 'FRAUD', reason: 'SERVICE_MISMATCH', count: 3, windowStart: at(0) },
+    ]);
+  });
+
   it.each([
     ['two only', [0, 100], 'SERVICE_MISMATCH', 'FRAUD', 'FRAUD'],
     [
