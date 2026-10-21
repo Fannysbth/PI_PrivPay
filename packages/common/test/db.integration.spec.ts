@@ -114,6 +114,15 @@ describe('M0-05 the harness hands out the real roles of a clean database', () =>
     }
   });
 
+  it('M0-05 close can be called again without a second error', async () => {
+    // A test whose beforeEach failed still reaches its afterEach with the pools of the test before it; that second
+    // end() used to throw "Called end on pool more than once" and hide the first failure.
+    const db = await createTestDb(config, { service: 'fraud', suffix: 'm005g' });
+    await db.close();
+    await expect(db.close()).resolves.toBeUndefined();
+    await expect(db.close()).resolves.toBeUndefined();
+  });
+
   it('M0-05 recreating a database waits for a runtime-role connection that is still closing', async () => {
     // pool.end() returns before the server has removed the backend, so the next test's DROP can meet it. The
     // test admin may not terminate privpay_app sessions (WITH (FORCE) fails with 42501), so it has to wait.

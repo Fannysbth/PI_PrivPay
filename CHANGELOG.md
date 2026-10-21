@@ -73,6 +73,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 - `chk_mapping_complete`, `chk_vault_complete`, `chk_disclosure_decided`, `chk_requested_attrs` di `0001_privacy_tables.sql` (diedit di tempat: belum di-merge ke `main`). Tujuh tes baru di `schema.integration.spec.ts`. Selisih dari DDL PRD dicatat di `docs/PRD_ERRATA.md` E-29. Database lokal `privpay_privacy` yang sudah menjalankan 0001 lama harus dibuat ulang (checksum berubah).
 
+### Alat: daftar dan pembersih database tes (`pnpm db:test-databases`)
+
+- `packages/common/src/testing/test-db-cleanup.ts` dan `bin/test-databases.ts`: `list` memisahkan lima database layanan dari sisa tes (`privpay_<layanan>_test_<sufiks>`, jumlah sesi terbuka); `drop` menampilkan daftar lalu menuntut ketikan `DROP <jumlah>`, tanpa bendera yang melewati konfirmasi, dan tanpa terminal tidak pernah terjawab. Penjaga `classifyDatabase` memakai regex persis nama yang dibuat `testDatabaseName`, bukan `LIKE 'privpay_%_test_%'` (garis bawah adalah wildcard di LIKE). 35 tes unit, 5 tes integrasi (PostgreSQL asli).
+- Mutasi: penjaga dilonggarkan ke pola longgar: 8 tes unit merah; penjaga dihapus dari `dropTestDatabases`: tes integrasi merah. Catatan jujur: pada mutan kedua tes penolakan saya memuat nama `privpay_privacy` asli; database itu selamat hanya karena sesi pgAdmin superuser menghalangi `DROP ... FORCE`. Tes diubah supaya tidak pernah memuat nama database layanan asli.
+- Dua perbaikan kecil harness (`createTestDb`): `close()` kini idempoten (sebelumnya `afterEach` yang menutup pool tes sebelumnya setelah `beforeEach` gagal menambah galat "Called end on pool more than once" yang menutupi galat pertama; tes integrasi merah dulu), dan `DROP ... WITH (FORCE)` yang tetap terhalang sesi yang tak boleh diakhiri kini menjadi `TestDatabaseBusyError` yang menyebut database dan menyuruh memutus pgAdmin/psql (4 tes unit dengan `FakeDelay`, merah dulu; kode SQLSTATE `42501` tetap). `CLAUDE.md` mencatat dua aturan tes dari kejadian ini.
+- Temuan diagnosis (bukan kebocoran harness): database tes memang tidak dihapus setelah tes (rancangan M0-05), jumlahnya terbatas (29, sama dengan sufiks di kode); dua tes `packages/common` yang gagal disebabkan sesi pgAdmin pada `privpay_reconciliation_test_m005d` dan `privpay_transaction_test_m0043` (`postgres`, bukan peran tes).
+
 ### M2 gerbang 1: tinjauan keamanan
 
 - `docs/security/review-M2-gerbang1.md`: tanpa Critical atau High. Diperbaiki: `RowBinding` kini disalin privat (tidak dapat diubah dari luar), teks dengan surrogate yatim dan bagian kosong ditolak (tiga tes baru, tiga mutan terbunuh). Menunggu keputusan: N-24 (pengetatan CHECK di luar DDL PRD). Diterima: kunci berentropi rendah menjadi tanggung jawab operator.
