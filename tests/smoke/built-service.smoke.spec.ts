@@ -104,6 +104,11 @@ writeFileSync(
   join(privacySecrets, 'notification_client_secret'),
   'fake-secret-notification-0123456789abcdef\n',
 );
+// M4-02: the transaction service reads its client secret at the IdP at start, to reach Privacy, Fraud and Notification.
+writeFileSync(
+  join(privacySecrets, 'transaction_client_secret'),
+  'fake-secret-transaction-0123456789abcdef\n',
+);
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
@@ -167,6 +172,11 @@ const extraEnv = (id: string): Record<string, string> =>
                   PG_SECRETS_DIR: privacySecrets,
                   IDP_URL: 'http://127.0.0.1:9',
                   FRAUD_AMOUNT_THRESHOLD: '1000000',
+                  TX_PENDING_TIMEOUT_SECONDS: '300',
+                  PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+                  FRAUD_SERVICE_URL: 'http://127.0.0.1:9',
+                  NOTIFICATION_SERVICE_URL: 'http://127.0.0.1:9',
+                  TRANSACTION_CLIENT_SECRET_FILE: join(privacySecrets, 'transaction_client_secret'),
                 }
               : {};
 

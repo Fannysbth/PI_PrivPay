@@ -5,6 +5,19 @@ export {
   type TransactionRequest,
 } from './processor';
 export {
+  privacyStatusOf,
+  TokenExpiredError,
+  type FraudClient,
+  type FraudVerdict,
+  type NotificationClient,
+  type NotificationTemplate,
+  type PrivacyStatusClient,
+  type PrivacyTransactionStatus,
+  type SubjectReferencePort,
+  type SubjectRow,
+} from './ports';
+export { assertTransition, canTransition } from './status-machine';
+export {
   TRANSACTION_SQL,
   TransactionRepository,
   type FraudDecision,
@@ -13,3 +26,6 @@ export {
   type StoredTransaction,
   type TransactionStatus,
 } from './repository';
+export { Followups } from './followups';
+export { PendingSweeper, type PendingSweeperDeps } from './sweeper';
+export { TransactionReview, type HeldPage, type TransactionReviewDeps } from './review';

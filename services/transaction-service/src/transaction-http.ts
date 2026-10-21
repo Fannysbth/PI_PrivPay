@@ -9,7 +9,12 @@ import {
   type JwksKeys,
 } from '@privpay/common';
 import { z } from 'zod';
-import type { ProcessResult, TransactionProcessor } from './transaction';
+import type {
+  HeldPage,
+  ProcessResult,
+  TransactionProcessor,
+  TransactionReview,
+} from './transaction';
 
 const SERVICE = 'transaction-service';
 /** Spec transaction 3: only the Gateway starts a transaction (AZ-26). */
@@ -33,11 +38,28 @@ const newTransaction = z.strictObject({
   geohash: z.string().regex(GEOHASH),
 });
 
+// Spec transaction 3.2: both are optional, and anything else in the query is refused.
+const heldQuery = z.strictObject({
+  limit: z
+    .string()
+    .regex(/^[0-9]{1,3}$/)
+    .optional(),
+  cursor: z.string().min(1).max(256).optional(),
+});
+// Spec transaction 3.3: a decision and a coded reason, never free text and never who decides.
+const reviewBody = z.strictObject({
+  decision: z.enum(['APPROVE', 'REJECT']),
+  reason_code: z.enum(['CONFIRMED_BY_CUSTOMER', 'SUSPECTED_FRAUD', 'OTHER']),
+});
+const MAX_LIMIT = 200;
+const DEFAULT_LIMIT = 50;
+
 export interface TransactionHttpDeps {
   readonly clock: Clock;
   readonly issuer: string;
   readonly keys: JwksKeys;
   readonly processor: Pick<TransactionProcessor, 'process'>;
+  readonly review: Pick<TransactionReview, 'listHeld' | 'review'>;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -79,6 +101,44 @@ export class TransactionHttp {
       merchantId: input.merchant_id,
       amount: input.amount,
       geohash: input.geohash,
+    });
+  }
+
+  /**
+   * The Gateway on behalf of a fraud analyst (spec transaction 3.2 and 3.3). The role is read from the verified actor
+   * token only; the id returned is that token's subject, which is what `reviewed_by` will hold (invariant 7).
+   */
+  private async analyst(headers: AuthHeaders): Promise<string> {
+    const who = await this.caller(headers);
+    if (who.requestingService !== CALLER) throw new DomainError('POLICY_NOT_ALLOWED');
+    if (who.actor?.role !== 'fraud_analyst') throw new DomainError('FORBIDDEN_ROLE');
+    return who.actor.actorId;
+  }
+
+  /** Spec transaction 3.2. */
+  async held(headers: AuthHeaders, query: unknown): Promise<HeldPage> {
+    await this.analyst(headers);
+    const parsed = heldQuery.safeParse(query);
+    if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
+    const limit = parsed.data.limit === undefined ? DEFAULT_LIMIT : Number(parsed.data.limit);
+    if (limit < 1 || limit > MAX_LIMIT) throw new DomainError('VALIDATION_ERROR');
+    return this.deps.review.listHeld({
+      limit,
+      ...(parsed.data.cursor === undefined ? {} : { cursor: parsed.data.cursor }),
+    });
+  }
+
+  /** Spec transaction 3.3. The reason code is checked but not kept: the table has no column for it (PRD 11). */
+  async decide(headers: AuthHeaders, transactionId: string, body: unknown) {
+    const reviewedBy = await this.analyst(headers);
+    const parsed = reviewBody.safeParse(body);
+    if (!parsed.success || !TRANSACTION_ID.test(transactionId)) {
+      throw new DomainError('VALIDATION_ERROR');
+    }
+    return this.deps.review.review({
+      transactionId,
+      decision: parsed.data.decision,
+      reviewedBy,
     });
   }
 }

@@ -2,37 +2,81 @@ import 'reflect-metadata';
 import {
   Body,
   Controller,
+  Get,
+  HttpCode,
   Inject,
   Injectable,
   Module,
+  Param,
   Post,
+  Query,
   Req,
   Res,
   type OnModuleDestroy,
 } from '@nestjs/common';
 import {
   createHttpClient,
+  createLogger,
   createPool,
+  createTokenCache,
+  DomainError,
   idpJwksSource,
   JwksKeys,
+  readSecret,
   RealDelay,
   SERVICE_DBS,
   type Delay,
   type HttpClient,
+  type TokenCache,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { loadTransactionConfig } from './config';
-import { TransactionProcessor, TransactionRepository } from './transaction';
+import { z } from 'zod';
+import {
+  HttpFraudClient,
+  HttpNotificationClient,
+  HttpPrivacyClient,
+  ProposedSubjectReferences,
+} from './transaction/clients';
+import {
+  PendingSweeper,
+  TransactionProcessor,
+  TransactionRepository,
+  TransactionReview,
+  type FraudClient,
+  type NotificationClient,
+  type PrivacyStatusClient,
+  type SubjectReferencePort,
+} from './transaction';
 import { TransactionHttp } from './transaction-http';
 
 const TRANSACTION_HTTP = Symbol('TRANSACTION_HTTP');
 const OWNED_POOLS = Symbol('OWNED_POOLS');
+const PENDING_SWEEPER = Symbol('PENDING_SWEEPER');
+/** The service account of Transaction at the IdP (tools/dev-idp registry). */
+const CLIENT_ID = 'transaction';
+const tokenAnswer = z.object({
+  access_token: z.string().min(1),
+  expires_in: z.number().positive(),
+});
 
 @Controller()
 class TransactionController {
   constructor(@Inject(TRANSACTION_HTTP) private readonly transactions: TransactionHttp) {}
+
+  // Declared before any route with a path parameter, so `held` is never read as a transaction id.
+  @Get('transaction/held')
+  held(@Req() req: Request, @Query() query: unknown) {
+    return this.transactions.held(req.headers, query);
+  }
+
+  @Post('transaction/:id/review')
+  @HttpCode(200)
+  review(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.transactions.decide(req.headers, id, body);
+  }
 
   // 201 for the request that made the transaction, 200 for a replay of it (spec transaction 3.1).
   @Post('transaction')
@@ -64,6 +108,14 @@ export interface TransactionOverrides {
   readonly fetch?: typeof fetch;
   readonly pools?: { readonly app: Pool };
   readonly delay?: Delay;
+  /** Tests replace the neighbours; production builds the HTTP adapters from the configuration. */
+  readonly neighbours?: {
+    readonly subjects: SubjectReferencePort;
+    readonly fraud: FraudClient;
+    readonly notifications: NotificationClient;
+    readonly privacy: PrivacyStatusClient;
+  };
+  readonly logDestination?: { write(line: string): void };
 }
 
 /**
@@ -83,11 +135,22 @@ export function transactionModules(
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({
-      baseUrls: { idp: config.IDP_URL },
+      baseUrls: {
+        idp: config.IDP_URL,
+        'privacy-service': config.PRIVACY_SERVICE_URL,
+        'fraud-service': config.FRAUD_SERVICE_URL,
+        'notification-service': config.NOTIFICATION_SERVICE_URL,
+      },
       timeoutMs: config.HTTP_TIMEOUT_MS,
       maxRetries: config.HTTP_MAX_RETRY,
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
     });
+    const logger = createLogger({
+      service: 'transaction-service',
+      destination: overrides.logDestination,
+    });
+    const repository = new TransactionRepository(app);
+    const neighbours = overrides.neighbours ?? httpNeighbours(http, env, clock);
     const transactions = new TransactionHttp({
       clock,
       issuer: config.IDP_ISSUER,
@@ -98,12 +161,23 @@ export function transactionModules(
         source: idpJwksSource(http),
       }),
       processor: new TransactionProcessor({
-        repository: new TransactionRepository(app),
+        repository,
         clock,
         delay: overrides.delay ?? new RealDelay(),
         fraudAmountThreshold: config.FRAUD_AMOUNT_THRESHOLD,
         waitMs: config.HTTP_TIMEOUT_MS,
+        ...neighbours,
+        logger,
       }),
+      review: new TransactionReview({ repository, clock, ...neighbours, logger }),
+    });
+    // M4-03: built and validated at start; running it on a timer waits for the process lifecycle, like RetentionJob.
+    const sweeper = new PendingSweeper({
+      repository,
+      clock,
+      privacy: neighbours.privacy,
+      timeoutSeconds: config.TX_PENDING_TIMEOUT_SECONDS,
+      logger,
     });
     return [
       {
@@ -111,10 +185,56 @@ export function transactionModules(
         controllers: [TransactionController],
         providers: [
           { provide: TRANSACTION_HTTP, useValue: transactions },
+          { provide: PENDING_SWEEPER, useValue: sweeper },
           { provide: OWNED_POOLS, useValue: owned },
           PoolLifecycle,
         ],
       },
     ];
+  };
+}
+
+/** One cached service token per service it calls (NFR-21); the secret never leaves this closure. */
+function httpNeighbours(
+  http: HttpClient,
+  env: Readonly<Record<string, string | undefined>>,
+  clock: Parameters<typeof createTokenCache>[0]['clock'],
+) {
+  const clientSecret = readSecret(env, 'TRANSACTION_CLIENT_SECRET');
+  const tokenFor = (audience: string): TokenCache =>
+    createTokenCache({
+      clock,
+      fetchToken: async () => {
+        const answer = await http.request({
+          service: 'idp',
+          method: 'POST',
+          path: '/token',
+          body: {
+            grant_type: 'client_credentials',
+            client_id: CLIENT_ID,
+            client_secret: clientSecret,
+            audience: [audience],
+          },
+          idempotent: true,
+        });
+        const parsed = tokenAnswer.safeParse(answer.body);
+        if (answer.status !== 200 || !parsed.success) {
+          throw new DomainError('SERVICE_UNAVAILABLE', 'token');
+        }
+        return {
+          token: parsed.data.access_token,
+          expiresAt: new Date(clock.now().getTime() + parsed.data.expires_in * 1000),
+        };
+      },
+    });
+  const privacy = new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') });
+  return {
+    subjects: new ProposedSubjectReferences(privacy),
+    privacy,
+    fraud: new HttpFraudClient({ http, serviceToken: tokenFor('fraud-service') }),
+    notifications: new HttpNotificationClient({
+      http,
+      serviceToken: tokenFor('notification-service'),
+    }),
   };
 }
