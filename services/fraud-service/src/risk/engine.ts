@@ -82,6 +82,9 @@ export class RiskEngine {
     };
 
     const priorCount = history.length;
+    // Read before anything else, so a table that is wrong stops every assessment and not only those after the first.
+    const averageRule = byName.get(RULES.average);
+    const multiplier = averageRule?.active === true ? multiplierOf(averageRule) : 0;
     apply(RULES.amount, () => input.amount >= config.amountThreshold);
     apply(
       RULES.hour,
@@ -97,7 +100,7 @@ export class RiskEngine {
       avgPriorAmount = Math.round((total / priorCount) * 100) / 100;
       apply(RULES.average, () => {
         // amount > multiplier x (total / count), without the division: whole rupiah stay exact.
-        return input.amount * priorCount > multiplierOf(byName.get(RULES.average)) * total;
+        return input.amount * priorCount > multiplier * total;
       });
       apply(
         RULES.location,

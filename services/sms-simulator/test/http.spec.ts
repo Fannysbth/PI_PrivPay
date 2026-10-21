@@ -137,6 +137,17 @@ describe('M4-05 AZ-41 POST /sms', () => {
   });
 });
 
+describe('M4-05 NFR-12 the timeout and the retries of the simulator come from the environment', () => {
+  it.each([
+    ['HTTP_TIMEOUT_MS', '0'],
+    ['HTTP_TIMEOUT_MS', 'soon'],
+    ['HTTP_MAX_RETRY', '3'],
+    ['HTTP_MAX_RETRY', '-1'],
+  ])('M4-05 NFR-12 %s=%s stops the start and names only the variable', async (name, value) => {
+    await expect(start({ [name]: value })).rejects.toThrow(name);
+  });
+});
+
 describe('M4-05 AZ-42 the test endpoints exist only in the test environment', () => {
   // The platform answers every route that does not exist with its uniform error, 422 VALIDATION_ERROR (N-30): the spec
   // says 404, but the eight client codes have none. What counts is that the route is absent and gives nothing back.

@@ -141,8 +141,8 @@ export function smsSimulatorModules(
     const config = loadSmsSimulatorConfig(env);
     const http: HttpClient = createHttpClient({
       baseUrls: { idp: config.IDP_URL },
-      timeoutMs: 3000,
-      maxRetries: 2,
+      timeoutMs: config.HTTP_TIMEOUT_MS,
+      maxRetries: config.HTTP_MAX_RETRY,
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
     });
     const store = new MessageStore();

@@ -29,6 +29,11 @@ export const fraudConfigSchema = z
   .refine((config) => config.FRAUD_HOLD_THRESHOLD < config.FRAUD_BLOCK_THRESHOLD, {
     path: ['FRAUD_HOLD_THRESHOLD'],
     message: 'must be under FRAUD_BLOCK_THRESHOLD',
+  })
+  // The night runs from START round midnight to END (22 to 6). Any other order would fire the rule for every hour.
+  .refine((config) => config.FRAUD_ODD_HOUR_END < config.FRAUD_ODD_HOUR_START, {
+    path: ['FRAUD_ODD_HOUR_END'],
+    message: 'must be under FRAUD_ODD_HOUR_START',
   });
 export type FraudConfig = z.output<typeof fraudConfigSchema>;
 

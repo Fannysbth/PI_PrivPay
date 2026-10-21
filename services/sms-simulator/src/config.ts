@@ -1,4 +1,4 @@
-import { idpConfigShape, loadConfig, type EnvSource } from '@privpay/common';
+import { httpConfigSchema, idpConfigShape, loadConfig, type EnvSource } from '@privpay/common';
 import { z } from 'zod';
 
 // Only the exact word turns a switch on: "TRUE", "1" or an empty value leave it off (a test endpoint must be asked for).
@@ -12,6 +12,7 @@ const flag = z
  * the endpoints that read the messages exist only in the test environment, and the failure is only injected there.
  */
 export const smsSimulatorConfigSchema = z.object({
+  ...httpConfigSchema.shape,
   ...idpConfigShape,
   SMS_SIMULATOR_TEST_ENDPOINTS: flag,
   SMS_SIMULATOR_FAIL: flag,

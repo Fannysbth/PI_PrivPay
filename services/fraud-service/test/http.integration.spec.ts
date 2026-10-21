@@ -222,6 +222,21 @@ describe('M4-04 K-20 the start needs its settings', () => {
     ).rejects.toThrow();
   });
 
+  it.each([
+    ['swapped (start 6, end 22)', { FRAUD_ODD_HOUR_START: '6', FRAUD_ODD_HOUR_END: '22' }],
+    ['empty (start 22, end 22)', { FRAUD_ODD_HOUR_START: '22', FRAUD_ODD_HOUR_END: '22' }],
+  ])(
+    'M4-04 K-20 a night window that is %s would fire for every hour and stops the start',
+    async (_name, env) => {
+      await expect(
+        createServiceApp(
+          { service: 'fraud-service', modules: fraudModules({ pools: { app: db.app } }) },
+          fraudEnv(env),
+        ),
+      ).rejects.toThrow('FRAUD_ODD_HOUR');
+    },
+  );
+
   it('M4-04 K-20 an hour outside 0..23 stops the start', async () => {
     await expect(
       createServiceApp(

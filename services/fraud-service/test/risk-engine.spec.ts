@@ -220,6 +220,18 @@ describe('M4-04 FR-37 the score and the decision', () => {
     expect(gone.skipped).toContain('ODD_HOUR_OUTSIDE_06_22');
   });
 
+  it('M4-04 K-20 a broken multiplier stops the assessment at a cold start too, not only once a history exists', () => {
+    const broken = RULES.map((row) =>
+      row.rule === 'AMOUNT_OVER_3X_AVG' ? { ...row, parameter: '0' } : row,
+    );
+    expect(() => evaluate({}, [], broken)).toThrow(RangeError);
+    // A rule that is switched off is not read, so its parameter cannot stop anything.
+    const off = broken.map((row) =>
+      row.rule === 'AMOUNT_OVER_3X_AVG' ? { ...row, active: false } : row,
+    );
+    expect(() => evaluate({}, [], off)).not.toThrow();
+  });
+
   it('M4-04 K-20 a multiplier that is not a positive number stops the assessment instead of guessing', () => {
     const broken = RULES.map((row) =>
       row.rule === 'AMOUNT_OVER_3X_AVG' ? { ...row, parameter: 'three' } : row,
