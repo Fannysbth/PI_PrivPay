@@ -234,7 +234,8 @@ export interface Harness {
 /** The gateway app wired to the fake network, a fake clock and a throwaway secrets file. */
 export async function startGateway(
   env: Record<string, string> = {},
-  options: { routes?: readonly Route[] } = {},
+  // `wrapFetch` lets a test send some hosts to a real service (an integration test) and the rest to the fake network.
+  options: { routes?: readonly Route[]; wrapFetch?: (inner: typeof fetch) => typeof fetch } = {},
 ): Promise<Harness> {
   const clock = new FakeClock(START);
   const network = new FakeNetwork(clock);
@@ -246,7 +247,7 @@ export async function startGateway(
     {
       service: 'gateway',
       modules: gatewayModules({
-        fetch: network.fetch,
+        fetch: options.wrapFetch === undefined ? network.fetch : options.wrapFetch(network.fetch),
         ...(options.routes === undefined ? {} : { routes: options.routes }),
       }),
     },

@@ -1,0 +1,36 @@
+{
+  "name": "FR-02 FR-03 a payment becomes tokens and business fields only; nik, nama, email are dropped",
+  "route": "transaction",
+  "canary": 60,
+  "claims": { "customer_id": "{{customer_id}}" },
+  "idempotency_key": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "transaction_id": "TX-1760000000000001",
+  "body": {
+    "source_account": "{{rekening}}",
+    "merchant_id": "MRC-001",
+    "amount": 150000,
+    "geohash": "qqguy",
+    "nik": "{{nik}}",
+    "nama": "{{nama}}",
+    "email": "{{email}}"
+  },
+  "privacy": {
+    "pseudonyms": {
+      "CUSTOMER:{{customer_id}}": "PSEU-AAAA0001",
+      "ACCOUNT:{{rekening}}": "PSEU-BBBB0002"
+    },
+    "errors": {}
+  },
+  "expect": {
+    "outbound": {
+      "transaction_id": "TX-1760000000000001",
+      "idempotency_key": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "customer_token": "PSEU-AAAA0001",
+      "account_token": "PSEU-BBBB0002",
+      "merchant_id": "MRC-001",
+      "amount": 150000,
+      "geohash": "qqguy"
+    },
+    "privacy_calls": 2
+  }
+}

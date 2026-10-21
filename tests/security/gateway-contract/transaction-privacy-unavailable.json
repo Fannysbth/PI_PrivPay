@@ -1,0 +1,19 @@
+{
+  "name": "FR-38 NFR-11 TK-16 Privacy unavailable for one subject: SERVICE_UNAVAILABLE, nothing to forward",
+  "route": "transaction",
+  "canary": 61,
+  "claims": { "customer_id": "{{customer_id}}" },
+  "idempotency_key": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
+  "transaction_id": "TX-1760000000000002",
+  "body": {
+    "source_account": "{{rekening}}",
+    "merchant_id": "MRC-001",
+    "amount": 150000,
+    "geohash": "qqguy"
+  },
+  "privacy": {
+    "pseudonyms": { "CUSTOMER:{{customer_id}}": "PSEU-AAAA0001" },
+    "errors": { "ACCOUNT:{{rekening}}": "SERVICE_UNAVAILABLE" }
+  },
+  "expect": { "error": "SERVICE_UNAVAILABLE", "privacy_calls": 2 }
+}

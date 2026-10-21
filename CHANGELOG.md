@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-11 modul `Tokenizer` dan rute tokenisasi (tiket inti, Gerbang 3)
+
+- `services/gateway/src/tokenizer/`: `Tokenizer` murni (tanpa NestJS; payload keluar dibangun dari daftar putih), `PrivacyPort` dengan adapter HTTP (`HttpPrivacyPort`, `POST /pseudonymize` bentuk 1, idempoten sehingga boleh di-retry; 5xx, timeout, dan jawaban yang bukan pseudonym menjadi 503) dan adapter palsu (`FakePrivacyPort`), `TransactionIdGenerator` (K-17), skema zod bersama dengan tabel rute (`schemas.ts`).
+- Rute baru `TOKENIZING_ROUTES` (AZ-03 `POST /transaction` untuk nasabah, wajib `Idempotency-Key` UUID; AZ-09 `POST /settlement/report` untuk bank, diteruskan ke `/reconciliation/settlement-report`) dan jenis autentikasi hilir `gateway-token` (token layanan saja; token nasabah dan bank tidak pernah diteruskan). `customer_id` hanya dari klaim token. Privacy mati, timeout, atau 5xx: 503 dan tidak ada panggilan ke Transaction atau Reconciliation; penolakan Privacy: `ACCESS_DENIED`.
+- Vektor kontrak `tests/security/gateway-contract/*.json` (6 berkas; nilai kenari diisi saat tes dari `canary`, tidak ditulis tangan) dan pelarinya `gateway-contract.spec.ts`; plugin Lua nanti harus lulus berkas yang sama (DK-02).
+- Tes M1-03 yang menyatakan `POST /transaction` dan `POST /settlement/report` tidak ada disesuaikan (kini rute); fixture rute buatan tangan mendapat tiga bidang baru. Tes integrasi dengan Privacy dan basis data asli (`gateway-privacy.integration.spec.ts`): token yang diterima Transaction sama dengan baris di basis data, nol kenari di payload hilir, log gateway, dan dump Privacy; Privacy dimatikan: 503 tanpa panggilan hilir.
+- **Selisih/ambiguitas, lihat `docs/OPEN_QUESTIONS.md` N-27:** batas badan settlement 64 KiB tidak memuat 5.000 item; diterapkan apa adanya. Bagian modul `RegistrationFlow` dan rute `/register`, `/notification/register` bukan bagian tiket ini (M4-08). Tidak ada dependensi baru.
+
 ### M2-10 pemindai kenari v1 (Gerbang 3)
 
 - `tests/pii-scan/`: `buildCanary(i)` (nilai kenari K-24 dari indeks, enam atribut, unik, tidak saling memuat), `scanText`/`assertNoFindings` (pencocokan persis, juga bentuk percent-decoded; keluaran hanya `{atribut, lokasi, layanan}`), `ObservingProxy` (meneruskan lalu lintas, memindai URL, header, dan kedua body di memori; tanpa `node:fs`, dijaga tes), `scanDatabase` (semua kolom semua tabel schema public sebagai peran pemilik, bytea dibaca per byte; lokasi `tabel.kolom`).

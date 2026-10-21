@@ -1,15 +1,21 @@
 import type { HumanRole } from '@privpay/common';
 import { z } from 'zod';
+import { settlementBody, transactionBody } from './tokenizer/schemas';
 
 export type Upstream = 'privacy-service' | 'transaction-service' | 'reconciliation-service';
 
 /**
  * How the call goes on (gateway spec 3):
  * - `gateway-token+actor`: `Authorization` is the gateway's own service token, `X-Actor-Token` is the person's token;
- * - `human-token`: the person's token is passed on as `Authorization` (ADR-0007 item 2).
+ * - `human-token`: the person's token is passed on as `Authorization` (ADR-0007 item 2);
+ * - `gateway-token`: the gateway's own service token alone, for the calls of customers and of the bank, whose token
+ *   (a customer's carries `customer_id`) is never passed on.
  * A customer's token is never passed on, whatever the route.
  */
-export type DownstreamAuth = 'gateway-token+actor' | 'human-token';
+export type DownstreamAuth = 'gateway-token+actor' | 'human-token' | 'gateway-token';
+
+/** Who may call a route: the people of the admin console (by role), a customer, or the bank. */
+export type CallerKind = 'person' | 'customer' | 'bank';
 
 export interface Route {
   /** The AZ id of docs/spec/endpoints.md. */
@@ -20,6 +26,12 @@ export interface Route {
   readonly params: Readonly<Record<string, RegExp>>;
   /** Who may call: people of the admin console, by role. The service re-checks (defence in depth). */
   readonly who: readonly HumanRole[];
+  /** A customer or bank route lists no role. */
+  readonly caller: CallerKind;
+  /** Set on the routes whose identifiers are replaced by tokens before the call goes on (gateway spec 4, 5). */
+  readonly tokenize: 'transaction' | 'settlement' | null;
+  /** The route needs an `Idempotency-Key` header (a UUID). */
+  readonly idempotencyKey: boolean;
   readonly upstream: Upstream;
   /** Path on the upstream, with the same `{name}` placeholders. */
   readonly upstreamPath: string;
@@ -117,20 +129,35 @@ const query = {
 
 const forward = (
   route: Pick<Route, 'id' | 'method' | 'pattern' | 'who' | 'upstream' | 'auth'> &
-    Partial<Pick<Route, 'params' | 'body' | 'query' | 'upstreamPath'>>,
+    Partial<
+      Pick<
+        Route,
+        | 'params'
+        | 'body'
+        | 'query'
+        | 'upstreamPath'
+        | 'caller'
+        | 'tokenize'
+        | 'idempotencyKey'
+        | 'maxBodyBytes'
+      >
+    >,
 ): Route => ({
   params: {},
   body: null,
   query: null,
   upstreamPath: route.pattern,
+  caller: 'person',
+  tokenize: null,
+  idempotencyKey: false,
   maxBodyBytes: SIXTEEN_KIB,
   ...route,
 });
 
 /**
- * The only routes the gateway serves in this ticket: the operations of people (docs/spec/endpoints.md AZ-04..AZ-08,
- * AZ-10..AZ-17). The routes that tokenize identity (register, notification, transaction, settlement) are added by the
- * tickets that build their tokenization; until then they do not exist here, so nothing raw can be forwarded.
+ * The operations of people of the admin console (docs/spec/endpoints.md AZ-04..AZ-08, AZ-10..AZ-17). The routes that
+ * tokenize identity are in TOKENIZING_ROUTES; the registration and notification ones are added by the tickets that
+ * build them, so until then they do not exist and nothing raw can be forwarded.
  */
 export const ROUTES: readonly Route[] = [
   forward({
@@ -257,6 +284,42 @@ export const ROUTES: readonly Route[] = [
   }),
 ];
 
+/**
+ * The routes that replace raw identifiers by tokens (gateway spec 3 to 5). They are served only with a tokenizer
+ * behind them, which fails closed. The upstream path is where the tokenized payload goes, not the client's path.
+ */
+export const TOKENIZING_ROUTES: readonly Route[] = [
+  forward({
+    id: 'AZ-03',
+    method: 'POST',
+    pattern: '/transaction',
+    who: [],
+    caller: 'customer',
+    tokenize: 'transaction',
+    idempotencyKey: true,
+    upstream: 'transaction-service',
+    auth: 'gateway-token',
+    body: transactionBody,
+  }),
+  forward({
+    id: 'AZ-09',
+    method: 'POST',
+    pattern: '/settlement/report',
+    who: [],
+    caller: 'bank',
+    tokenize: 'settlement',
+    upstream: 'reconciliation-service',
+    upstreamPath: '/reconciliation/settlement-report',
+    auth: 'gateway-token',
+    body: settlementBody,
+    // Gateway spec 3: 64 KiB for settlement.
+    maxBodyBytes: 64 * 1024,
+  }),
+];
+
+/** Every route the gateway serves. `ROUTES` alone is the part for people of the admin console. */
+export const ALL_ROUTES: readonly Route[] = [...ROUTES, ...TOKENIZING_ROUTES];
+
 export interface RouteMatch {
   readonly route: Route;
   readonly params: Readonly<Record<string, string>>;
@@ -264,7 +327,7 @@ export interface RouteMatch {
 
 /** The one list of routes (gateway spec 2). A path or method not in it does not exist. */
 export class RouteTable {
-  constructor(private readonly routes: readonly Route[] = ROUTES) {}
+  constructor(private readonly routes: readonly Route[] = ALL_ROUTES) {}
 
   /** `path` is the path alone, without a query string. */
   match(method: string, path: string): RouteMatch | undefined {

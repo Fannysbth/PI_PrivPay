@@ -1,0 +1,14 @@
+{
+  "name": "TF-13 one invalid item: VALIDATION_ERROR and not one token is asked for",
+  "route": "settlement",
+  "canary": 65,
+  "body": {
+    "batch_date": "2026-10-18",
+    "items": [
+      { "account_number": "{{rekening}}", "amount": 1500, "bank_reference": "BANK-REF-1" },
+      { "account_number": "not-an-account", "amount": 2500, "bank_reference": "BANK-REF-2" }
+    ]
+  },
+  "privacy": { "pseudonyms": {}, "errors": {} },
+  "expect": { "error": "VALIDATION_ERROR", "privacy_calls": 0 }
+}
