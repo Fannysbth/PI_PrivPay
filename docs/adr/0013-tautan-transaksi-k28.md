@@ -24,4 +24,4 @@ Kunci pakai ulang token aktif tidak memuat `transaction_id` (PRD 6.2), jadi bari
 - Selisih dari DDL PRD 11 dicatat di `PRD_ERRATA.md` E-30. Tabel 1/2/3/5/6, panjang token, tiga kunci, dan TTL tidak berubah.
 - Migrasi `0003_transaction_link.sql` maju-saja; tanpa pengisian awal (belum ada data nyata).
 - Permintaan ulang dengan transaction id yang sama setelah token pertamanya kedaluwarsa, lewat `POST /pseudonymize` bentuk 1, ditolak; jalurnya re-issue. Transaction Service (M4) harus memakainya.
-- `revoke_subject` (M3-02) wajib ikut mengosongkan atau menghapus tautan baris yang dikosongkannya.
+- `revoke_subject` (M3-02) wajib ikut mengosongkan atau menghapus tautan baris yang dikosongkannya. Pemutusan akses identitas oleh `revoke_subject` terjadi lewat brankas yang dikosongkan dan status `revoked` pada token, bukan lewat penghapusan tautan transaksi: baris mapping tidak dikosongkan di sana, sehingga tautannya tetap dan sumber `revoked` tetap terbaca `REVOKED` (K-29). Tautan hanya dihapus bersama baris yang dikosongkan retensi.
