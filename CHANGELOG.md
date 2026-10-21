@@ -4,6 +4,12 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M3-01 dan M3-02 (Gerbang 1 M3)
+
+- M3-01 `POST /resolve-domain` (`TokenService.resolveDomain`): hanya `NOTIFICATION`; gerbang berurutan caller, token, kepemilikan, purpose, status, identitas; P5 dicari lewat `subject_lookup` tanpa mendekripsi subjek; satu audit `RESOLVE_NOTIF_DOMAIN`. AZ-21.
+- M3-02 `POST /pseudonym/{p}/revoke` dan `POST /subject/revoke` (`RevocationService`, `IdentityVault.purge`): peran `admin` lewat `ADMIN_CONSOLE`, idempoten, token `expired` dapat dicabut, satu audit per token dan `PURGE_IDENTITY`, tanpa penghapusan mapping. `AuditedOperation` menerima beberapa baris SUCCESS. AZ-16, AZ-17, TK-04, TK-17 di lapis layanan dan Gateway.
+- Gerbang: dua putaran hijau (unit 1027, integrasi 377, smoke 20, audit dan gitleaks bersih).
+
 ### M2-11 modul `Tokenizer` dan rute tokenisasi (tiket inti, Gerbang 3)
 
 - `services/gateway/src/tokenizer/`: `Tokenizer` murni (tanpa NestJS; payload keluar dibangun dari daftar putih), `PrivacyPort` dengan adapter HTTP (`HttpPrivacyPort`, `POST /pseudonymize` bentuk 1, idempoten sehingga boleh di-retry; 5xx, timeout, dan jawaban yang bukan pseudonym menjadi 503) dan adapter palsu (`FakePrivacyPort`), `TransactionIdGenerator` (K-17), skema zod bersama dengan tabel rute (`schemas.ts`).
