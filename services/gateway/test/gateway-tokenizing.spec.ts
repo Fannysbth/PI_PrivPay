@@ -277,9 +277,27 @@ describe('M2-11 AZ-09 POST /settlement/report', () => {
     expect(downstream()).toBe(0);
   });
 
+  it('M2-11 N-27 the largest report (500 worst-case items) fits the 64 KiB limit; 501 items is 422', async () => {
+    const worst = (n: number): object => ({
+      account_number: String(10 ** 19 + n),
+      amount: Number.MAX_SAFE_INTEGER,
+      bank_reference: 'R'.repeat(32),
+    });
+    const full = settlement(Array.from({ length: 500 }, (_, n) => worst(n)));
+    expect(Buffer.byteLength(JSON.stringify(full))).toBeLessThan(64 * 1024);
+    expect((await report(gateway.tokens.bank(), full)).status).toBe(202);
+    const over = settlement(Array.from({ length: 501 }, (_, n) => worst(n)));
+    expect((await report(gateway.tokens.bank(), over)).status).toBe(422);
+  });
+
   it('M2-11 K-12 a report over 64 KiB is 422 and nothing goes downstream', async () => {
-    const many = Array.from({ length: 1500 }, (_, n) => entry(n));
-    expect((await report(gateway.tokens.bank(), settlement(many))).status).toBe(422);
+    // Small once parsed, large on the wire: the declared length is what the route limit is checked against.
+    const padded = await server()
+      .post('/settlement/report')
+      .set('authorization', `Bearer ${gateway.tokens.bank()}`)
+      .type('json')
+      .send(`${JSON.stringify(settlement([entry(1)]))}${' '.repeat(70_000)}`);
+    expect(padded.status).toBe(422);
     expect(downstream()).toBe(0);
   });
 

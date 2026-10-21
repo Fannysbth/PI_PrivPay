@@ -130,10 +130,19 @@ describe('M2-08 POST /identity vault', () => {
     expect(cipher.decrypt(row.hp_enc, vaultBinding('hp', row.id))).toBe('081299999999');
   });
 
-  it('M2-08 K-10 two parallel first calls leave one row', async () => {
-    const results = await Promise.all([store(), store()]);
+  it('M2-08 K-10 N-25 eight parallel first calls for one customer leave one row that opens, and one is created', async () => {
+    const results = await Promise.all(Array.from({ length: 8 }, () => store()));
     expect(results.filter((result) => result.created)).toHaveLength(1);
-    expect(await rows()).toHaveLength(1);
+    const all = await rows();
+    expect(all).toHaveLength(1);
+    const [row] = all;
+    if (row === undefined) throw new Error('one vault row');
+    // Whichever call wrote last, the blobs are bound to the one row id.
+    expect(cipher.decrypt(row.nik_enc, vaultBinding('nik', row.id))).toBe(PERSON.nik);
+    expect(cipher.decrypt(row.customer_id_enc, vaultBinding('customer_id', row.id))).toBe(
+      PERSON.customerId,
+    );
+    expect(await auditRows()).toHaveLength(8);
   });
 
   it('M2-08 T-16 a ciphertext moved to another customer or column is refused when read', async () => {

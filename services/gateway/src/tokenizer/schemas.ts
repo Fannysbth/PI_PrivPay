@@ -31,6 +31,12 @@ export const transactionBody = z.strictObject({
 });
 export type TransactionBody = z.output<typeof transactionBody>;
 
+/**
+ * N-27: the largest report that always fits the 64 KiB body limit of the route. An item is at most about 120 bytes
+ * of JSON (20-digit account, 16-digit amount, 32-character reference), so 500 items are at most about 60 KB.
+ */
+export const MAX_SETTLEMENT_ITEMS = 500;
+
 /** Settlement: the whole report is checked before a single token is asked for (FR-32, TF-13). */
 export const settlementBody = z.strictObject({
   batch_date: z.string().regex(ISO_DATE).refine(isRealDate),
@@ -43,6 +49,6 @@ export const settlementBody = z.strictObject({
       }),
     )
     .min(1)
-    .max(5000),
+    .max(MAX_SETTLEMENT_ITEMS),
 });
 export type SettlementBody = z.output<typeof settlementBody>;

@@ -174,7 +174,7 @@ describe('M2-11 Tokenizer: POST /settlement/report', () => {
     ['amount zero', batch([item(1), { ...item(2), amount: 0 }])],
     ['bank reference', batch([{ ...item(1), bank_reference: 'lower case' }])],
     ['unknown field', batch([{ ...item(1), extra: true }])],
-    ['too many items', batch(Array.from({ length: 5001 }, (_, n) => item(n % 1000)))],
+    ['too many items', batch(Array.from({ length: 501 }, (_, n) => item(n % 1000)))],
   ])('M2-11 TF-13 %s is VALIDATION_ERROR and no token is asked for', async (_name, payload) => {
     await expect(settle(payload)).rejects.toMatchObject({ reason: 'VALIDATION_ERROR' });
     expect(privacy.calls).toHaveLength(0);
