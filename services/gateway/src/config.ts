@@ -1,4 +1,10 @@
-import { httpConfigSchema, loadConfig, readSecret, type EnvSource } from '@privpay/common';
+import {
+  httpConfigSchema,
+  idpConfigShape,
+  loadConfig,
+  readSecret,
+  type EnvSource,
+} from '@privpay/common';
 import { z } from 'zod';
 
 // Addresses of the other processes come from configuration only (API7): the client never names a URL.
@@ -10,8 +16,7 @@ const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname })
  */
 export const gatewayConfigSchema = z.object({
   ...httpConfigSchema.shape,
-  IDP_URL: serviceUrl,
-  IDP_ISSUER: z.string().min(1).max(128).default('privpay-dev-idp'),
+  ...idpConfigShape,
   PRIVACY_SERVICE_URL: serviceUrl,
   TRANSACTION_SERVICE_URL: serviceUrl,
   RECONCILIATION_SERVICE_URL: serviceUrl,
@@ -20,10 +25,6 @@ export const gatewayConfigSchema = z.object({
     .default('true')
     .transform((value) => value === 'true'),
   RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(100),
-  /** Minimum seconds between two reloads of the issuer's keys caused by an unknown key id. */
-  JWKS_REFRESH_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(30),
-  /** Keys older than this are reloaded, so a key the IdP withdrew stops being trusted (FR-01). */
-  JWKS_MAX_AGE_SECONDS: z.coerce.number().int().min(30).default(300),
 });
 export type GatewayConfig = z.output<typeof gatewayConfigSchema>;
 

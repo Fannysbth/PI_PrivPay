@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from 'node:crypto';
-import { DomainError, FakeClock } from '@privpay/common';
+import { DomainError, FakeClock } from '../src';
 import { JwksKeys, type JwksSource } from '../src/jwks';
 
 // Public keys the way the dev IdP publishes them; made for the run.

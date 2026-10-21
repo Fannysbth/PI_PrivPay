@@ -3,6 +3,8 @@ import { All, Controller, Inject, Module, Req, Res } from '@nestjs/common';
 import {
   createHttpClient,
   createTokenCache,
+  idpJwksSource,
+  JwksKeys,
   DomainError,
   type HttpClient,
   type TokenCache,
@@ -13,7 +15,6 @@ import { z } from 'zod';
 import { loadGatewayConfig } from './config';
 import { ErrorMasker } from './error-masker';
 import { Gateway } from './gateway';
-import { JwksKeys } from './jwks';
 import { RateLimiter } from './rate-limiter';
 import { RouteTable, type Route, type Upstream } from './routes';
 
@@ -135,18 +136,7 @@ export function gatewayModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: {
-          fetch: async () => {
-            const answer = await http.request({
-              service: 'idp',
-              method: 'GET',
-              path: '/.well-known/jwks.json',
-              idempotent: true,
-            });
-            if (answer.status !== 200) throw new DomainError('SERVICE_UNAVAILABLE', 'jwks');
-            return answer.body;
-          },
-        },
+        source: idpJwksSource(http),
       }),
       http,
       masker: new ErrorMasker(),

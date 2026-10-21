@@ -10,4 +10,5 @@ export * from './logger';
 export * from './token-cache';
 export * from './safe-equal';
 export * from './jwt';
+export * from './jwks';
 export * from './authenticate';
