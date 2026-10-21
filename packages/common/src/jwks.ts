@@ -1,6 +1,38 @@
 import { createPublicKey, type KeyObject } from 'node:crypto';
-import { DomainError, type Clock } from '@privpay/common';
+import type { Clock } from './clock';
+import { DomainError } from './errors';
+import type { HttpClient } from './http';
 import { z } from 'zod';
+
+/**
+ * What a service reads to trust the issuer (FR-01). Shared so the gateway and the privacy service cannot drift apart
+ * on how long a withdrawn key stays trusted.
+ */
+export const idpConfigShape = {
+  // Addresses of the other processes come from configuration only (API7): the client never names a URL.
+  IDP_URL: z.url({ protocol: /^https?$/, hostname: z.regexes.hostname }),
+  IDP_ISSUER: z.string().min(1).max(128).default('privpay-dev-idp'),
+  /** Minimum seconds between two reloads of the issuer's keys caused by an unknown key id. */
+  JWKS_REFRESH_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(30),
+  /** Keys older than this are reloaded, so a key the IdP withdrew stops being trusted (FR-01). */
+  JWKS_MAX_AGE_SECONDS: z.coerce.number().int().min(30).default(300),
+};
+
+/** The IdP's JWKS over the shared HTTP client; `http` must know a base URL named `idp`. */
+export function idpJwksSource(http: HttpClient): JwksSource {
+  return {
+    fetch: async () => {
+      const answer = await http.request({
+        service: 'idp',
+        method: 'GET',
+        path: '/.well-known/jwks.json',
+        idempotent: true,
+      });
+      if (answer.status !== 200) throw new DomainError('SERVICE_UNAVAILABLE', 'jwks');
+      return answer.body;
+    },
+  };
+}
 
 /** Where the issuer's public keys come from; the HTTP adapter is in the module, a fake in the tests. */
 export interface JwksSource {

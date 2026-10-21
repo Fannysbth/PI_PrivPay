@@ -5,28 +5,42 @@ import { SERVICE_CLIENTS } from '../../tools/dev-idp/src/registry';
 
 const root = join(__dirname, '..', '..');
 
+// M0-06 guard, per service. A service may depend on @privpay/common and on nothing else, except the packages named
+// here, each one already in the lockfile at the version @privpay/common uses (MIT; reason: HTTP controllers and
+// request validation). A new entry needs a reason in CHANGELOG and a clean `pnpm audit --prod`.
+const HTTP_LAYER = ['@nestjs/common', '@privpay/common', 'reflect-metadata', 'zod'];
+const ALLOWED_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
+  gateway: HTTP_LAYER,
+  'privacy-service': HTTP_LAYER,
+};
+
 describe.each(SERVICE_IDS)('M0-06 %s is only the shared bootstrap', (id) => {
   it('M0-06 main.ts does nothing but call runService with its own name (no duplicated skeleton)', () => {
     const main = readFileSync(join(root, 'services', id, 'src', 'main.ts'), 'utf8').replace(
       /\r\n/g,
       '\n',
     );
-    // The gateway adds its own module (routes, rate limit, keys); every other service is the bare bootstrap.
+    // The gateway and the privacy service add their own module (routes, keys, pools); every other service is the bare
+    // bootstrap.
     expect(main).toBe(
       id === 'gateway'
         ? "import { runService } from '@privpay/common/nest';\nimport { gatewayModules } from './gateway.module';\n\nvoid runService({ service: 'gateway', modules: gatewayModules() });\n"
-        : `import { runService } from '@privpay/common/nest';\n\nvoid runService({ service: '${id}' });\n`,
+        : id === 'privacy-service'
+          ? "import { runService } from '@privpay/common/nest';\nimport { privacyModules } from './privacy.module';\n\nvoid runService({ service: 'privacy-service', modules: privacyModules() });\n"
+          : `import { runService } from '@privpay/common/nest';\n\nvoid runService({ service: '${id}' });\n`,
     );
   });
 
-  it('M0-06 the package depends on @privpay/common, and only the gateway on more', () => {
+  it('M0-06 the package depends on @privpay/common and on nothing beyond its own allowlist', () => {
     const pkg = JSON.parse(readFileSync(join(root, 'services', id, 'package.json'), 'utf8')) as {
       name: string;
       dependencies: Record<string, string>;
     };
     expect(pkg.name).toBe(`@privpay/${id}`);
     expect(pkg.dependencies['@privpay/common']).toBe('workspace:*');
-    if (id !== 'gateway') expect(Object.keys(pkg.dependencies)).toEqual(['@privpay/common']);
+    expect(Object.keys(pkg.dependencies).sort()).toEqual(
+      [...(ALLOWED_DEPENDENCIES[id] ?? ['@privpay/common'])].sort(),
+    );
   });
 });
 

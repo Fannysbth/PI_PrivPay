@@ -66,14 +66,26 @@ const waitForHealth = async (port: number, running: Running): Promise<unknown> =
   throw new Error(`service did not answer /health. output so far:\n${running.output()}`);
 };
 
-/** The gateway needs the addresses of what it calls and its client secret file; the other services need nothing more. */
+/** The gateway needs the addresses of what it calls and its client secret file; the privacy service its own settings. */
 const gatewaySecrets = mkdtempSync(join(tmpdir(), 'privpay-smoke-gateway-'));
 writeFileSync(
   join(gatewaySecrets, 'api_gateway_client_secret'),
   'fake-secret-api-gateway-0123456789abcdef\n',
 );
+// The privacy service stops at start without its keys, the role password file and its TTLs (fail fast); the pool is
+// lazy, so no database is needed for /health. Everything here is made up for the run.
+const privacySecrets = mkdtempSync(join(tmpdir(), 'privpay-smoke-privacy-'));
+for (const [name, byte] of [
+  ['hmac_secret', 1],
+  ['blind_index_secret', 2],
+  ['field_key', 3],
+] as const) {
+  writeFileSync(join(privacySecrets, name), Buffer.alloc(32, byte).toString('hex'));
+}
+writeFileSync(join(privacySecrets, 'privpay_app_password'), 'fake-password-for-the-smoke-run');
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
+  rmSync(privacySecrets, { recursive: true, force: true });
 });
 const extraEnv = (id: string): Record<string, string> =>
   id === 'gateway'
@@ -84,7 +96,25 @@ const extraEnv = (id: string): Record<string, string> =>
         RECONCILIATION_SERVICE_URL: 'http://127.0.0.1:9',
         API_GATEWAY_CLIENT_SECRET_FILE: join(gatewaySecrets, 'api_gateway_client_secret'),
       }
-    : {};
+    : id === 'privacy-service'
+      ? {
+          PG_HOST: '127.0.0.1',
+          PG_PORT: '9',
+          PG_SECRETS_DIR: privacySecrets,
+          IDP_URL: 'http://127.0.0.1:9',
+          GRACE_PERIOD_SECONDS: '30',
+          PSEUDONYM_KEY_VERSION: '1',
+          TTL_PAYMENT_PROCESSING: '900',
+          TTL_FRAUD_DETECTION: '2592000',
+          TTL_NOTIFICATION: '900',
+          TTL_NOTIFICATION_REGISTRATION: '31536000',
+          TTL_DAILY_RECONCILIATION: '86400',
+          TTL_INTERNAL_AUDIT: '600',
+          PSEUDONYM_HMAC_SECRET_FILE: join(privacySecrets, 'hmac_secret'),
+          BLIND_INDEX_SECRET_FILE: join(privacySecrets, 'blind_index_secret'),
+          FIELD_ENCRYPTION_KEY_FILE: join(privacySecrets, 'field_key'),
+        }
+      : {};
 
 describe.each(SERVICE_IDS)('N-04 the built %s runs as a process', (id) => {
   const entry = join('services', id, 'dist', 'main.js');

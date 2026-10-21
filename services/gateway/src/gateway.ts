@@ -3,13 +3,14 @@ import {
   DomainError,
   parseBearer,
   RateLimitedError,
+  unverifiedKid,
+  type JwksKeys,
   type AuthHeaders,
   type Clock,
   type HttpClient,
   type TokenCache,
 } from '@privpay/common';
 import type { ErrorMasker } from './error-masker';
-import { unverifiedKid, type JwksKeys } from './jwks';
 import type { RateLimiter } from './rate-limiter';
 import type { Route, RouteMatch, RouteTable, Upstream } from './routes';
 
