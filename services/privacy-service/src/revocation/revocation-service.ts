@@ -12,7 +12,7 @@ export const REVOCATION_SQL = {
   revokeToken: `UPDATE pseudonym_mapping SET status = 'revoked', revoked_at = $2 WHERE id = $1`,
   // PRD 6.2 revoke_subject STEP 2. The rows are locked in id order (as the retention job picks them), so two
   // revocations of one subject queue instead of waiting on each other; a row the job holds is waited for, not skipped
-  // (K-33): a revocation must not leave an active token behind. Expired rows are left to retention (spec privacy 7.11).
+  // (K-33): a revocation must not leave an active token behind. Rows already marked expired or revoked are not touched (retention handles the first, spec privacy 7.11); a row still stored as active past its TTL is revoked too, which is the safe side.
   revokeSubject: `WITH picked AS (
        SELECT id FROM pseudonym_mapping
         WHERE subject_lookup = $1 AND status = 'active' ORDER BY id FOR UPDATE)
@@ -67,6 +67,9 @@ interface RevokedRow {
   purpose: string;
   key_version: number;
 }
+
+/** The audited "nothing there" of revokeSubject: answered 0, not an error. A class of its own, so no other denial is mistaken for it. */
+class NothingToRevoke extends DeniedOperation {}
 
 interface Base {
   readonly action: 'REVOKE_TOKEN' | 'REVOKE_SUBJECT';
@@ -174,20 +177,13 @@ export class RevocationService {
         }
         const [first, ...rest] = audit;
         if (first === undefined) {
-          throw new DeniedOperation({ ...base, status: 'DENIED', reason: 'TOKEN_NOT_FOUND' });
+          throw new NothingToRevoke({ ...base, status: 'DENIED', reason: 'TOKEN_NOT_FOUND' });
         }
         return { result: { revokedCount: revoked.rows.length }, audit: [first, ...rest] };
       });
     } catch (error) {
-      // The refusal above is the audited "nothing there", not an error to the caller. Only that one: the policy
-      // refusals are DeniedOperation too and must still reach the caller.
-      if (
-        error instanceof DeniedOperation &&
-        error.entry.action === 'REVOKE_SUBJECT' &&
-        error.entry.reason === 'TOKEN_NOT_FOUND'
-      ) {
-        return { revokedCount: 0 };
-      }
+      // The audited "nothing there" is not an error to the caller; the policy refusals still are.
+      if (error instanceof NothingToRevoke) return { revokedCount: 0 };
       throw error;
     }
   }
