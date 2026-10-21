@@ -375,6 +375,63 @@ describe('M2-12 POST /re-issue and PATCH /transaction-status', () => {
   });
 });
 
+describe('M2-08 POST /identity', () => {
+  const person = {
+    customer_id: CUSTOMER,
+    nik: '9999000011112222',
+    nama: 'Budi Contoh Palsu',
+    hp: '081200000001',
+    rekening: '99990000000001',
+  };
+
+  it('M2-08 AZ-25 N1 no credential is 401 and stores nothing', async () => {
+    expect((await post('/identity', undefined, person)).status).toBe(401);
+    expect(await count('identity_vault')).toBe(0);
+  });
+
+  it('M2-08 AZ-25 N2 TRANSACTION is POLICY_NOT_ALLOWED with no vault row (TK-20); API_GATEWAY gets 201 then 200', async () => {
+    const denied = await post('/identity', service('transaction'), person);
+    expect(denied.status).toBe(403);
+    expect(denied.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    expect(await count('identity_vault')).toBe(0);
+    expect(await lastAudit()).toMatchObject({ action: 'STORE_IDENTITY', status: 'DENIED' });
+
+    const created = await post('/identity', service('api-gateway'), person);
+    expect(created.status).toBe(201);
+    expect(created.body).toEqual({
+      customer_id: CUSTOMER,
+      stored: ['nik', 'nama', 'hp', 'rekening'],
+    });
+    const again = await post('/identity', service('api-gateway'), person);
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(created.body);
+    expect(await count('identity_vault')).toBe(1);
+  });
+
+  it('M2-08 AZ-25 N3 an unknown field is 422 and stores nothing', async () => {
+    const answer = await post('/identity', service('api-gateway'), { ...person, email: 'x@y.z' });
+    expect(answer.status).toBe(422);
+    expect(await count('identity_vault')).toBe(0);
+  });
+
+  it('M2-08 AZ-25 N4 requesting_service in the body is not accepted: 422, and the token decides', async () => {
+    const answer = await post('/identity', service('transaction'), {
+      ...person,
+      requesting_service: 'API_GATEWAY',
+    });
+    expect(answer.status).toBe(422);
+    expect(await count('identity_vault')).toBe(0);
+  });
+
+  it('M2-08 FR-15 no identity value reaches the log or the audit row', async () => {
+    await post('/identity', service('api-gateway'), person);
+    const everything = logLines.join(' ') + JSON.stringify(await lastAudit());
+    for (const value of [person.nik, person.nama, person.hp, person.rekening, CUSTOMER]) {
+      expect(everything).not.toContain(value);
+    }
+  });
+});
+
 describe('M2-12 the database being away is 503 (invariant 8)', () => {
   it('M2-12 no connection: 503, no raw data in the answer', async () => {
     await app.close();

@@ -7,6 +7,12 @@ Untuk memulai sesi baru tanpa kehilangan konteks. Sumber kebenaran tetap `CLAUDE
 - `main` (lokal, **belum di-push**) memuat M0, M1, M2 sampai M2-09 (tanpa M2-08, M2-10, M2-11), alat pembersih DB tes, lapisan HTTP Privacy (M2-12) dan tabel tautan transaksi (K-28, K-29; ADR-0013, `docs/security/review-K28.md`). Gerbang penuh di `main` setelah merge hijau: eslint, typecheck, 935 unit, 296 integrasi, 20 smoke, audit prod, gitleaks. Cabang tidak dihapus.
 - `chore/prettier-eol-auto` (belum di-merge, satu commit): `endOfLine: "auto"` di `.prettierrc.json`, supaya `pnpm lint` hijau di Windows (`core.autocrlf=true` menulis CRLF di working tree). Di `main` `pnpm lint` masih merah di Windows sampai cabang ini di-merge.
 
+## Pembagian gerbang M2 yang tersisa (2026-10-21)
+
+- Gerbang 3 (cabang `feat/m2-gerbang-3`, tiga commit lokal): M2-08 brankas identitas (`POST /identity`), M2-10 pemindai kenari v1, M2-11 `Tokenizer` Gateway dan rute tokenisasi (transaksi, settlement). Urutan M2-08, M2-10, M2-11 (M2-11 memakai pemindai M2-10).
+- Setelah itu: `/code-review`, `/security-review`, gerbang penuh dua kali berturut-turut. Tidak di-push, tidak di-merge.
+- Berikutnya (di luar sesi ini): M3-01 sampai M3-06, lalu penutup M2/M3 dengan `/security-review` milestone.
+
 ## Keputusan yang sudah final (jangan ditanya lagi)
 
 K-27 (semua penolakan keputusan diaudit DENIED), K-29 (bentuk 3 menolak sumber `revoked`), K-30 (terminal final; terminal ke terminal lain 409), K-31, K-32 (`requesting_service = PRIVACY_SERVICE` pada `PURGE_IDENTITY`), K-33 (catatan M3-02), K-28 = opsi (b)+(d) (ADR-0013, E-30). Urutan validasi, basis, atribut, token, pola field audit: sudah disetujui sebelumnya.

@@ -4,6 +4,12 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M2-08 brankas identitas `POST /identity` (Gerbang 3)
+
+- `IdentityVault` (`src/identity/`) dan `POST /identity` (201 pertama, 200 ulangan; hanya `API_GATEWAY`, lainnya `POLICY_NOT_ALLOWED` tanpa baris brankas, audit `STORE_IDENTITY` DENIED). Lima kolom dienkripsi dengan AAD `vaultBinding(kolom, id baris)`; audit hanya mencatat aksi, hasil, dan versi kunci.
+- **Selisih kecil dari spec 4.9:** bukan satu `INSERT ... ON CONFLICT DO UPDATE`, melainkan kunci penasihat pada `customer_lookup`, `SELECT ... FOR UPDATE`, lalu `INSERT` atau `UPDATE`. Alasan: AAD terikat id baris (ADR-0011), jadi ulangan harus mengenkripsi untuk id baris yang sudah ada, yang tidak diketahui `ON CONFLICT`. Perilaku luar sama (K-10); dua panggilan pertama serentak menyisakan satu baris (dites). Tidak ada dependensi baru, tidak ada kode galat baru.
+- Tes: `identity-vault.integration.spec.ts` (16) dan blok `M2-08` di `http.integration.spec.ts` (AZ-25 N1..N4, tidak ada nilai identitas di log atau audit).
+
 ### K-28 dan K-29: tabel tautan transaksi (tiket inti, ADR-0013)
 
 - Migrasi `0003_transaction_link.sql`: `transaction_link` (`transaction_id`, `subject_type`, `service_id`, `purpose`, `pseudonym` FK, `created_at`; tanpa kolom identitas). Setiap penerbitan atau pemakaian ulang token untuk sebuah transaction id menulis tautannya di transaksi operasi (`ON CONFLICT DO NOTHING`, lalu pembacaan; ulangan tidak berbuat apa-apa). Transaction id yang sama dengan pseudonym lain pada konteks yang sama: `IDEMPOTENCY_CONFLICT` 409, diaudit DENIED, seluruh operasi dibatalkan (tidak ada baris mapping setengah jadi).
