@@ -95,6 +95,15 @@ writeFileSync(
   join(privacySecrets, 'privpay_fraud_app_password'),
   'fake-password-for-the-smoke-run',
 );
+// M4-05: the notification service needs its role password and its client secret at the IdP to start.
+writeFileSync(
+  join(privacySecrets, 'privpay_notification_app_password'),
+  'fake-password-for-the-smoke-run',
+);
+writeFileSync(
+  join(privacySecrets, 'notification_client_secret'),
+  'fake-secret-notification-0123456789abcdef\n',
+);
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
@@ -127,27 +136,39 @@ const extraEnv = (id: string): Record<string, string> =>
           BLIND_INDEX_SECRET_FILE: join(privacySecrets, 'blind_index_secret'),
           FIELD_ENCRYPTION_KEY_FILE: join(privacySecrets, 'field_key'),
         }
-      : id === 'fraud-service'
-        ? {
-            PG_HOST: '127.0.0.1',
-            PG_PORT: '9',
-            PG_SECRETS_DIR: privacySecrets,
-            IDP_URL: 'http://127.0.0.1:9',
-            FRAUD_AMOUNT_THRESHOLD: '1000000',
-            FRAUD_ODD_HOUR_START: '22',
-            FRAUD_ODD_HOUR_END: '6',
-            FRAUD_HOLD_THRESHOLD: '50',
-            FRAUD_BLOCK_THRESHOLD: '90',
-          }
-        : id === 'transaction-service'
+      : id === 'sms-simulator'
+        ? { IDP_URL: 'http://127.0.0.1:9' }
+        : id === 'notification-service'
           ? {
               PG_HOST: '127.0.0.1',
               PG_PORT: '9',
               PG_SECRETS_DIR: privacySecrets,
               IDP_URL: 'http://127.0.0.1:9',
-              FRAUD_AMOUNT_THRESHOLD: '1000000',
+              PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+              SMS_SIMULATOR_URL: 'http://127.0.0.1:9',
+              NOTIFICATION_CLIENT_SECRET_FILE: join(privacySecrets, 'notification_client_secret'),
             }
-          : {};
+          : id === 'fraud-service'
+            ? {
+                PG_HOST: '127.0.0.1',
+                PG_PORT: '9',
+                PG_SECRETS_DIR: privacySecrets,
+                IDP_URL: 'http://127.0.0.1:9',
+                FRAUD_AMOUNT_THRESHOLD: '1000000',
+                FRAUD_ODD_HOUR_START: '22',
+                FRAUD_ODD_HOUR_END: '6',
+                FRAUD_HOLD_THRESHOLD: '50',
+                FRAUD_BLOCK_THRESHOLD: '90',
+              }
+            : id === 'transaction-service'
+              ? {
+                  PG_HOST: '127.0.0.1',
+                  PG_PORT: '9',
+                  PG_SECRETS_DIR: privacySecrets,
+                  IDP_URL: 'http://127.0.0.1:9',
+                  FRAUD_AMOUNT_THRESHOLD: '1000000',
+                }
+              : {};
 
 describe.each(SERVICE_IDS)('N-04 the built %s runs as a process', (id) => {
   const entry = join('services', id, 'dist', 'main.js');

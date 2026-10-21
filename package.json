@@ -14,7 +14,7 @@
     "build": "tsc -b tsconfig.build.json",
     "test": "jest --config jest.config.cjs",
     "test:smoke": "tsc -b tsconfig.build.json && node node_modules/jest/bin/jest.js --config jest.smoke.config.cjs",
-    "pii-scan": "jest --config jest.config.cjs tests/pii-scan && node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs services/privacy-service/test/pii-scan services/transaction-service/test/pii-scan services/fraud-service/test/pii-scan",
+    "pii-scan": "jest --config jest.config.cjs tests/pii-scan && node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs services/privacy-service/test/pii-scan services/transaction-service/test/pii-scan services/fraud-service/test/pii-scan services/notification-service/test/flow",
     "test:integration": "node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs",
     "test:security": "node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs services/privacy-service/test/security",
     "db:migrate": "tsc -b tsconfig.build.json && node --env-file-if-exists=.env.test packages/common/dist/bin/db-migrate.js",
