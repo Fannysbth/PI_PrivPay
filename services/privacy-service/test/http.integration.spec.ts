@@ -981,6 +981,33 @@ describe('M2-08 POST /identity', () => {
   });
 });
 
+describe('M2-12 S-55 K-12 the largest body any endpoint accepts is 16 KiB', () => {
+  const padded = (total: number): string => {
+    const json = JSON.stringify(identityBody());
+    return json + ' '.repeat(total - json.length);
+  };
+  const send = (raw: string) =>
+    server()
+      .post('/pseudonymize')
+      .set('authorization', `Bearer ${service('api-gateway')}`)
+      .set('content-type', 'application/json')
+      .send(raw);
+
+  it('M2-12 S-55 a valid body of exactly 16 KiB is accepted', async () => {
+    const answer = await send(padded(16 * 1024));
+    expect(answer.status).toBe(200);
+  });
+
+  it('M2-12 S-55 a valid body one byte over 16 KiB is 422 and writes nothing', async () => {
+    const before = await count('audit_log');
+    const answer = await send(padded(16 * 1024 + 1));
+    expect(answer.status).toBe(422);
+    expect(answer.body).toMatchObject({ error: { reason: 'VALIDATION_ERROR' } });
+    expect(await count('audit_log')).toBe(before);
+    expect(await count('pseudonym_mapping')).toBe(0);
+  });
+});
+
 describe('M2-12 the database being away is 503 (invariant 8)', () => {
   it('M2-12 no connection: 503, no raw data in the answer', async () => {
     await app.close();
