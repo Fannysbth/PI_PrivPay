@@ -638,7 +638,6 @@ describe('M1-03 what is on the wire is checked after the caller (content type, s
       who: ['admin'],
       caller: 'person',
       tokenize: null,
-      idempotencyKey: false,
       upstream: 'privacy-service',
       upstreamPath: '/echo',
       auth: 'human-token',

@@ -37,6 +37,13 @@ describe('M2-10 scanText', () => {
     ]);
   });
 
+  it('M2-10 finds a form-encoded name, where a space is a plus sign', () => {
+    const encoded = `nama=${person.nama.replaceAll(' ', '+')}`;
+    expect(scanText(encoded, [person], context).map((finding) => finding.attribute)).toEqual([
+      'nama',
+    ]);
+  });
+
   it('M2-10 the output holds the three keys and no value', () => {
     const findings = scanText(Object.values(person).join(' '), [person], context);
     expect(findings).toHaveLength(CANARY_ATTRIBUTES.length);

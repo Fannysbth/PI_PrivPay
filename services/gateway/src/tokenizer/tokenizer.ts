@@ -82,7 +82,8 @@ export class Tokenizer {
       throw new DomainError('INTERNAL_ERROR', 'transaction_id');
     const { privacy } = this.deps;
     const context = { targetService: 'TRANSACTION', purpose: 'PAYMENT_PROCESSING', transactionId };
-    // Both or neither: if one is refused or unavailable the whole request fails (gateway spec 4).
+    // If one is refused or unavailable the whole request fails (gateway spec 4). The other token may already exist;
+    // that is harmless, because a retry reuses it (privacy spec 7.2) and nothing is forwarded.
     const [customerToken, accountToken] = await Promise.all([
       privacy.pseudonymize({
         subjectType: 'CUSTOMER',
@@ -130,17 +131,26 @@ export class Tokenizer {
           }),
         ),
       );
-      chunk.forEach((account, index) => tokens.set(account, answers[index] ?? ''));
+      chunk.forEach((account, index) => {
+        const token = answers[index];
+        if (token === undefined) throw new DomainError('INTERNAL_ERROR', 'privacy_answer');
+        tokens.set(account, token);
+      });
     }
     return {
       route: 'settlement',
       outbound: {
         batch_date: report.batch_date,
-        items: report.items.map((item) => ({
-          account_pseudonym: tokens.get(item.account_number) ?? '',
-          amount: item.amount,
-          bank_reference: item.bank_reference,
-        })),
+        items: report.items.map((item) => {
+          const accountPseudonym = tokens.get(item.account_number);
+          if (accountPseudonym === undefined)
+            throw new DomainError('INTERNAL_ERROR', 'privacy_answer');
+          return {
+            account_pseudonym: accountPseudonym,
+            amount: item.amount,
+            bank_reference: item.bank_reference,
+          };
+        }),
       },
     };
   }

@@ -17,7 +17,8 @@ export interface ScanContext {
 
 function decoded(text: string): string | undefined {
   try {
-    const plain = decodeURIComponent(text);
+    // `+` is a space in a form-encoded body or a query string.
+    const plain = decodeURIComponent(text.replaceAll('+', ' '));
     return plain === text ? undefined : plain;
   } catch {
     return undefined;

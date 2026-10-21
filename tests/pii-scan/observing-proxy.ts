@@ -60,6 +60,11 @@ export class ObservingProxy {
   start(): Promise<void> {
     const target = new URL(this.options.target);
     this.server = createServer((incoming, outgoing) => {
+      // A client that goes away or a service that resets the connection ends the exchange; it is not an exception.
+      const fail = (): void => {
+        outgoing.statusCode = 502;
+        outgoing.end();
+      };
       void collect(incoming).then((body) => {
         this.observe(incoming.url ?? '', 'url');
         this.observe(flatten(incoming.headers), 'request-header');
@@ -73,20 +78,19 @@ export class ObservingProxy {
             headers: incoming.headers,
           },
           (answer) => {
-            void collect(answer).then((reply) => {
-              this.observe(reply.toString('latin1'), 'response-body');
-              outgoing.writeHead(answer.statusCode ?? 502, answer.headers);
-              outgoing.end(reply);
-            });
+            void collect(answer)
+              .then((reply) => {
+                this.observe(reply.toString('latin1'), 'response-body');
+                outgoing.writeHead(answer.statusCode ?? 502, answer.headers);
+                outgoing.end(reply);
+              })
+              .catch(fail);
           },
         );
         // A service that is away is the answer 502, so a test sees it instead of waiting for a timeout.
-        forward.on('error', () => {
-          outgoing.statusCode = 502;
-          outgoing.end();
-        });
+        forward.on('error', fail);
         forward.end(body);
-      });
+      }, fail);
     });
     return new Promise((resolve) => this.server?.listen(0, '127.0.0.1', resolve));
   }

@@ -30,8 +30,6 @@ export interface Route {
   readonly caller: CallerKind;
   /** Set on the routes whose identifiers are replaced by tokens before the call goes on (gateway spec 4, 5). */
   readonly tokenize: 'transaction' | 'settlement' | null;
-  /** The route needs an `Idempotency-Key` header (a UUID). */
-  readonly idempotencyKey: boolean;
   readonly upstream: Upstream;
   /** Path on the upstream, with the same `{name}` placeholders. */
   readonly upstreamPath: string;
@@ -132,14 +130,7 @@ const forward = (
     Partial<
       Pick<
         Route,
-        | 'params'
-        | 'body'
-        | 'query'
-        | 'upstreamPath'
-        | 'caller'
-        | 'tokenize'
-        | 'idempotencyKey'
-        | 'maxBodyBytes'
+        'params' | 'body' | 'query' | 'upstreamPath' | 'caller' | 'tokenize' | 'maxBodyBytes'
       >
     >,
 ): Route => ({
@@ -149,7 +140,6 @@ const forward = (
   upstreamPath: route.pattern,
   caller: 'person',
   tokenize: null,
-  idempotencyKey: false,
   maxBodyBytes: SIXTEEN_KIB,
   ...route,
 });
@@ -296,7 +286,6 @@ export const TOKENIZING_ROUTES: readonly Route[] = [
     who: [],
     caller: 'customer',
     tokenize: 'transaction',
-    idempotencyKey: true,
     upstream: 'transaction-service',
     auth: 'gateway-token',
     body: transactionBody,
