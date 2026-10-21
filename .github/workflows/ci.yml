@@ -55,6 +55,9 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      # Builds every service with tsc and starts each built `node dist/main.js` as a real process (N-04), including
+      # the SIGTERM shutdown, which only Linux can deliver.
+      - run: pnpm test:smoke
 
   integration:
     # PostgreSQL 16 is the target version (ADR-0004); locally the tests run on 18, so this job also repeats them on 16.

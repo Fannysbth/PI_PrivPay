@@ -12,7 +12,7 @@ Istilah mengikuti skill `codebase-design`. Lapisan HTTP (controller) tipis dan h
 
 | Modul | Interface (ringkas) | Dalamnya |
 | --- | --- | --- |
-| `PolicyEngine` | `evaluate({requestingService, targetService, purpose, subjectType, mode, actorRole?})` mengembalikan baris Tabel 1 atau melempar `POLICY_NOT_ALLOWED`/`FORBIDDEN_ROLE`; `exchangeAllowed(...)`, `contextOf(mapping)` | Tabel 1, 2, 3, 5, 6 sebagai konfigurasi bertipe; murni, tanpa I/O |
+| `PolicyEngine` | **[Δ spec, M2-03]** `evaluate({operation, requestingService, context: {serviceId, purpose, subjectType}, actorRole?})` mengembalikan konteks Tabel 1 atau melempar `POLICY_NOT_ALLOWED`/`FORBIDDEN_ROLE` (`operation` menggantikan `mode`/"cara terbit": `GENERATE_FROM_IDENTITY`, `GENERATE_FROM_TRANSACTION`, `DE_PSEUDONYMIZE`, `RE_ISSUE`); `authorizeCaller(operation, caller)` (RESOLVE_NOTIF_DOMAIN); `exchangeTarget(caller, {serviceId, purpose})` (Tabel 2 sebelum token dibaca) dan `exchangeAllowed(sumber, tujuan, caller)` (setelah kepemilikan terbukti); `contextOf(key)`, `attributesFor(key)` (Tabel 5), `isValidBasis(basis)` (Tabel 6); TTL per purpose disuntik lewat konstruktor | Tabel 1, 2, 3, 5, 6 sebagai konfigurasi bertipe dan beku; murni, tanpa I/O |
 | `Crypto` | `FieldCipher.encrypt/decrypt`, `BlindIndex.lookup`, `TokenMint.mint`, `loadKeys` | bagian 5 |
 | `TokenService` | `generate`, `generateFromTransaction`, `exchange`, `reIssue`, `resolveDomain`, `revokeToken`, `revokeSubject` | `buat_token`, status efektif, kunci per-kombinasi, audit dalam transaksi yang sama |
 | `DisclosureService` | `request`, `approve`, `reject`, `open` (de-pseudonymize) | mesin status, lima gerbang, brankas |
@@ -44,7 +44,7 @@ Tepat satu dari tiga bentuk (campuran: 422).
 | 2 pertukaran | `{source_pseudonym, target_service, purpose, transaction_id}` | `TRANSACTION` (X1, X2) |
 | 3 dari transaksi | `{subject_type, transaction_id, target_service, purpose}` | `RECONCILIATION` (P6, P7); P7 juga membutuhkan `X-Actor-Token` berperan `auditor` |
 
-Respons 200: `{pseudonym, expires_at, reused}` (`expires_at` ISO UTC). Permintaan berisi `subject_id` dari layanan selain Gateway: 403 `POLICY_NOT_ALLOWED` (TK-07). `requesting_service` tidak pernah dari body. Audit: `GENERATE_TOKEN` (bentuk 1 dan 3) atau `EXCHANGE_TOKEN` (bentuk 2), tepat satu baris, SUCCESS (`OK`/`REUSED_ACTIVE`) atau DENIED. Reason DENIED: `POLICY_NOT_ALLOWED`; untuk bentuk 2 juga `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `REVOKED`, `EXPIRED`; untuk bentuk 3 `TOKEN_NOT_FOUND`; `FORBIDDEN_ROLE` untuk P7 tanpa aktor auditor.
+Respons 200: `{pseudonym, expires_at, reused}` (`expires_at` ISO UTC). Permintaan berisi `subject_id` dari layanan selain Gateway: 403 `POLICY_NOT_ALLOWED` (TK-07). `requesting_service` tidak pernah dari body. Audit: `GENERATE_TOKEN` (bentuk 1 dan 3) atau `EXCHANGE_TOKEN` (bentuk 2), tepat satu baris, SUCCESS (`OK`/`REUSED_ACTIVE`) atau DENIED. Reason DENIED: `POLICY_NOT_ALLOWED`; untuk bentuk 2 juga `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `REVOKED`, `EXPIRED`; untuk bentuk 3 `TOKEN_NOT_FOUND`; `FORBIDDEN_ROLE` untuk P7 tanpa aktor auditor. **[M2-06]** Kolom `pseudonym` baris audit: pada SUCCESS token yang diterbitkan atau dikembalikan (dengan `mapping_id` barisnya); pada DENIED token yang diajukan pemanggil bila ada (bentuk 2: token sumber, dengan `mapping_id`-nya bila ditemukan). Bentuk 2 menolak sumber yang bukan konteks sumber Tabel 2 (`POLICY_NOT_ALLOWED`, setelah kepemilikan terbukti); sumber yang identitasnya sudah dikosongkan retensi dijawab `TOKEN_NOT_FOUND`. Bentuk 3 hanya membaca baris `TRANSACTION`/`PAYMENT_PROCESSING` (P1/P2) dengan `transaction_id` dan `subject_type` itu, termasuk yang `expired`; baris layanan lain yang memuat `transaction_id` sama bukan sumber (invarian 5).
 
 ### 4.2 `POST /resolve-domain`
 
@@ -56,7 +56,7 @@ Permintaan: `{pseudonym, purpose, disclosure_id}`, ketiganya wajib. Pemanggil: `
 
 ### 4.4 `POST /re-issue`
 
-`{pseudonym, transaction_id}` → 200 `{pseudonym, expires_at, reused}`. Pemanggil: `TRANSACTION`. Audit `RE_ISSUE`. DENIED: `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `POLICY_NOT_ALLOWED`, `REVOKED`, `TX_TERMINAL` (409).
+`{pseudonym, transaction_id}` → 200 `{pseudonym, expires_at, reused}`. Pemanggil: `TRANSACTION`. Audit `RE_ISSUE`. DENIED: `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `POLICY_NOT_ALLOWED`, `REVOKED`, `TX_TERMINAL` (409). **[Δ PRD 7.5, M2-07]** Pemanggil yang bukan `TRANSACTION` ditolak `POLICY_NOT_ALLOWED` **sebelum** token dibaca (AZ-23; PRD membaca token lebih dulu): layanan lain tidak dapat menebak token mana yang ada. Urutan selanjutnya: token ada, milik pemanggil, konteks P1/P2 (`POLICY_NOT_ALLOWED`), bukan `revoked`, identitas belum dikosongkan retensi, transaksi belum final. Token `expired` justru yang diterbitkan ulang. Baris audit menyebut token yang diajukan (`pseudonym`, `mapping_id`) pada DENIED dan token baru pada SUCCESS.
 
 ### 4.5 `POST /pseudonym/{pseudonym}/revoke`
 
@@ -68,7 +68,7 @@ Tanpa body; pemanggil `ADMIN_CONSOLE` dengan peran `admin`. 200 `{pseudonym, sta
 
 ### 4.7 `PATCH /transaction-status`
 
-`{transaction_id, status}` dengan `status` ∈ `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `CANCELLED`. Pemanggil `TRANSACTION`. Upsert idempoten; 200 `{transaction_id, status, updated_at}`. **Tidak diaudit** (bukan operasi token). Status terminal (`COMPLETED`, `FAILED`, `CANCELLED`) tidak dapat kembali ke non-terminal: 409 `TX_TERMINAL` (K-09).
+`{transaction_id, status}` dengan `status` ∈ `PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`, `CANCELLED`. Pemanggil `TRANSACTION`. Upsert idempoten; 200 `{transaction_id, status, updated_at}`. **Tidak diaudit** (bukan operasi token). Status terminal (`COMPLETED`, `FAILED`, `CANCELLED`) tidak dapat kembali ke non-terminal: 409 `TX_TERMINAL` (K-09). **[K-30, M2-07]** Status terminal tidak berubah sama sekali: mengulang status terminal yang sama menjawab 200 dengan baris apa adanya (`updated_at` tidak berubah); status lain, termasuk terminal yang berbeda, 409 `TX_TERMINAL`. Satu pernyataan `INSERT ... ON CONFLICT DO UPDATE ... WHERE` membuat dua panggilan serentak tidak dapat lolos bersama.
 
 ### 4.8 `GET /audit-log`, `/audit-log/timeline/{pseudonym}`, `/audit-log/summary`
 
@@ -105,7 +105,7 @@ Hanya `node:crypto`. Tiga kunci terpisah (`K_token`, `K_index`, `K_field`), masi
 
 ## 6. Policy Engine
 
-Tabel 1, 2, 3, 5, 6 ditulis sebagai konstanta bertipe di `PolicyEngine` (konfigurasi, bukan tabel basis data); TTL tiap purpose dari env. Mengubah isi tabel = ADR. `evaluate` memeriksa: baris Tabel 1 (layanan, purpose, jenis subjek) → cara terbit → pemanggil sah (Tabel 3) → syarat peran (kolom "Peran diperlukan": `service`, atau `auditor` untuk P7). Pertukaran: pasangan (pemanggil, tujuan, purpose) pada Tabel 2 diperiksa sebelum token dibaca (7.5 STEP 0), konteks sumber setelah kepemilikan terbukti (STEP 2). `contextOf(mapping).bolehDibuka` hanya benar untuk P7.
+Tabel 1, 2, 3, 5, 6 ditulis sebagai konstanta bertipe di `PolicyEngine` (konfigurasi, bukan tabel basis data); TTL tiap purpose dari env. Mengubah isi tabel = ADR. `evaluate` memeriksa: baris Tabel 1 (layanan, purpose, jenis subjek) → cara terbit → pemanggil sah (Tabel 3) → syarat peran (dalam kode: aturan Tabel 3 dicari lewat pemanggil lebih dulu, lalu baris Tabel 1; tidak terlihat dari luar karena setiap kegagalan sebelum peran adalah `POLICY_NOT_ALLOWED`, M2-03) (kolom "Peran diperlukan": `service`, atau `auditor` untuk P7). Pertukaran: pasangan (pemanggil, tujuan, purpose) pada Tabel 2 diperiksa sebelum token dibaca (7.5 STEP 0), konteks sumber setelah kepemilikan terbukti (STEP 2). `contextOf(mapping).bolehDibuka` hanya benar untuk P7.
 
 Mode: bila `PRIVACY_MODE=baseline`, Privacy Service tidak dijalankan (PRD 17).
 
@@ -169,7 +169,7 @@ Seperti 4.5 dan 4.6 dan PRD 6.2: `revoke_subject` menghitung `lookup`, menandai 
 
 ### 7.11 Retensi (`RetentionJob`)
 
-Harian (`RETENTION_JOB_RUN_UTC`, bawaan `01:00`, K-26) dan dapat dipicu di tes. Langkah 1: tandai `expired` baris aktif dengan `expires_at + GRACE < now`. Langkah 2: kosongkan `subject_id_enc`, `subject_lookup`, isi `purged_at` pada baris `expired`/`revoked` yang `COALESCE(revoked_at, expires_at) < now − RETENTION_DAYS`; satu audit `PURGE_IDENTITY` per baris, `actor_id='SYSTEM'`. Brankas tidak ikut job. Satu transaksi per batch.
+Harian (`RETENTION_JOB_RUN_UTC`, bawaan `01:00`, K-26) dan dapat dipicu di tes. Langkah 1: tandai `expired` baris aktif dengan `expires_at + GRACE < now`. Langkah 2: kosongkan `subject_id_enc`, `subject_lookup`, isi `purged_at` pada baris `expired`/`revoked` yang `COALESCE(revoked_at, expires_at) < now − RETENTION_DAYS`; satu audit `PURGE_IDENTITY` per baris, `actor_id='SYSTEM'`. Brankas tidak ikut job. Satu transaksi per batch. **[M2-09]** Batch dipilih `ORDER BY id LIMIT n FOR UPDATE SKIP LOCKED`: baris yang sedang dipegang pertukaran, re-issue, atau pencabutan dilewati dan diambil pada lari berikutnya (tidak menunggu, sehingga tidak ada tunggu melingkar); dua job serentak membagi baris tanpa dobel. Baris audit `PURGE_IDENTITY`: `requesting_service = 'PRIVACY_SERVICE'`, `actor_id = 'SYSTEM'`, `pseudonym`, `purpose`, `mapping_id`, `key_version`; langkah 1 tidak diaudit (spec 9.1). `RetentionJob.overdueCount()` adalah kueri pemeriksaan PRD 6.2 (TF-14): baris `expired`/`revoked` yang lebih tua dari `RETENTION_DAYS` dan masih memuat `subject_id_enc`; nol setelah lari yang tidak terhalang kunci. `nextRunAt(now, "HH:MM")` memberi saat berikutnya yang tegas setelah `now` (UTC). Pembacaan `RETENTION_DAYS` dan `RETENTION_JOB_RUN_UTC` dari env dan penjadwalannya menunggu pemasangan layanan.
 
 ## 8. Mesin status
 
@@ -189,9 +189,37 @@ Harian (`RETENTION_JOB_RUN_UTC`, bawaan `01:00`, K-26) dan dapat dipicu di tes. 
 
 Boleh dicatat: `action`, `status`, `reason`, `requesting_service`, `actor_id`, `pseudonym`, `purpose`, `transaction_id`, `mapping_id`, `disclosure_id`, `attribute_names`, `key_version`. Dilarang: NIK, nama, HP, email, rekening, `subject_id`, nominal, geohash, rahasia, JWT, nilai atribut hasil pembukaan. Ditegakkan oleh DDL (tidak ada kolom untuk itu, `chk_attribute_names`), tipe `AuditEntry`, tes, dan pemindai kenari. Kegagalan sebelum pemanggil teridentifikasi (JWT tidak sah) tidak diaudit di Privacy.
 
+**Format kolom bebas (M2-04):** `AuditWriter.record` menolak entri sebelum SQL dikirim bila `pseudonym` bukan `^PSEU-[0-9A-F]{8}$`, `transaction_id` bukan `^TX-[0-9]{1,29}$` (keduanya `platform-dan-ci.md` 3.1), `purpose` bukan `^[A-Z][A-Z0-9_]{0,47}$`, atau `actor_id` bukan `^(?![0-9]+$)[A-Za-z0-9][A-Za-z0-9_-]{0,63}$` (tanpa `@`, titik, spasi, dan tidak seluruhnya angka, sehingga email, nama, dan angka mirip NIK tidak lolos). Penolakan melempar `AuditEntryError` yang hanya memuat nama field, dan operasi gagal 500 tanpa keadaan setengah jadi. Pola tidak membuktikan nilai bukan data pribadi; ia hanya menutup saluran yang mudah.
+
 ### 9.3 Rantai hash (hanya dirancang)
 
 Rancangan, tidak diimplementasikan: `row_hash = SHA-256(prev_hash ‖ isi baris kanonik)`, `prev_hash` = `row_hash` baris sebelumnya menurut urutan penulisan yang diserialisasi (satu penulis per instans atau kunci advisory khusus audit). Rujukan konsep: Schneier dan Kelsey 1999; Crosby dan Wallach 2009 (belum diverifikasi, cek sumber sebelum dikutip). Kolom `prev_hash`/`row_hash` tetap ada (nullable) dan tidak diisi; implementasi tidak sebelum M3 stabil dan menunggu jawaban dosen (PRD 20 no. 2).
+
+### 9.4 Penolakan: keputusan (diaudit) dan validasi bentuk (tidak diaudit)
+
+**Aturan pemilah.** Penolakan yang hasilnya bergantung pada identitas pemanggil, status token atau permintaan, peran, atau tabel kebijakan (Tabel 1, 2, 3, 5, 6) adalah **keputusan**: dilempar sebagai `DeniedOperation`, tepat satu baris DENIED (bagian 7). Penolakan yang hanya bergantung pada sintaks permintaan itu sendiri (skema zod, field tak dikenal, tipe atau pola salah, bentuk campuran, ukuran body) adalah **validasi bentuk**: 422 `VALIDATION_ERROR`, tidak membaca basis data, tidak diaudit. Urutannya: autentikasi (di luar Privacy) → validasi bentuk → keputusan.
+
+**Keputusan yang diaudit**, dicocokkan dengan katalog PRD (kolom Sumber; "spec" berarti spec menambahkannya dan pseudokode PRD tidak menyebut baris audit untuk reason itu):
+
+| Action | Reason DENIED | Sumber |
+| --- | --- | --- |
+| `GENERATE_TOKEN` | `POLICY_NOT_ALLOWED` (termasuk `subject_id` dari bukan Gateway, TK-07), `TOKEN_NOT_FOUND` (bentuk 3) | PRD 7.1, 6.1 |
+| `GENERATE_TOKEN` | `FORBIDDEN_ROLE` (P7 tanpa aktor auditor) | spec 4.1 (Tabel 1, kolom peran) |
+| `EXCHANGE_TOKEN` | `POLICY_NOT_ALLOWED`, `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `REVOKED`, `EXPIRED` | PRD 7.2 |
+| `RESOLVE_NOTIF_DOMAIN` | `POLICY_NOT_ALLOWED`, `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `PURPOSE_MISMATCH`, `REVOKED`, `EXPIRED` | PRD 7.3 |
+| `DE_PSEUDONYMIZE` | `TOKEN_NOT_FOUND` (juga brankas hilang, K-13), `SERVICE_MISMATCH`, `PURPOSE_MISMATCH`, `REVOKED`, `EXPIRED`, `POLICY_NOT_ALLOWED`, `FORBIDDEN_ROLE` | PRD 7.4 |
+| `DE_PSEUDONYMIZE` | `DISCLOSURE_NOT_FOUND`, `DISCLOSURE_NOT_APPROVED`, `DISCLOSURE_EXPIRED`, `REQUESTER_MISMATCH` (GATE 5) | PRD 7.4 + E-03, E-05 |
+| `RE_ISSUE` | `TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, `POLICY_NOT_ALLOWED`, `REVOKED`, `TX_TERMINAL` | PRD 7.5 |
+| `REVOKE_TOKEN` | `TOKEN_NOT_FOUND`, `FORBIDDEN_ROLE` | spec 4.5 |
+| `REVOKE_SUBJECT` | `TOKEN_NOT_FOUND` (tidak ada token dan tidak ada brankas), `FORBIDDEN_ROLE` | spec 4.6, ADR-0005, katalog PRD 12 |
+| `STORE_IDENTITY` | `POLICY_NOT_ALLOWED` | spec 4.9 (TK-20) |
+| `DISCLOSURE_REQUESTED` | `INVALID_BASIS`, `ATTRIBUTE_NOT_ALLOWED` | spec 4.10, K-07 |
+
+**Belum ditetapkan (K-27, menunggu Fanny; belum dikodekan):** `SELF_APPROVAL`, `DISCLOSURE_NOT_PENDING`, `FORBIDDEN_ROLE`, dan `DISCLOSURE_NOT_FOUND` pada `approve`/`reject`/permintaan; kegagalan token (`TOKEN_NOT_FOUND`, `SERVICE_MISMATCH`, bukan P7) pada `POST /disclosure-requests`; `FORBIDDEN_ROLE` pada `GET /audit-log` (4.8 hanya menyebut `VIEW_AUDIT_LOG` SUCCESS). Katalog PRD tidak menyebut baris audit untuk reason ini. Usulan spec: semuanya keputusan yang diaudit (`DISCLOSURE_REQUESTED`/`APPROVED`/`REJECTED`, `VIEW_AUDIT_LOG` DENIED), karena KPI PRD 1 menyatakan 100% operasi tercatat, SUCCESS maupun DENIED.
+
+**Tidak diaudit:** validasi bentuk (di atas); JWT tidak sah (401) dan rate limit (429), yang dicatat di log Gateway; `PATCH /transaction-status` termasuk 409 `TX_TERMINAL` (K-09), karena `UPDATE_TX_STATUS` bukan operasi token (PRD Tabel 3; `TX_TERMINAL` pada `RE_ISSUE` tetap diaudit); penandaan `expired` karena waktu; galat infrastruktur 503 dan 500 (bukan keputusan; bila baris audit sendiri tidak dapat ditulis, operasi gagal 500 dan tentu tanpa baris).
+
+**"Ditolak 422 tanpa baris" (S-24, TK-27, K-07).** `INVALID_BASIS` dan `ATTRIBUTE_NOT_ALLOWED` memeriksa nilai terhadap Tabel 6 dan Tabel 5, tabel kebijakan, bukan sintaks; karena itu keputusan yang diaudit walau klien melihat `VALIDATION_ERROR` 422 (ADR-0008). "Tanpa baris" berarti **tidak ada baris `disclosure_request`**; token tidak dibaca dan tidak ada baris `pseudonym_mapping` yang berubah. Ini tidak berarti tanpa audit: tepat satu baris `audit_log` `DISCLOSURE_REQUESTED` DENIED dengan reason `INVALID_BASIS` atau `ATTRIBUTE_NOT_ALLOWED`, `mapping_id` dan `disclosure_id` kosong, `attribute_names` kosong (nama di luar daftar tidak boleh disimpan: `chk_attribute_names`). Urutan: pola `case_ref` dan bentuk umum (validasi bentuk, tidak diaudit) → `basis` → `attributes` → token. Bila dasar dan atribut sama-sama salah, reason-nya `INVALID_BASIS`. Tes TK-27 menegaskan dua hal: 0 baris `disclosure_request` dan 1 baris audit DENIED.
 
 ## 10. Invarian keamanan
 

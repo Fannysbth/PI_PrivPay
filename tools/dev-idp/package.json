@@ -1,0 +1,20 @@
+{
+  "name": "@privpay/dev-idp",
+  "version": "0.0.0",
+  "private": true,
+  "description": "PrivPay dev-idp: a fake JWT issuer for the local phase only (ADR-0004), replaced by Keycloak in the Docker phase (DK-04)",
+  "dependencies": {
+    "@nestjs/common": "^11.2.7",
+    "@privpay/common": "workspace:*",
+    "reflect-metadata": "^0.2.2",
+    "zod": "^4.6.7"
+  },
+  "scripts": {
+    "start": "node dist/main.js",
+    "make-secrets": "node scripts/make-secrets.mjs"
+  },
+  "devDependencies": {
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.1"
+  }
+}

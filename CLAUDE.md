@@ -26,7 +26,10 @@ Bila bertabrakan, yang lebih atas menang. Jangan mengarang kebutuhan. Ambiguitas
 pnpm install --frozen-lockfile   # instal. `corepack enable` butuh admin (EPERM di mesin ini): pakai `corepack pnpm <perintah>`
 pnpm lint                         # ESLint + Prettier --check
 pnpm typecheck                    # tsc --noEmit di semua paket
+pnpm build                        # tsc -b: paket dan layanan ke dist/ (N-04); jalankan layanan: `node services/<nama>/dist/main.js`
 pnpm test                         # unit
+pnpm test:smoke                   # build, lalu tiap layanan hasil build dijalankan sebagai proses (health, SIGTERM di Linux)
+pnpm --filter @privpay/dev-idp run make-secrets   # sekali: rahasia klien dev-idp di secrets/ (tidak menimpa); lihat tools/dev-idp/README.md
 pnpm test:integration             # butuh PostgreSQL lokal (`scripts/db/bootstrap.ps1` sekali); DB tes dibuat ulang bersih tiap run (ADR-0004)
 pnpm test:security                # kasus TK-xx
 pnpm audit --prod --audit-level high
@@ -38,7 +41,7 @@ pnpm pii-scan                     # pemindai nilai kenari (payload, DB, log)
 
 gitleaks di Windows: `winget install Gitleaks.Gitleaks`. Bila shell belum memuat `%LOCALAPPDATA%\Microsoft\WinGet\Links` di PATH, panggil dengan path lengkap `"$LOCALAPPDATA/Microsoft/WinGet/Links/gitleaks.exe"`. Allowlist PSEU-token dan UUID contoh hanya berlaku di `docs/` dan `tests/`, tidak di `services/` atau `packages/`.
 
-Status perintah (diperbarui per tiket): **sudah ada**: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm test`, `gitleaks` (M0-01), dan `pnpm test:integration` (M0-05; butuh `scripts/db/bootstrap.ps1` sudah dijalankan dan `.env.test` atau `PG_HOST`/`PG_PORT`/`PG_SECRETS_DIR`, lihat `scripts/db/README.md`). **Belum ada:** `pnpm test:security` (M3-06), `pnpm audit` selain `--prod` bersih (lihat CHANGELOG), `pnpm newman` (M6-01), `pnpm pii-scan` (M2-10), `docker compose` (DK-01). Gunakan `corepack pnpm <perintah>` bila `pnpm` tidak ada di PATH.
+Status perintah (diperbarui per tiket): **sudah ada**: `pnpm install --frozen-lockfile`, `pnpm lint`, `pnpm format`, `pnpm typecheck`, `pnpm test`, `gitleaks` (M0-01), `pnpm build` dan `pnpm test:smoke` (M1-01, N-04: `tsc` membangun, `node dist` menjalankan; `tsx` hanya untuk pengembangan), dan `pnpm test:integration` (M0-05; butuh `scripts/db/bootstrap.ps1` sudah dijalankan dan `.env.test` atau `PG_HOST`/`PG_PORT`/`PG_SECRETS_DIR`, lihat `scripts/db/README.md`). **Belum ada:** `pnpm test:security` (M3-06), `pnpm audit` selain `--prod` bersih (lihat CHANGELOG), `pnpm newman` (M6-01), `pnpm pii-scan` (M2-10), `docker compose` (DK-01). Gunakan `corepack pnpm <perintah>` bila `pnpm` tidak ada di PATH.
 
 Gerbang lokal sebelum menyatakan tiket selesai: lint, typecheck, test, test:integration, audit, dan pemindaian secret (`gitleaks detect`). Tampilkan keluarannya.
 
@@ -98,6 +101,7 @@ prototypes/            # kode sekali pakai, dihapus setelah ADR; tidak boleh dii
 - Integrasi memakai PostgreSQL asli (lokal pada fase awal, Testcontainers setelah Docker; ADR-0004), bukan mock, untuk apa pun yang menyangkut indeks unik parsial, `FOR UPDATE`, `REVOKE/GRANT`. Tes terhubung sebagai peran sungguhan (`privacy_app`, `auditor_role`); migrasi dijalankan peran pemilik skema.
 - Kriteria yang butuh Docker (NFR-19, fail-closed dengan Privacy Service dimatikan di compose, M7) tidak boleh dinyatakan lulus sebelum diuji. Angka latensi/throughput dari lingkungan lokal tidak masuk laporan.
 - Tes harus deterministik dan mandiri; tidak bergantung urutan.
+- Tes yang menyentuh shell atau jaringan tidak boleh bergantung pada `bash` mana yang ada di PATH atau jumlah antarmuka jaringan aktif: pakai pembantu `tcp-probe` (batas waktu sendiri, serentak), paksa LF lewat `.gitattributes`, dan jalankan gerbang sekali dengan `C:\Windows\System32` di depan PATH (WSL `bash`) sebelum menyatakan tiket yang menyentuh shell/jaringan selesai.
 
 ## Definisi selesai (per tiket)
 

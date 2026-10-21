@@ -7,9 +7,10 @@ import request from 'supertest';
 import { FakeClock } from '../src/clock';
 import { ConfigError } from '../src/config';
 import { type Delay } from '../src/delay';
-import { DomainError } from '../src/errors';
+import { DomainError, RateLimitedError } from '../src/errors';
 import { createServiceApp, SERVICE_IDS, type ServiceApp, type ServiceId } from '../src/nest';
 import { capture } from './log-capture';
+import { probe, probeAll } from './tcp-probe';
 
 // Built at run time so no PSEU- literal sits in the repository (gitleaks allowlist covers docs/ and tests/ only).
 const canary = ['PSEU', 'AB12CD34'].join('-');
@@ -47,6 +48,19 @@ class ProbeController {
   @Get('domain')
   domain(): never {
     throw new DomainError('POLICY_NOT_ALLOWED');
+  }
+
+  // A catch-all route (the gateway) names the route it matched itself, so metrics keep a template per route.
+  @Get('templated/:id')
+  templated(@Param('id') id: string, @Res({ passthrough: true }) res: Response): { id: string } {
+    res.locals['routeTemplate'] =
+      id === 'hostile' ? '/probe/templated/12345678901234' : '/probe/templated/{id}';
+    return { id };
+  }
+
+  @Get('limited')
+  limited(): never {
+    throw new RateLimitedError(17);
   }
 
   @Get('raw')
@@ -194,6 +208,38 @@ describe('M0-06 every failure has the same shape and leaks nothing (NFR-25, S-42
     });
   });
 
+  it('M1-03 a route template chosen by the service is the metrics label, and a value that looks like data is not', async () => {
+    const { service } = await start('gateway', { modules: [ProbeModule] });
+    await request(service.httpServer).get('/probe/templated/abc').expect(200);
+    await request(service.httpServer).get('/probe/templated/hostile').expect(200);
+    const metrics = (await request(service.httpServer).get('/metrics')).text;
+    expect(metrics).toContain('route="/probe/templated/{id}"');
+    expect(metrics).toContain('route="/other"');
+    expect(metrics).not.toContain('12345678901234');
+  });
+
+  it('M1-03 S-nn every answer says nosniff and none names the framework', async () => {
+    const { service } = await start('transaction-service', { modules: [ProbeModule] });
+    for (const path of ['/health', '/metrics', '/probe/domain', '/nope']) {
+      const response = await request(service.httpServer).get(path);
+      expect(response.headers['x-content-type-options']).toBe('nosniff');
+      expect(response.headers['x-powered-by']).toBeUndefined();
+    }
+  });
+
+  it('M1-03 a RateLimitedError is a 429 that says how long to wait (Retry-After)', async () => {
+    const { service } = await start('gateway', { modules: [ProbeModule] });
+    const response = await request(service.httpServer).get('/probe/limited');
+    expect(response.status).toBe(429);
+    expect(response.headers['retry-after']).toBe('17');
+    expect(response.body).toMatchObject({ error: { code: 'RATE_LIMITED' } });
+    expect(Object.keys((response.body as { error: object }).error).sort()).toEqual([
+      'code',
+      'message',
+      'request_id',
+    ]);
+  });
+
   it('M0-06 an unexpected error is a generic 500 without its text, stack or SQL, in the body and the log', async () => {
     const { service, lines } = await start('privacy-service', { modules: [ProbeModule] });
     const response = await request(service.httpServer).get('/probe/raw');
@@ -264,35 +310,34 @@ describe('M0-06 the environment is validated at start (fail fast, NFR-20)', () =
   });
 });
 
-/** The error code of a connection attempt, or 'connected'. */
-function connectCode(host: string, port: number): Promise<string> {
-  return new Promise<string>((resolve) => {
-    const req = httpRequest({ host, port, path: '/health', timeout: 2000 }, (res) => {
-      res.resume();
-      resolve('connected');
-    });
-    req.on('error', (error: NodeJS.ErrnoException) => {
-      resolve(error.code ?? 'error');
-    });
-    req.end();
-  });
-}
+// Windows needs about two seconds to report a refusal on a non-loopback address of the machine, so a probe waits
+// longer than that and all addresses are tried at once; sequentially, three network interfaces would exceed the test's
+// five seconds.
+const PROBE_TIMEOUT_MS = 3000;
 
 describe.each(SERVICE_IDS)('M0-06 %s listens on loopback only (AZ-43)', (id) => {
   it('M0-06 binds 127.0.0.1 and refuses connections that arrive on any other local address', async () => {
     const { service } = await start(id);
-    const { host, port } = await service.listen();
-    expect(host).toBe('127.0.0.1');
-    expect(await connectCode(host, port)).toBe('connected');
+    try {
+      const { host, port } = await service.listen();
+      expect(host).toBe('127.0.0.1');
+      expect(await probe(host, port, { timeoutMs: PROBE_TIMEOUT_MS })).toBe('connected');
 
-    // 127.0.0.2 is loopback too, but not the address the service is bound to: it exists on every machine, so this
-    // check never passes vacuously. The machine's own addresses are tried as well when it has any.
-    const external = Object.values(networkInterfaces())
-      .flat()
-      .filter((net) => net !== undefined && net.family === 'IPv4' && !net.internal)
-      .map((net) => net?.address ?? '');
-    for (const address of ['127.0.0.2', ...external]) {
-      expect(await connectCode(address, port)).toBe('ECONNREFUSED');
+      // 127.0.0.2 is loopback too, but not the address the service is bound to: it exists on every machine, so this
+      // check never passes vacuously. The machine's own addresses are tried as well, whatever interfaces it has.
+      const own = Object.values(networkInterfaces())
+        .flat()
+        .filter((net) => net !== undefined && net.family === 'IPv4' && !net.internal)
+        .map((net) => net?.address ?? '');
+      const outcomes = await probeAll(['127.0.0.2', ...own], port, { timeoutMs: PROBE_TIMEOUT_MS });
+
+      // Nothing may connect. Another loopback address is refused at once; an address of a real interface is refused
+      // (after a delay on Windows) or does not answer, which is also not an accepted connection.
+      expect(Object.entries(outcomes).filter(([, outcome]) => outcome === 'connected')).toEqual([]);
+      expect(outcomes['127.0.0.2']).toBe('refused');
+      for (const address of own) expect(['refused', 'no answer']).toContain(outcomes[address]);
+    } finally {
+      await service.close();
     }
   });
 
@@ -448,5 +493,58 @@ describe('M0-06 a failure after the response started is not reported as a succes
       req.end();
     });
     expect(outcome).toBe('aborted');
+  });
+});
+
+describe('M1-01 a service may build its modules from the validated environment', () => {
+  it('M1-01 the factory receives the environment and the clock, and what it returns is mounted', async () => {
+    const seen: { port?: string; now?: string } = {};
+    const clock = new FakeClock(new Date('2026-10-19T08:00:00+07:00'));
+    const created = await createServiceApp(
+      {
+        service: 'dev-idp',
+        modules: (context) => {
+          seen.port = context.env['PORT'];
+          seen.now = context.clock.now().toISOString();
+          return [ProbeModule];
+        },
+      },
+      baseEnv,
+      { clock, logDestination: capture().destination },
+    );
+    open.push(created);
+    expect(seen).toEqual({ port: '0', now: '2026-10-19T01:00:00.000Z' });
+    await request(created.httpServer).get('/probe/domain').expect(403);
+    const health = await request(created.httpServer).get('/health').expect(200);
+    expect(health.body).toMatchObject({ service: 'dev-idp', status: 'ok' });
+  });
+
+  it('M1-01 a ConfigError raised by the factory stops the start, like the platform configuration does', async () => {
+    const failure = createServiceApp(
+      {
+        service: 'dev-idp',
+        modules: () => {
+          throw new ConfigError([{ name: 'DEV_IDP_ENABLED', problem: 'invalid' }]);
+        },
+      },
+      baseEnv,
+    );
+    await expect(failure).rejects.toThrow('DEV_IDP_ENABLED (invalid)');
+  });
+
+  it('M1-01 the factory is not called when the platform configuration is already wrong', async () => {
+    let called = false;
+    const failure = createServiceApp(
+      {
+        service: 'dev-idp',
+        modules: () => {
+          called = true;
+          return [];
+        },
+      },
+      { PORT: '0' },
+    );
+    await expect(failure).rejects.toThrow('PRIVACY_MODE (missing)');
+    expect(called).toBe(false);
   });
 });

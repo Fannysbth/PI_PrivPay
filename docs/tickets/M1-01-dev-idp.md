@@ -24,6 +24,12 @@ Seam yang diuji disepakati sebelum tes ditulis; tiap tes ditulis lebih dulu, ter
 
 - Tes AZ-38/39 (N1..N4) dan kredensial salah → 401; token kedaluwarsa dan `aud` sesuai klaim.
 
+## Catatan pelaksanaan
+
+- N-04 (Fanny, gerbang M0) diterapkan di tiket ini: `pnpm build` dan `pnpm test:smoke`, `exports` `@privpay/common` dengan kondisi `source`/`default`, dev-idp dibangun dan dijalankan seperti layanan.
+- `safeEqual` dan `signJwt`/`verifyJwt` dikerjakan di sini karena dibutuhkan penerbit token (N-12). `ServiceDefinition.modules` boleh berupa fungsi yang menerima env dan clock (validasi konfigurasi layanan lewat jalur gagal-cepat yang sama).
+- Keputusan sementara N-08..N-11 di `docs/OPEN_QUESTIONS.md` bagian G. Seed dan klaim: `tools/dev-idp/README.md`.
+
 ## Catatan keamanan
 
 - Tidak ada kata sandi nyata; rahasia klien dari berkas `secrets/`; utang DK-04 (pemetaan ke Keycloak) dicatat.

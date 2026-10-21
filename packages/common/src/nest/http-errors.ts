@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { HttpException } from '@nestjs/common';
 import type { Response } from 'express';
-import { DomainError, toClientError, toWireError, type Reason } from '../errors';
+import { DomainError, RateLimitedError, toClientError, toWireError, type Reason } from '../errors';
 
 const statusOf = (error: unknown): number | undefined => {
   if (error instanceof HttpException) return error.getStatus();
@@ -46,5 +46,7 @@ export function respond(error: unknown, res: Response, external: boolean): void 
     res.destroy();
     return;
   }
+  if (error instanceof RateLimitedError)
+    res.setHeader('retry-after', String(error.retryAfterSeconds));
   res.status(status).json(body);
 }

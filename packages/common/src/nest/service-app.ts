@@ -17,6 +17,7 @@ import {
   type ModuleMetadata,
 } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { ErrorRequestHandler, NextFunction, Request, Response } from 'express';
 import { SystemClock, type Clock } from '../clock';
 import { loadConfig } from '../config';
@@ -26,10 +27,23 @@ import { respond } from './http-errors';
 import { HttpMetrics, routeLabel } from './metrics';
 import { serviceConfigSchema, type ServiceId } from './service-config';
 
+export type ServiceModules = NonNullable<ModuleMetadata['imports']>;
+
+/** What a service's own modules may need while they are being built. */
+export interface ModuleContext {
+  /** The environment the platform configuration was validated from. */
+  readonly env: Readonly<Record<string, string | undefined>>;
+  readonly clock: Clock;
+}
+
 export interface ServiceDefinition {
   readonly service: ServiceId;
-  /** The service's own modules (controllers and providers); the platform ones are added here. */
-  readonly modules?: NonNullable<ModuleMetadata['imports']>;
+  /**
+   * The service's own modules (controllers and providers); the platform ones are added here. A function is called after
+   * the platform configuration is valid, so a ConfigError it raises stops the start the same way (fail fast).
+   */
+  readonly modules?:
+    ServiceModules | ((context: ModuleContext) => ServiceModules | Promise<ServiceModules>);
 }
 
 /** Everything a test (or a later ticket) may replace; production uses the defaults. */
@@ -52,6 +66,7 @@ export interface ServiceApp {
   close(): Promise<void>;
 }
 
+const JSON_BODY_LIMIT = '100kb';
 const SERVICE_INFO = Symbol('SERVICE_INFO');
 const CLOCK = Symbol('CLOCK');
 const METRICS = Symbol('METRICS');
@@ -126,11 +141,15 @@ export async function createServiceApp(
   });
   const metrics = new HttpMetrics();
   const external = EXTERNAL.has(definition.service);
+  const serviceModules =
+    typeof definition.modules === 'function'
+      ? await definition.modules({ env, clock })
+      : (definition.modules ?? []);
   let closing = false;
 
   const root: DynamicModule = {
     module: ServiceRootModule,
-    imports: [...(definition.modules ?? [])],
+    imports: [...serviceModules],
     controllers: [HealthController, MetricsController],
     providers: [
       {
@@ -141,7 +160,17 @@ export async function createServiceApp(
       { provide: METRICS, useValue: metrics },
     ],
   };
-  const app = await NestFactory.create(root, { logger: false, abortOnError: false });
+  // JSON is the only body format of the platform: Nest's default would also read form-encoded bodies (with qs
+  // nesting) into objects. The limit bounds what is read before a caller is proven (the gateway checks the declared
+  // size of each route after that).
+  const app = await NestFactory.create<NestExpressApplication>(root, {
+    logger: false,
+    abortOnError: false,
+    bodyParser: false,
+  });
+  app.useBodyParser('json', { limit: JSON_BODY_LIMIT });
+  // No answer names the framework.
+  app.disable('x-powered-by');
 
   // Request id and timing come first so that even errors raised by the body parser carry them.
   app.use((req: Request, res: Response, next: NextFunction) => {
@@ -149,13 +178,19 @@ export async function createServiceApp(
     const requestId = supplied !== undefined && UUID.test(supplied) ? supplied : randomUUID();
     res.locals['requestId'] = requestId;
     res.setHeader('x-request-id', requestId);
+    // Every answer is JSON or Prometheus text; a browser must not guess another type from it.
+    res.setHeader('x-content-type-options', 'nosniff');
     // A connection that outlives the shutdown would keep the server from draining.
     if (closing) res.setHeader('connection', 'close');
 
     const started = performance.now();
     // 'close' fires for finished and for aborted responses alike, so a request cut off by a shutdown is not lost.
     res.on('close', () => {
-      const route = routeLabel((req as { route?: { path?: unknown } }).route?.path);
+      // A service with one catch-all route (the gateway) names the route it matched; otherwise Express's own template.
+      const named: unknown = res.locals['routeTemplate'];
+      const route = routeLabel(
+        typeof named === 'string' ? named : (req as { route?: { path?: unknown } }).route?.path,
+      );
       const seconds = (performance.now() - started) / 1000;
       const failedLate: unknown = res.locals['status'];
       const status =
@@ -183,7 +218,7 @@ export async function createServiceApp(
     respond(error, res, external);
   });
 
-  const server = app.getHttpServer() as Server;
+  const server: Server = app.getHttpServer();
   let shutdown: Promise<void> | undefined;
   let listening: Promise<{ host: string; port: number }> | undefined;
 

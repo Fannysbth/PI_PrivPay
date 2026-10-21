@@ -54,7 +54,7 @@ Hasil prototipe: `privpay_app` tidak dapat UPDATE/DELETE/TRUNCATE `audit_log` da
 
 **Kolom kripto** (`pseudonym_mapping.subject_id_enc`, `identity_vault.*_enc`): `key_version(uint16 BE) || IV(12) || ciphertext || tag(16)`; AAD terikat baris, lihat `privacy-service.md` bagian 5. Dump basis data tidak boleh menampilkan plaintext (FR-25).
 
-**Batasan yang ditegakkan basis data:** `chk_purged`, `chk_vault_purged`, `chk_four_eyes`, `chk_attribute_names`, `UNIQUE (pseudonym)`, `UNIQUE (customer_lookup)`. Pengosongan setengah (hanya `purged_at`) ditolak `23514` (diuji).
+**Batasan yang ditegakkan basis data:** `chk_purged`, `chk_vault_purged`, `chk_mapping_complete`, `chk_vault_complete`, `chk_four_eyes`, `chk_disclosure_decided`, `chk_requested_attrs` (tiga terakhir tambahan N-24, E-29), `chk_attribute_names`, `UNIQUE (pseudonym)`, `UNIQUE (customer_lookup)`. Pengosongan setengah (hanya `purged_at`) ditolak `23514` (diuji).
 
 ## 5. transaction-db (mode proposed)
 

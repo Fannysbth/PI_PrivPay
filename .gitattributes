@@ -1,0 +1,10 @@
+# Scripts run on Linux (CI, WSL) as well as on Windows. A carriage return in a shell script breaks a Linux bash
+# ("syntax error near unexpected token `{\r'"), and with core.autocrlf=true Git would write CRLF into the working tree.
+# These patterns make Git write LF for them on every machine; tests/repo/line-endings.spec.ts checks it.
+*.sh text eol=lf
+*.sql text eol=lf
+*.ps1 text eol=lf
+*.mjs text eol=lf
+scripts/** text eol=lf
+tools/*/scripts/** text eol=lf
+.github/workflows/*.yml text eol=lf

@@ -24,6 +24,10 @@ Seam yang diuji disepakati sebelum tes ditulis; tiap tes ditulis lebih dulu, ter
 
 - Tes hasil prototipe identity-check (riwayat git `a887931`) ditulis ulang sebagai tes tiket; tambah tes `safeEqual` panjang berbeda dan nilai sama/berbeda.
 
+## Catatan pelaksanaan
+
+- `safeEqual` dan `signJwt`/`verifyJwt` (RS256, semua kasus negatif token) sudah ada dari M1-01 (N-12). Tiket ini membangun `authenticate` di atasnya (allowlist `azp`, token aktor, aturan `aud` K-03) dan memegang aturan lint/Semgrep terhadap `===` pada rahasia.
+
 ## Catatan keamanan
 
 - Tidak ada header peran atau aktor polos; token tidak pernah dicatat.

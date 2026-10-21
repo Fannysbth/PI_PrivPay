@@ -12,7 +12,9 @@ export const SERVICE_IDS = [
   'bank-simulator',
   'sms-simulator',
 ] as const;
-export type ServiceId = (typeof SERVICE_IDS)[number];
+/** Processes under tools/ that use the same bootstrap but are not platform services (ADR-0004). */
+export const TOOL_IDS = ['dev-idp'] as const;
+export type ServiceId = (typeof SERVICE_IDS)[number] | (typeof TOOL_IDS)[number];
 
 /**
  * What every service reads from the environment. The bind address can only be a loopback address in the local phase

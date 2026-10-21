@@ -74,6 +74,17 @@ export class DomainError extends Error {
   }
 }
 
+/** A refused request that also says when to come back; the HTTP layer sends it as `Retry-After` (FR-26). */
+export class RateLimitedError extends DomainError {
+  readonly retryAfterSeconds: number;
+
+  constructor(retryAfterSeconds: number) {
+    super('RATE_LIMITED', 'window');
+    this.name = 'RateLimitedError';
+    this.retryAfterSeconds = retryAfterSeconds;
+  }
+}
+
 export interface ErrorBody {
   readonly code: ClientCode;
   readonly reason?: Reason;
