@@ -1,4 +1,12 @@
-# HANDOFF (2026-10-21): Gerbang 3 M3 LULUS (dua putaran hijau) dan di-merge ke `main` lokal
+# HANDOFF (2026-10-21): M3 ditutup di `main` lokal; berikutnya M4
+
+## Penutup M3
+
+`/security-review` atas seluruh M2 dan M3 (`7cbc6ab..main`): tanpa temuan keyakinan 8 atau lebih, jadi tidak ada perubahan kode dan gerbang tidak diulang (gerbang terakhir: dua putaran hijau pada Gerbang 3). Checklist: 28 butir ✔, 12 ◐, 15 belum (kolom "Status (penutup M3)" di `docs/security/security-checklist.md`, bukti di `docs/security/review-M3.md`). Retro: `docs/RETRO_M3.md`; pelajaran berulang masuk `CLAUDE.md`. Keputusan Fanny: `reject` tanpa `approver_id` dan tafsir K-33 / ADR-0013 disetujui. Batasan yang diketahui: `source_account` nasabah tidak diperiksa kepemilikannya (di luar lingkup, spec transaction.md).
+
+**Usulan pembagian gerbang M4** (satu tiket satu commit, `/code-review` dan `/security-review` tiap gerbang, gerbang penuh dua putaran): Gerbang 1 = M4-01 (inti Transaction, idempotensi), lalu M4-04 (Fraud) dan M4-05 (Notification dan SMS simulator) yang bergantung padanya hanya pada M0-04, M2-11, M3-01 (kandidat `/implement-spec` paralel setelah M4-01); Gerbang 2 = M4-02 (orkestrasi, butuh M4-01, M4-04, M4-05) dan M4-03 (review `HELD`); Gerbang 3 = M4-06 (Reconciliation inti dan bank simulator) dan M4-07 (audit dan pembukaan, butuh M3-05); Gerbang 4 = M4-08 (alur registrasi) dan M4-09 (skenario E2E TX-10001..10003). Urutan mengikuti kolom "Bergantung pada" di `docs/tickets/README.md`. Tiap tiket yang menambah tabel menjalankan `pnpm db:migrate` setelah merge.
+
+# (Riwayat) Gerbang 3 M3 LULUS (dua putaran hijau) dan di-merge ke `main` lokal
 
 Sumber kebenaran tetap `CLAUDE.md`, `docs/DESIGN_DECISIONS.md`, ADR, PRD. `main` (lokal, belum di-push) memuat M0, M1, M2 dan Gerbang 1, 2, 3 M3. Branch gerbang tidak dihapus. Penutup M3 (`/security-review` milestone, centang checklist, `/retro`) belum dikerjakan.
 

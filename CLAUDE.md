@@ -127,6 +127,13 @@ Berhenti dan minta persetujuan user di setiap gerbang fase/milestone. Berhenti d
 
 Subagent mematuhi berkas ini. Satu subagent satu tiket. Tidak menyentuh berkas bersama (compose, `packages/common`, nomor migrasi) kecuali tiketnya memberi kepemilikan. Koordinator memverifikasi hasil dengan menjalankan tes sendiri.
 
+## Pelajaran berulang (retro M3, `docs/RETRO_M3.md`)
+
+- Sebelum gerbang: periksa memori bebas; satu proses pada satu waktu; bila proses dihentikan sistem dua kali, berhenti dan laporkan. Kegagalan pool saat memori sempit baru dianggap bug bila terulang saat memori longgar.
+- Tes konkurensi memaksa tumpang tindih tanpa `sleep` (kunci ditahan sesi lain) dan dibuktikan dengan mutasi: pengaman dihapus, tes harus gagal, lalu kode dikembalikan.
+- Commit hanya setelah lint dan typecheck hijau (rangkai dengan `&&`). Baca tanda tangan dan satuan API (mis. `FakeClock.advance` memakai detik) sebelum menulis fixture; fixture salah bukan alasan mengubah kode.
+- Sisa database tes: pengguna menjalankan `! corepack pnpm db:test-databases drop` (butuh terminal interaktif). Jangan menyimpan branch cadangan berisi fixture lama; `gitleaks --all` harus bersih tanpa allowlist.
+
 ## Menjaga berkas ini tetap berguna
 
 Singkat dan faktual. Tambahkan aturan baru hanya dari kesalahan yang benar-benar berulang (hasil `/retro`), dengan persetujuan user.
