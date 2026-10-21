@@ -66,6 +66,8 @@ PENDING ─(lewat TX_PENDING_TIMEOUT_SECONDS)─▶ FAILED
 
 Mode baseline: langkah sama; `SubjectReferencePort` baseline tidak memanggil Privacy, Fraud menerima `customer_id`, Notification menerima `customer_id`; repositori baseline menyimpan `customer_id` dan `account_number` (ADR-0006).
 
+**[M4-02/M4-03]** Urutan langkah 3 dan 4 dibalik di kode: notifikasi dikirim sebelum `PATCH` status final, karena Privacy menolak re-issue (`TX_TERMINAL`) setelah transaksi final dan TF-04 menuntut re-issue masih mungkin (menunggu persetujuan Fanny). Review pada id yang tidak ada dijawab `NOT_HELD`; `reason_code` divalidasi tetapi tidak disimpan (tidak ada kolom, PRD 11). `PendingSweeper.sweep()` ada tetapi penjadwalannya (`TX_SWEEP_INTERVAL_SECONDS`) belum.
+
 ## 6. Invarian keamanan
 
 Tidak ada kolom, log, atau muatan keluar berisi identitas (proposed); log hanya `transaction_id` dan token; `fraud_token` dan `notif_token` tidak disimpan (hanya transit); hanya `API_GATEWAY` (dan `RECONCILIATION` untuk 3.4) yang memanggil; peran `fraud_analyst` untuk 3.2 dan 3.3 diperiksa dari token aktor; tidak ada fallback ke data mentah; kegagalan Fraud tidak pernah menyelesaikan transaksi di atas ambang sebagai `COMPLETED`.
