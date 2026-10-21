@@ -39,6 +39,15 @@ export interface ReIssueRequest extends CommonRequest {
   readonly transactionId: string;
 }
 
+/** Resolve-domain: NOTIFICATION trades the token it holds (P4) for the pseudonym of the same subject in P5 (spec privacy 4.2). */
+export interface ResolveDomainRequest extends CommonRequest {
+  readonly notifToken: string;
+}
+
+export interface ResolveDomainResult {
+  readonly notificationDomainId: string;
+}
+
 export interface TokenResult {
   readonly pseudonym: string;
   readonly expiresAt: Date;

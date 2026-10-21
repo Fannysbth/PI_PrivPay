@@ -336,6 +336,189 @@ describe('M2-12 POST /pseudonymize', () => {
   });
 });
 
+describe('M3-01 POST /resolve-domain', () => {
+  const p4Of = async (): Promise<string> => {
+    const answer = await post('/pseudonymize', service('transaction'), {
+      source_pseudonym: await issueP1(),
+      target_service: 'NOTIFICATION',
+      purpose: 'NOTIFICATION',
+      transaction_id: 'TX-7001',
+    });
+    return (answer.body as { pseudonym: string }).pseudonym;
+  };
+  const p5 = async (): Promise<string> =>
+    (
+      (
+        await post('/pseudonymize', service('api-gateway'), {
+          subject_type: 'CUSTOMER',
+          subject_id: CUSTOMER,
+          target_service: 'NOTIFICATION',
+          purpose: 'NOTIFICATION_REGISTRATION',
+        })
+      ).body as { pseudonym: string }
+    ).pseudonym;
+
+  it('M3-01 AZ-21 N1 no credential is 401 and writes no audit row', async () => {
+    const answer = await post('/resolve-domain', undefined, { notif_token: 'PSEU-00000000' });
+    expect(answer.status).toBe(401);
+    expect(await count('audit_log')).toBe(0);
+  });
+
+  it('M3-01 AZ-21 N2 TRANSACTION is POLICY_NOT_ALLOWED with one DENIED row; NOTIFICATION gets only the PSEU token', async () => {
+    const domain = await p5();
+    const p4 = await p4Of();
+    const before = await count('audit_log');
+    const denied = await post('/resolve-domain', service('transaction'), { notif_token: p4 });
+    expect(denied.status).toBe(403);
+    expect(denied.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    expect(await count('audit_log')).toBe(before + 1);
+    expect(await lastAudit()).toMatchObject({
+      action: 'RESOLVE_NOTIF_DOMAIN',
+      status: 'DENIED',
+      requesting_service: 'TRANSACTION',
+    });
+
+    const ok = await post('/resolve-domain', service('notification'), { notif_token: p4 });
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({ notification_domain_id: domain });
+    expect(JSON.stringify(ok.body)).not.toContain(CUSTOMER);
+  });
+
+  it('M3-01 AZ-21 N2 a person is refused too: only the service NOTIFICATION resolves', async () => {
+    const p4 = await p4Of();
+    const answer = await post('/resolve-domain', person('admin'), { notif_token: p4 });
+    expect(answer.status).toBe(403);
+    expect(answer.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+  });
+
+  it('M3-01 AZ-21 N3 an unknown field is 422 and is not audited', async () => {
+    const p4 = await p4Of();
+    const before = await count('audit_log');
+    const answer = await post('/resolve-domain', service('notification'), {
+      notif_token: p4,
+      subject_id: CUSTOMER,
+    });
+    expect(answer.status).toBe(422);
+    expect(await count('audit_log')).toBe(before);
+  });
+
+  it('M3-01 AZ-21 N4 requesting_service in the body is a field nobody knows (D-16)', async () => {
+    const p4 = await p4Of();
+    const answer = await post('/resolve-domain', service('transaction'), {
+      notif_token: p4,
+      requesting_service: 'NOTIFICATION',
+    });
+    expect(answer.status).toBe(422);
+  });
+
+  it('M3-01 FR-08 a token that does not exist is 404 TOKEN_NOT_FOUND', async () => {
+    const answer = await post('/resolve-domain', service('notification'), {
+      notif_token: 'PSEU-00000000',
+    });
+    expect(answer.status).toBe(404);
+    expect(answer.body).toMatchObject({ error: { reason: 'TOKEN_NOT_FOUND' } });
+  });
+});
+
+describe('M3-02 POST /pseudonym/{pseudonym}/revoke and POST /subject/revoke', () => {
+  const revokePath = (pseudonym: string) => `/pseudonym/${pseudonym}/revoke`;
+
+  it('M3-02 AZ-16 N1 no credential is 401 and changes nothing', async () => {
+    const p1 = await issueP1();
+    expect((await post(revokePath(p1), undefined, {})).status).toBe(401);
+    expect(await count('audit_log')).toBe(1);
+  });
+
+  it('M3-02 AZ-16 N2 an auditor and a service are refused with one DENIED row each; the admin revokes, then repeats', async () => {
+    const p1 = await issueP1();
+    const before = await count('audit_log');
+    const auditor = await post(revokePath(p1), person('auditor'), {});
+    expect(auditor.status).toBe(403);
+    expect(auditor.body).toMatchObject({ error: { reason: 'FORBIDDEN_ROLE' } });
+    const service403 = await post(revokePath(p1), service('transaction'), {});
+    expect(service403.status).toBe(403);
+    expect(service403.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    expect(await count('audit_log')).toBe(before + 2);
+
+    const first = await post(revokePath(p1), person('admin'), {});
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      pseudonym: p1,
+      status: 'revoked',
+      revoked_at: '2026-10-20T08:00:00.000Z',
+    });
+    clock.advance(5);
+    const again = await post(revokePath(p1), person('admin'), undefined);
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(first.body);
+    expect(await lastAudit()).toMatchObject({
+      action: 'REVOKE_TOKEN',
+      status: 'SUCCESS',
+      actor_id: 'usr-admin',
+      requesting_service: 'ADMIN_CONSOLE',
+    });
+  });
+
+  it('M3-02 AZ-16 N2 a token that is not there is 404 with one DENIED row', async () => {
+    const answer = await post(revokePath('PSEU-00000000'), person('admin'), {});
+    expect(answer.status).toBe(404);
+    expect(answer.body).toMatchObject({ error: { reason: 'TOKEN_NOT_FOUND' } });
+    expect(await lastAudit()).toMatchObject({ action: 'REVOKE_TOKEN', status: 'DENIED' });
+  });
+
+  it('M3-02 AZ-16 N3 N4 a field in the body is 422 and nothing changes, whoever it claims to be', async () => {
+    const p1 = await issueP1();
+    const before = await count('audit_log');
+    const extra = await post(revokePath(p1), person('admin'), { reason: 'x' });
+    const claim = await post(revokePath(p1), service('transaction'), {
+      requesting_service: 'ADMIN_CONSOLE',
+    });
+    expect([extra.status, claim.status]).toEqual([422, 422]);
+    expect(await count('audit_log')).toBe(before);
+    const malformed = await post(revokePath('not-a-token'), person('admin'), {});
+    expect(malformed.status).toBe(422);
+  });
+
+  it('M3-02 AZ-17 N1 no credential is 401', async () => {
+    expect(
+      (await post('/subject/revoke', undefined, { subject_type: 'CUSTOMER', subject_id: CUSTOMER }))
+        .status,
+    ).toBe(401);
+  });
+
+  it('M3-02 AZ-17 TK-17 N2 the admin revokes the subject and gets the count; an auditor does not', async () => {
+    await issueP1();
+    const body = { subject_type: 'CUSTOMER', subject_id: CUSTOMER };
+    const denied = await post('/subject/revoke', person('auditor'), body);
+    expect(denied.status).toBe(403);
+    expect(denied.body).toMatchObject({ error: { reason: 'FORBIDDEN_ROLE' } });
+    const ok = await post('/subject/revoke', person('admin'), body);
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({ revoked_count: 1 });
+    const none = await post('/subject/revoke', person('admin'), body);
+    expect(none.status).toBe(200);
+    expect(none.body).toEqual({ revoked_count: 0 });
+    expect(await lastAudit()).toMatchObject({ action: 'REVOKE_SUBJECT', status: 'DENIED' });
+    expect(JSON.stringify(await lastAudit())).not.toContain(CUSTOMER);
+    expect(logLines.join(' ')).not.toContain(CUSTOMER);
+  });
+
+  it('M3-02 AZ-17 N3 N4 an unknown field is 422 and nothing changes', async () => {
+    await issueP1();
+    const before = await count('audit_log');
+    const answer = await post('/subject/revoke', person('admin'), {
+      subject_type: 'CUSTOMER',
+      subject_id: CUSTOMER,
+      requesting_service: 'ADMIN_CONSOLE',
+    });
+    expect(answer.status).toBe(422);
+    expect(await count('audit_log')).toBe(before);
+    expect(
+      (await post('/subject/revoke', person('admin'), { subject_type: 'CUSTOMER' })).status,
+    ).toBe(422);
+  });
+});
+
 describe('M2-12 POST /re-issue and PATCH /transaction-status', () => {
   it('M2-12 AZ-23 TRANSACTION re-issues an expired token; FRAUD gets POLICY_NOT_ALLOWED', async () => {
     const p1 = await issueP1();

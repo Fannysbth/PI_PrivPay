@@ -1,55 +1,55 @@
-# HANDOFF (2026-10-21): Gerbang 3 M2 selesai dan di-merge ke `main` lokal
+# HANDOFF (2026-10-21): Gerbang 1 M3 selesai di `feat/m3-gerbang-1` (lokal, belum di-merge)
 
-Untuk memulai sesi baru tanpa kehilangan konteks. Sumber kebenaran tetap `CLAUDE.md`, `docs/DESIGN_DECISIONS.md`, ADR, PRD.
+Sumber kebenaran tetap `CLAUDE.md`, `docs/DESIGN_DECISIONS.md`, ADR, PRD. `main` (lokal, belum di-push) memuat M0, M1, M2; cabang M3 bertumpu langsung di atasnya.
 
-## Status
+## Pembagian gerbang M3
 
-- `main` (lokal, **belum di-push**) memuat M0, M1, seluruh M2 (M2-01 sampai M2-12), alat pembersih DB tes, tabel tautan transaksi (K-28, K-29; ADR-0013), `endOfLine: "auto"` untuk Prettier, dan Gerbang 3 lewat merge commit dari `feat/m2-gerbang-3` (cabang tidak dihapus). Setelah merge hanya lint, typecheck, dan gitleaks yang dijalankan di `main`; gerbang penuh dijalankan dua kali di cabang yang sama sebelum merge.
-- Isi `feat/m2-gerbang-3` (tujuh commit sebelum catatan ini): M2-08 brankas identitas (`POST /identity`), M2-10 pemindai kenari v1 (`pnpm pii-scan`), M2-11 `Tokenizer` Gateway dengan rute AZ-03 (`POST /transaction`) dan AZ-09 (`POST /settlement/report`) dan enam vektor kontrak, perbaikan `/code-review`, keputusan N-25..N-27, dan dua perbaikan tes (UUID uji dibangun saat jalan; penantian job retensi tanpa batas polling).
-- `backup/m2-gerbang-3-sebelum-rewrite`: cadangan cabang di atas **sebelum** riwayat lokalnya ditulis ulang (supaya tiga UUID fiktif `Idempotency-Key` di berkas tes bawah `services/` tidak ada di commit mana pun; pohon akhir identik, `git diff` ke cadangan kosong). Cadangan itu masih memuat commit lama `094c77d`, jadi `gitleaks --log-opts="--all"` mentah menandainya. Pemindaian riwayat penuh tanpa cadangan: `--log-opts="--exclude=refs/heads/backup/* --all"`, bersih. Hapus cabang cadangan bila tidak dibutuhkan lagi, lalu `--all` bersih.
+- Gerbang 1 (`feat/m3-gerbang-1`): M3-01 `resolve-domain`, M3-02 pencabutan token dan subjek. **Selesai.**
+- Gerbang 2 (`feat/m3-gerbang-2`): M3-03 pembacaan audit, M3-04 alur pembukaan identitas. Cabang dibuat dari ujung `feat/m3-gerbang-1` setelah disetujui.
+- Gerbang 3 (`feat/m3-gerbang-3`): M3-05 `de-pseudonymize`, M3-06 suite keamanan (`pnpm test:security`).
+- Urutan mengikuti dependensi tiket; satu tiket satu commit, `/code-review` dan `/security-review` di akhir tiap gerbang, gerbang penuh dua putaran.
 
-## Hasil gerbang penuh `feat/m2-gerbang-3` (dua putaran berturut-turut, satu proses pada satu waktu, tanpa lari tumpang tindih)
+## Gerbang 1 M3
+
+Commit: `560179d` M3-01, `e723e8e` M3-02, `bf6afdf` perbaikan review M3-02. Dua putaran berturut-turut, satu proses pada satu waktu:
 
 | Langkah | Putaran 1 | Putaran 2 |
 | --- | --- | --- |
-| eslint + prettier | hijau | hijau |
-| typecheck | hijau | hijau |
-| unit (2 worker) | hijau, 51 suite, 1027 tes | hijau, 51 suite, 1027 tes |
-| integrasi | hijau, 15 suite, 323 tes | hijau, 15 suite, 323 tes |
-| smoke | hijau, 20 tes | hijau, 20 tes |
-| audit --prod | tidak ada kerentanan | tidak ada kerentanan |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 51 suite, 1027 tes | 51 suite, 1027 tes |
+| integrasi | 17 suite, 377 tes | 17 suite, 377 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
 | gitleaks riwayat (tanpa cabang cadangan) | bersih | bersih |
 
-`/code-review` dan `/security-review` dijalankan; tidak ada temuan keamanan dengan keyakinan ≥ 8. Temuan review yang ditolak dan alasannya ada di pesan laporan sesi (settlement per kelompok 16, token tersisa saat satu subjek gagal, `transaction_id` per proses sesuai K-17, urutan validasi di `/identity`, retry `pseudonymize` idempoten).
+Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit mencetak peringatan "worker failed to exit gracefully" (belum diselidiki; tes lulus semua).
 
-### Catatan lari bermasalah (diamati, belum dibuktikan)
+`/code-review`: temuan valid diperbaiki (kelas `NothingToRevoke` menggantikan pencocokan `action`/`reason`; komentar `REVOCATION_SQL`). Ditolak: kunci advisory pada `revoke_subject` (balapan dengan penerbitan, lihat keterbatasan a); audit N baris berurutan (paling banyak 6 token aktif per subjek karena `uq_mapping_active`); urutan kunci identitas vs baris token (jalur `store` tidak menyentuh baris token, tidak ada siklus); `findDomain` tanpa ORDER BY (paling banyak satu P5 aktif per subjek); `actorOf` tidak dipakai di `resolveDomain` (tidak ada perbedaan perilaku); HMAC lookup sebelum cek peran (tanpa log, hanya HMAC). `/security-review`: tidak ada temuan.
 
-- **Tes M2-09 `step 1 does not wait for a row in use` (`retention.integration.spec.ts`) dianggap berpotensi tidak stabil.** Gagal sekali pada lari penuh; dua putaran gerbang sesudah perbaikan tes hijau, tetapi itu tidak membuktikan penyebabnya. Awasi di lari berikutnya; bila gagal lagi, selidiki sebagai bug nyata (kode produksi `RETENTION_SQL.markExpired` dan tes), jangan di-skip.
-- Lari `test:integration` oleh pengguna di terminal gagal di 13 suite dengan gejala dua proses memakai database tes yang sama (`pg_database_datname_index` duplikat, tabel hilang di tengah tes, baris tes lain ikut terhitung). **Diduga** lari tumpang tindih pada database tes yang sama (mis. sisa gerbang latar belakang yang dihentikan sistem karena memori). Tidak dibuktikan dengan mengulang tumpang tindih; saat dijalankan sendirian suite yang sama hijau.
-- Satu kali, tes M2-09 `step 1 does not wait for a row in use` gagal (`expired` 2, seharusnya 1) saat lari penuh, padahal lulus 8 dari 8 saat sendirian dan tetap lulus ketika batas polling dipaksa 1. Penyebab **belum terbukti**; dugaan: batas 3000 polling `pg_locks` habis sebelum job mencapai `UPDATE` pada mesin berat, sehingga kunci baris dilepas terlalu cepat. Celahnya ditutup di tes (commit `250d020`); kode produksi tidak berubah. Bila muncul lagi, selidiki sebagai bug nyata.
-- Ada **39 database tes sisa** (`pnpm db:test-databases list`). Tidak menghalangi tes (`createTestDb` menghapus yang bernama sama), tetapi bersihkan dengan `pnpm db:test-databases drop` di terminal interaktif dan ketik `DROP 39` (alat menolak konfirmasi lewat pipa).
-- Satu gerbang penuh memakan puluhan menit di mesin ini; `test:integration` saja sekitar 7 sampai 13 menit. Jalankan satu proses pada satu waktu.
+### Keterbatasan yang diketahui (dari `/security-review`)
 
-## Keputusan yang sudah final (jangan ditanya lagi)
+- (a) Token yang terbit bersamaan dengan `revoke_subject` bisa lolos dari pencabutan. Gateway boleh menerbitkan token baru untuk subjek yang sama kapan saja, jadi pencabutan memang bukan blokir penerbitan.
+- (b) Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject` (spec 4.6: hanya baris `active`); diserahkan ke retensi, dan `RetentionJob` belum dijadwalkan.
 
-K-27 (semua penolakan keputusan diaudit DENIED), K-29 (bentuk 3 menolak sumber `revoked`), K-30 (terminal final; terminal ke terminal lain 409), K-31, K-32 (`requesting_service = PRIVACY_SERVICE` pada `PURGE_IDENTITY`), K-33 (catatan M3-02), K-28 = opsi (b)+(d) (ADR-0013, E-30). Urutan validasi, basis, atribut, token, pola field audit: sudah disetujui sebelumnya.
+### Keputusan di tiket (tidak ada ADR yang bertabrakan)
 
-Gerbang 3 (`docs/OPEN_QUESTIONS.md`): **N-25** `POST /identity` memakai kunci penasihat + `SELECT FOR UPDATE` + `INSERT`/`UPDATE`, bukan `ON CONFLICT DO UPDATE`, karena AAD terikat id baris (spec 4.9 diperbarui; tes delapan pemanggilan serentak). **N-26** nama kenari berhuruf (`Kenari` + enam huruf), pemindai terbukti mendeteksinya. **N-27** batas badan settlement tetap 64 KiB, jumlah item turun ke 500 (`MAX_SETTLEMENT_ITEMS`; spec gateway-tokenizer 5 dan reconciliation diperbarui).
-
-K-28 (disetujui 2026-10-21): kunci `transaction_link` empat kolom (`transaction_id`, `subject_type`, `service_id`, `purpose`); transaction id yang sama dengan pseudonym lain = `IDEMPOTENCY_CONFLICT` 409; `privpay_app` mendapat `DELETE` hanya pada `transaction_link`; re-issue tidak pernah membuat tautan.
+- `revokeToken`/`revokeSubject` ada di `RevocationService` (bukan `TokenService`, agar berkas tidak membengkak); spec 2 dan 4.6 diperbarui. Meminta persetujuan Anda bila ingin dipindah ke `TokenService`.
+- `revoke_subject` tanpa apa pun: HTTP 200 `{revoked_count: 0}` dengan satu baris audit DENIED `TOKEN_NOT_FOUND` (membaca spec 4.6 harfiah). `PURGE_IDENTITY` dari pencabutan memakai `requesting_service = ADMIN_CONSOLE` dan `actor_id` admin (K-32 hanya mengatur job retensi).
+- `AuditedOperation` kini menerima daftar baris SUCCESS (satu per token, spec 4.6).
+- K-33 / ADR-0013 ("ikut mengosongkan atau menghapus tautan"): berlaku bila `revoke_subject` mengosongkan baris mapping; spec 7.10 hanya menandai `revoked` dan mengosongkan brankas, jadi tautan tidak disentuh (sumber `revoked` harus tetap terbaca `REVOKED`, K-29). Mohon konfirmasi tafsir ini.
 
 ## Belum teruji / belum ada
 
-- Fail-closed dengan Privacy mati di compose (butuh Docker, M7): tidak dinyatakan lulus. Fail-closed diuji di tingkat Gateway (Privacy tidak terjangkau, 5xx, jawaban bukan pseudonym: 503 tanpa panggilan hilir) dengan Privacy asli dihentikan di tes integrasi, bukan di compose.
-- `RetentionJob` belum dipasang ke siklus hidup proses (ada `nextRunAt`, belum dijadwalkan). `revoke_subject` (M3-02) harus mengosongkan kedua kolom bersama `purged_at` dan menghapus tautan, dengan kunci baris yang sama dengan job.
-- Rute `/register` dan `/notification/register` serta `RegistrationFlow` belum ada (M4-08). Plugin Lua belum diuji terhadap vektor kontrak (DK-02).
-- Body bukan JSON dari pemanggil tanpa token mendapat 422 sebelum 401 (parser JSON di bootstrap bersama). Dicatat, belum diubah.
-- Belum ada: M3-xx, `pnpm test:security`, `pnpm newman`, Docker.
+- Fail-closed dengan Privacy mati di compose (butuh Docker, M7): tidak dinyatakan lulus. Diuji di tingkat Gateway dengan Privacy asli dihentikan.
+- `RetentionJob` belum dijadwalkan ke siklus hidup proses.
+- Rute `/register` dan `/notification/register` serta `RegistrationFlow` (M4-08). Plugin Lua belum diuji terhadap vektor kontrak (DK-02).
+- Body bukan JSON tanpa token mendapat 422 sebelum 401 (parser JSON bersama). Dicatat, belum diubah.
+- `pnpm test:security` dan `pnpm newman` belum ada (M3-06, M6-01); Docker belum ada.
 
 ## Langkah berikutnya
 
-1. Persetujuan Anda untuk merge `feat/m2-gerbang-3` ke `main` (dan menghapus cabang cadangan bila tidak perlu). Belum dilakukan.
-2. M3-01 sampai M3-06 (satu tiket sekali jalan, `/tdd`, dua review untuk tiket inti, gerbang penuh di akhir tiket), lalu `/security-review` milestone untuk M2/M3. Catatan M3-02 dari K-33 dan tautan transaksi di atas.
-3. Sebelum M4: `/improve-codebase-architecture` setelah M4 dan M5 sesuai alur; Docker menyusul setelah M4 stabil (ADR-0004).
+1. Persetujuan Anda atas Gerbang 1 (merge ke `main`) dan tafsir K-33 di atas.
+2. Gerbang 2: M3-03 (`GET /audit-log`, timeline, summary; pool `auditor`) dan M3-04 (alur pembukaan identitas empat mata).
+3. Gerbang 3: M3-05 dan M3-06, lalu `/security-review` milestone M2/M3.
 
-Aturan hemat tetap berlaku: dokumentasi singkat sekali per tiket, mutasi hanya pada pengaman terpenting (timeout, pemulihan otomatis), dua review hanya untuk tiket inti, keluaran ringkas.
+Aturan hemat tetap: dokumentasi singkat sekali per tiket, dua review hanya untuk tiket inti, keluaran ringkas, satu proses pada satu waktu. Sisa 39 database tes dapat dibersihkan dengan `pnpm db:test-databases drop` (ketik `DROP <jumlah>`).

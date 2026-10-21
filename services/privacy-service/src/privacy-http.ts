@@ -10,6 +10,7 @@ import {
 } from '@privpay/common';
 import { z } from 'zod';
 import type { IdentityVault } from './identity';
+import type { RevocationService } from './revocation';
 import {
   TRANSACTION_STATUSES,
   type TokenResult,
@@ -46,6 +47,9 @@ const fromTransaction = z.strictObject({
 // The three forms have different required fields, so a body that mixes them matches none (spec privacy 4.1).
 const pseudonymize = z.union([identity, exchange, fromTransaction]);
 const reIssue = z.strictObject({ pseudonym: text, transaction_id: text });
+const resolveDomain = z.strictObject({ notif_token: text });
+const noBody = z.strictObject({});
+const revokeSubject = z.strictObject({ subject_type: text, subject_id: text });
 const transactionStatus = z.strictObject({
   transaction_id: text,
   status: z.enum(TRANSACTION_STATUSES),
@@ -91,10 +95,11 @@ export interface PrivacyHttpDeps {
   readonly keys: JwksKeys;
   readonly tokens: Pick<
     TokenService,
-    'generate' | 'exchange' | 'generateFromTransaction' | 'reIssue'
+    'generate' | 'exchange' | 'generateFromTransaction' | 'reIssue' | 'resolveDomain'
   >;
   readonly statuses: Pick<TransactionStatusService, 'update'>;
   readonly vault: Pick<IdentityVault, 'store'>;
+  readonly revocation: Pick<RevocationService, 'revokeToken' | 'revokeSubject'>;
 }
 
 function shape<T>(schema: z.ZodType<T>, headers: AuthHeaders, body: unknown): T {
@@ -111,6 +116,11 @@ const answer = (result: TokenResult) => ({
   pseudonym: result.pseudonym,
   expires_at: result.expiresAt.toISOString(),
   reused: result.reused,
+});
+
+const actorOf = (who: Authenticated) => ({
+  requestingService: who.requestingService,
+  ...(who.actor === undefined ? {} : { actorId: who.actor.actorId, actorRole: who.actor.role }),
 });
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -204,6 +214,47 @@ export class PrivacyHttp {
         }),
       ),
     );
+  }
+
+  async resolveDomain(headers: AuthHeaders, body: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(resolveDomain, headers, body);
+    const result = await this.run(() =>
+      this.deps.tokens.resolveDomain({
+        requestingService: who.requestingService,
+        ...(who.actor === undefined ? {} : { actorId: who.actor.actorId }),
+        notifToken: input.notif_token,
+      }),
+    );
+    return { notification_domain_id: result.notificationDomainId };
+  }
+
+  /** Spec privacy 4.5. The pseudonym is the path; the body must be empty. Caller and role come from the token (ADR-0007). */
+  async revokeToken(headers: AuthHeaders, pseudonym: string, body: unknown) {
+    const who = await this.caller(headers);
+    shape(noBody, headers, body ?? {});
+    const result = await this.run(() =>
+      this.deps.revocation.revokeToken({ ...actorOf(who), pseudonym }),
+    );
+    return {
+      pseudonym: result.pseudonym,
+      status: 'revoked',
+      revoked_at: result.revokedAt.toISOString(),
+    };
+  }
+
+  /** Spec privacy 4.6. */
+  async revokeSubject(headers: AuthHeaders, body: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(revokeSubject, headers, body);
+    const result = await this.run(() =>
+      this.deps.revocation.revokeSubject({
+        ...actorOf(who),
+        subjectType: input.subject_type,
+        subjectId: input.subject_id,
+      }),
+    );
+    return { revoked_count: result.revokedCount };
   }
 
   async transactionStatus(headers: AuthHeaders, body: unknown) {

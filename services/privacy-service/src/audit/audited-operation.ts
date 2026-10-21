@@ -29,8 +29,11 @@ export type SuccessEntry = Omit<AuditEntry, 'status' | 'reason'> & {
 
 export interface AuditedResult<T> {
   readonly result: T;
-  /** The SUCCESS row, written in the same transaction as the state change. */
-  readonly audit: SuccessEntry;
+  /**
+   * The SUCCESS row, written in the same transaction as the state change. Revoking a subject writes several (one per
+   * token, spec privacy 4.6); all commit together or none does.
+   */
+  readonly audit: SuccessEntry | readonly [SuccessEntry, ...SuccessEntry[]];
 }
 
 /**
@@ -105,7 +108,9 @@ export class AuditedOperation {
       throw error;
     }
     try {
-      await this.writer.record(outcome.audit, client);
+      const entries = Array.isArray(outcome.audit) ? outcome.audit : [outcome.audit];
+      for (const entry of entries as readonly SuccessEntry[])
+        await this.writer.record(entry, client);
     } catch (error) {
       await rollback(client, health);
       throw failure('audit_write', error);

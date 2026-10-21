@@ -14,7 +14,7 @@ Istilah mengikuti skill `codebase-design`. Lapisan HTTP (controller) tipis dan h
 | --- | --- | --- |
 | `PolicyEngine` | **[Δ spec, M2-03]** `evaluate({operation, requestingService, context: {serviceId, purpose, subjectType}, actorRole?})` mengembalikan konteks Tabel 1 atau melempar `POLICY_NOT_ALLOWED`/`FORBIDDEN_ROLE` (`operation` menggantikan `mode`/"cara terbit": `GENERATE_FROM_IDENTITY`, `GENERATE_FROM_TRANSACTION`, `DE_PSEUDONYMIZE`, `RE_ISSUE`); `authorizeCaller(operation, caller)` (RESOLVE_NOTIF_DOMAIN); `exchangeTarget(caller, {serviceId, purpose})` (Tabel 2 sebelum token dibaca) dan `exchangeAllowed(sumber, tujuan, caller)` (setelah kepemilikan terbukti); `contextOf(key)`, `attributesFor(key)` (Tabel 5), `isValidBasis(basis)` (Tabel 6); TTL per purpose disuntik lewat konstruktor | Tabel 1, 2, 3, 5, 6 sebagai konfigurasi bertipe dan beku; murni, tanpa I/O |
 | `Crypto` | `FieldCipher.encrypt/decrypt`, `BlindIndex.lookup`, `TokenMint.mint`, `loadKeys` | bagian 5 |
-| `TokenService` | `generate`, `generateFromTransaction`, `exchange`, `reIssue`, `resolveDomain`, `revokeToken`, `revokeSubject` | `buat_token`, status efektif, kunci per-kombinasi, audit dalam transaksi yang sama |
+| `TokenService` | `generate`, `generateFromTransaction`, `exchange`, `reIssue`, `resolveDomain` (`revokeToken` dan `revokeSubject` ada di `RevocationService`, M3-02) | `buat_token`, status efektif, kunci per-kombinasi, audit dalam transaksi yang sama |
 | `DisclosureService` | `request`, `approve`, `reject`, `open` (de-pseudonymize) | mesin status, lima gerbang, brankas |
 | `IdentityVault` | `store`, `open(lookup, attrs)`, `purge(lookup)` | kolom terenkripsi per atribut |
 | `AuditWriter` / `AuditReader` | `record(entry, tx?)`; `query(filter)`, `timeline`, `summary` | dua pool koneksi (bagian 3) |
@@ -64,7 +64,7 @@ Tanpa body; pemanggil `ADMIN_CONSOLE` dengan peran `admin`. 200 `{pseudonym, sta
 
 ### 4.6 `POST /subject/revoke`
 
-`{subject_type, subject_id}` → 200 `{revoked_count}`. `ADMIN_CONSOLE`, peran `admin`. Audit: satu baris `REVOKE_SUBJECT` per token yang dicabut (dengan `mapping_id`) dan, bila subjek `CUSTOMER` dan baris brankas ada, satu baris `PURGE_IDENTITY`. Bila tidak ada token dan tidak ada brankas: satu baris `REVOKE_SUBJECT` DENIED `TOKEN_NOT_FOUND` dan `revoked_count: 0`. ADR-0005 menyerahkan perilaku ini ke spec (contohnya "tanpa baris audit palsu"): satu baris DENIED dipilih, sesuai katalog PRD 12, agar "satu baris audit per operasi" tetap berlaku; itu bukan baris palsu karena operasinya memang ditolak.
+`{subject_type, subject_id}` → 200 `{revoked_count}`. `ADMIN_CONSOLE`, peran `admin`. Audit: satu baris `REVOKE_SUBJECT` per token yang dicabut (dengan `mapping_id`) dan, bila subjek `CUSTOMER` dan baris brankas ada, satu baris `PURGE_IDENTITY`. Bila tidak ada token dan tidak ada brankas: satu baris `REVOKE_SUBJECT` DENIED `TOKEN_NOT_FOUND` dan `revoked_count: 0`. ADR-0005 menyerahkan perilaku ini ke spec (contohnya "tanpa baris audit palsu"): satu baris DENIED dipilih, sesuai katalog PRD 12, agar "satu baris audit per operasi" tetap berlaku; itu bukan baris palsu karena operasinya memang ditolak. **[M3-02]** Jawaban HTTP tetap 200 `{revoked_count: 0}`. `PURGE_IDENTITY` dari pencabutan subjek mencatat `requesting_service = ADMIN_CONSOLE` dan `actor_id` admin (bukan `SYSTEM`), tanpa `mapping_id` dan `pseudonym` (brankas tidak punya baris mapping). Hanya baris `active` yang dicabut; baris `expired` yang masih memuat identitas dikosongkan retensi (7.11) atau dicabut satu per satu lewat 4.5. Baris mapping tidak dikosongkan di sini, maka tautan transaksi tidak disentuh (ADR-0013).
 
 ### 4.7 `PATCH /transaction-status`
 
@@ -145,7 +145,7 @@ PRD 7.2 tanpa perubahan logika: STEP 0 pasangan Tabel 2 (`POLICY_NOT_ALLOWED`); 
 
 ### 7.6 `resolve_domain_pseudonym`
 
-PRD 7.3: hanya `NOTIFICATION`; mengembalikan pseudonim domain P5 aktif untuk subjek yang sama, bukan `subject_id`.
+PRD 7.3: hanya `NOTIFICATION`; mengembalikan pseudonim domain P5 aktif untuk subjek yang sama, bukan `subject_id`. **[M3-01]** Urutan: pemanggil (`POLICY_NOT_ALLOWED`, sebelum token dibaca), token ada, milik pemanggil (`SERVICE_MISMATCH`), `purpose = NOTIFICATION` (`PURPOSE_MISMATCH`), status (`REVOKED`/`EXPIRED`), identitas belum dikosongkan; lalu P5 dicari lewat `subject_lookup` baris itu (subjek tidak didekripsi). P5 yang tidak ada, dicabut, atau lewat TTL: `TOKEN_NOT_FOUND`. Baris audit SUCCESS menyebut token yang diajukan.
 
 ### 7.7 `re_issue`
 
