@@ -74,6 +74,7 @@ beforeEach(async () => {
       IDP_URL: 'http://idp.test',
       IDP_ISSUER: ISSUER,
       FRAUD_AMOUNT_THRESHOLD: '1000000',
+      TX_PENDING_TIMEOUT_SECONDS: '300',
       PRIVACY_SERVICE_URL: 'http://privacy.test',
       FRAUD_SERVICE_URL: 'http://fraud.test',
       NOTIFICATION_SERVICE_URL: 'http://notification.test',

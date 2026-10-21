@@ -1,3 +1,4 @@
+import { DomainError } from '@privpay/common';
 import type { Pool } from 'pg';
 import { assertTransition } from './status-machine';
 
@@ -31,6 +32,31 @@ export interface Outcome {
   readonly fraudDecision: FraudDecision | null;
   readonly completedAt: Date | null;
   readonly riskScore?: number | null;
+  readonly reviewedBy?: string | null;
+  readonly reviewedAt?: Date | null;
+}
+
+/** One page of the HELD list (spec transaction 3.2): no token and no identity. */
+export interface HeldItem {
+  readonly transaction_id: string;
+  readonly amount: number;
+  readonly risk_score: number | null;
+  readonly fraud_decision: FraudDecision | null;
+  readonly created_at: string;
+}
+
+/** The position after the last row of a page; the HTTP layer makes it opaque. */
+export interface HeldCursor {
+  readonly createdAt: string;
+  readonly transactionId: string;
+}
+
+/** What a review needs to act on after it has decided: the tokens to reach the customer, and the amount to tell. */
+export interface Reviewed {
+  readonly transactionId: string;
+  readonly customerToken: string;
+  readonly accountToken: string;
+  readonly amount: number;
 }
 
 /** Every value is a bind parameter (CLAUDE.md). */
@@ -48,8 +74,23 @@ export const TRANSACTION_SQL = {
   // The move is guarded by the status the caller saw ($2): a row that someone else moved meanwhile is not rewritten,
   // so a terminal row never changes (spec transaction 4). A value that is NULL here keeps what the row has.
   transition: `UPDATE transactions SET status = $3, risk_score = COALESCE($4, risk_score),
-       fraud_decision = COALESCE($5, fraud_decision), completed_at = COALESCE($6, completed_at)
+       fraud_decision = COALESCE($5, fraud_decision), completed_at = COALESCE($6, completed_at),
+       reviewed_by = COALESCE($7, reviewed_by), reviewed_at = COALESCE($8, reviewed_at)
      WHERE transaction_id = $1 AND status = $2`,
+  // Spec transaction 3.3: the row is locked first, so two reviews take turns and the second sees the first one's status.
+  lockForReview: `SELECT status, customer_pseudonym, account_pseudonym, amount
+     FROM transactions WHERE transaction_id = $1 FOR UPDATE`,
+  // Spec transaction 5 step 6: only a row that is still PENDING and older than the cutoff.
+  sweepPending: `UPDATE transactions SET status = 'FAILED'
+     WHERE status = 'PENDING' AND created_at < $1 RETURNING transaction_id`,
+  // The created_at text keeps microseconds: a cursor made from a rounded time would skip or repeat rows (keyset on
+  // the pair, with the id as tie-breaker). The partial index idx_tx_held covers the status filter.
+  listHeld: `SELECT transaction_id, amount, risk_score, fraud_decision,
+       to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS created_text
+     FROM transactions
+     WHERE status = 'HELD'
+       AND ($1::text IS NULL OR (created_at, transaction_id) > ($1::timestamptz, $2::text))
+     ORDER BY created_at ASC, transaction_id ASC LIMIT $3`,
   // Re-issue in the middle of a transaction (spec transaction 5, step 5): only while it is still being decided.
   updateTokens: `UPDATE transactions SET customer_pseudonym = $2, account_pseudonym = $3
      WHERE transaction_id = $1 AND status = 'PENDING'`,
@@ -69,7 +110,7 @@ interface Row {
 
 /** The proposed repository (ADR-0006): the store of tokens. The baseline one, with identities, is M5-01. */
 export class TransactionRepository {
-  constructor(private readonly pool: Pick<Pool, 'query'>) {}
+  constructor(private readonly pool: Pick<Pool, 'query' | 'connect'>) {}
 
   async merchantExists(merchantId: string): Promise<boolean> {
     const found = await this.pool.query(TRANSACTION_SQL.merchant, [merchantId]);
@@ -111,6 +152,8 @@ export class TransactionRepository {
       outcome.riskScore ?? null,
       outcome.fraudDecision,
       outcome.completedAt,
+      outcome.reviewedBy ?? null,
+      outcome.reviewedAt ?? null,
     ]);
     return moved.rowCount === 1;
   }
@@ -129,6 +172,86 @@ export class TransactionRepository {
       tokens.customerToken,
       tokens.accountToken,
     ]);
+  }
+
+  /** Failed rows come back so the caller can tell Privacy; a row a winner finished first is not among them. */
+  async sweepPending(olderThan: Date): Promise<string[]> {
+    const swept = await this.pool.query<{ transaction_id: string }>(TRANSACTION_SQL.sweepPending, [
+      olderThan,
+    ]);
+    return swept.rows.map((row) => row.transaction_id);
+  }
+
+  /** Each item comes with the exact (microsecond) time text a cursor needs; the item itself shows milliseconds. */
+  async listHeld(
+    limit: number,
+    after?: HeldCursor,
+  ): Promise<{ readonly item: HeldItem; readonly createdText: string }[]> {
+    const found = await this.pool.query<{
+      transaction_id: string;
+      amount: string;
+      risk_score: string | null;
+      fraud_decision: FraudDecision | null;
+      created_text: string;
+    }>(TRANSACTION_SQL.listHeld, [after?.createdAt ?? null, after?.transactionId ?? null, limit]);
+    return found.rows.map((row) => ({
+      createdText: row.created_text,
+      item: {
+        transaction_id: row.transaction_id,
+        amount: Number(row.amount),
+        risk_score: row.risk_score === null ? null : Number(row.risk_score),
+        fraud_decision: row.fraud_decision,
+        created_at: new Date(row.created_text).toISOString(),
+      },
+    }));
+  }
+
+  /**
+   * Spec transaction 3.3: lock the row, require HELD, move it. `undefined` means it was not HELD (or not there), and
+   * nothing was changed. The lock is held until the move is committed, so the second of two reviews waits for the
+   * first and then finds a status that is no longer HELD.
+   */
+  async decideHeld(transactionId: string, outcome: Outcome): Promise<Reviewed | undefined> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      const locked = await client.query<{
+        status: TransactionStatus;
+        customer_pseudonym: string;
+        account_pseudonym: string;
+        amount: string;
+      }>(TRANSACTION_SQL.lockForReview, [transactionId]);
+      const row = locked.rows[0];
+      if (row?.status !== 'HELD') {
+        await client.query('ROLLBACK');
+        return undefined;
+      }
+      assertTransition('HELD', outcome.status);
+      const moved = await client.query(TRANSACTION_SQL.transition, [
+        transactionId,
+        'HELD',
+        outcome.status,
+        null,
+        outcome.fraudDecision,
+        outcome.completedAt,
+        outcome.reviewedBy ?? null,
+        outcome.reviewedAt ?? null,
+      ]);
+      // Locked and HELD a moment ago, so the move cannot miss; if it does, nothing may be reported as decided.
+      if (moved.rowCount !== 1) throw new DomainError('INTERNAL_ERROR');
+      await client.query('COMMIT');
+      return {
+        transactionId,
+        customerToken: row.customer_pseudonym,
+        accountToken: row.account_pseudonym,
+        amount: Number(row.amount),
+      };
+    } catch (error) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 
   async findById(transactionId: string): Promise<StoredTransaction | undefined> {

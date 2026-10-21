@@ -2,10 +2,14 @@ import 'reflect-metadata';
 import {
   Body,
   Controller,
+  Get,
+  HttpCode,
   Inject,
   Injectable,
   Module,
+  Param,
   Post,
+  Query,
   Req,
   Res,
   type OnModuleDestroy,
@@ -37,8 +41,10 @@ import {
   ProposedSubjectReferences,
 } from './transaction/clients';
 import {
+  PendingSweeper,
   TransactionProcessor,
   TransactionRepository,
+  TransactionReview,
   type FraudClient,
   type NotificationClient,
   type PrivacyStatusClient,
@@ -48,6 +54,7 @@ import { TransactionHttp } from './transaction-http';
 
 const TRANSACTION_HTTP = Symbol('TRANSACTION_HTTP');
 const OWNED_POOLS = Symbol('OWNED_POOLS');
+const PENDING_SWEEPER = Symbol('PENDING_SWEEPER');
 /** The service account of Transaction at the IdP (tools/dev-idp registry). */
 const CLIENT_ID = 'transaction';
 const tokenAnswer = z.object({
@@ -58,6 +65,18 @@ const tokenAnswer = z.object({
 @Controller()
 class TransactionController {
   constructor(@Inject(TRANSACTION_HTTP) private readonly transactions: TransactionHttp) {}
+
+  // Declared before any route with a path parameter, so `held` is never read as a transaction id.
+  @Get('transaction/held')
+  held(@Req() req: Request, @Query() query: unknown) {
+    return this.transactions.held(req.headers, query);
+  }
+
+  @Post('transaction/:id/review')
+  @HttpCode(200)
+  review(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {
+    return this.transactions.decide(req.headers, id, body);
+  }
 
   // 201 for the request that made the transaction, 200 for a replay of it (spec transaction 3.1).
   @Post('transaction')
@@ -126,6 +145,11 @@ export function transactionModules(
       maxRetries: config.HTTP_MAX_RETRY,
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
     });
+    const logger = createLogger({
+      service: 'transaction-service',
+      destination: overrides.logDestination,
+    });
+    const repository = new TransactionRepository(app);
     const neighbours = overrides.neighbours ?? httpNeighbours(http, env, clock);
     const transactions = new TransactionHttp({
       clock,
@@ -137,17 +161,23 @@ export function transactionModules(
         source: idpJwksSource(http),
       }),
       processor: new TransactionProcessor({
-        repository: new TransactionRepository(app),
+        repository,
         clock,
         delay: overrides.delay ?? new RealDelay(),
         fraudAmountThreshold: config.FRAUD_AMOUNT_THRESHOLD,
         waitMs: config.HTTP_TIMEOUT_MS,
         ...neighbours,
-        logger: createLogger({
-          service: 'transaction-service',
-          destination: overrides.logDestination,
-        }),
+        logger,
       }),
+      review: new TransactionReview({ repository, clock, ...neighbours, logger }),
+    });
+    // M4-03: built and validated at start; running it on a timer waits for the process lifecycle, like RetentionJob.
+    const sweeper = new PendingSweeper({
+      repository,
+      clock,
+      privacy: neighbours.privacy,
+      timeoutSeconds: config.TX_PENDING_TIMEOUT_SECONDS,
+      logger,
     });
     return [
       {
@@ -155,6 +185,7 @@ export function transactionModules(
         controllers: [TransactionController],
         providers: [
           { provide: TRANSACTION_HTTP, useValue: transactions },
+          { provide: PENDING_SWEEPER, useValue: sweeper },
           { provide: OWNED_POOLS, useValue: owned },
           PoolLifecycle,
         ],
