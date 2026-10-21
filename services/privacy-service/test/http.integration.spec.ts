@@ -672,6 +672,109 @@ describe('M3-04 POST /disclosure-requests and its approve and reject', () => {
   });
 });
 
+describe('M3-05 POST /de-pseudonymize', () => {
+  const IDENTITY = {
+    customer_id: CUSTOMER,
+    nik: '9999000011112222',
+    nama: 'Budi Contoh Palsu',
+    hp: '081200000001',
+    rekening: '99990000000001',
+  };
+  const asReconciliation = (body: unknown, actor = person('auditor')) =>
+    post('/de-pseudonymize', service('reconciliation'), body, actor);
+  /** A stored identity, its P7, and an approved request for `nama`; the body of the call that opens it. */
+  const approved = async (): Promise<{ pseudonym: string; disclosure_id: string }> => {
+    expect((await post('/identity', service('api-gateway'), IDENTITY)).status).toBe(201);
+    await issueP1();
+    const p7 = (
+      (
+        await post(
+          '/pseudonymize',
+          service('reconciliation'),
+          {
+            subject_type: 'CUSTOMER',
+            transaction_id: 'TX-7001',
+            target_service: 'RECONCILIATION',
+            purpose: 'INTERNAL_AUDIT',
+          },
+          person('auditor'),
+        )
+      ).body as { pseudonym: string }
+    ).pseudonym;
+    const requested = await post('/disclosure-requests', person('auditor'), {
+      audit_token: p7,
+      basis: 'DISPUTE',
+      case_ref: 'KASUS-2026-014',
+      attributes: ['nama'],
+    });
+    const id = (requested.body as { disclosure_id: string }).disclosure_id;
+    expect((await post(`/disclosure-requests/${id}/approve`, person('admin'), {})).status).toBe(
+      200,
+    );
+    return { pseudonym: p7, disclosure_id: id };
+  };
+  const bodyOf = (given: { pseudonym: string; disclosure_id: string }) => ({
+    ...given,
+    purpose: 'INTERNAL_AUDIT',
+  });
+
+  it('M3-05 AZ-22 N1 no credential is 401 and writes no audit row', async () => {
+    const given = await approved();
+    const before = await count('audit_log');
+    expect((await post('/de-pseudonymize', undefined, bodyOf(given))).status).toBe(401);
+    expect(await count('audit_log')).toBe(before);
+  });
+
+  it('M3-05 AZ-22 N2 a service other than RECONCILIATION is POLICY_NOT_ALLOWED, an admin FORBIDDEN_ROLE, one DENIED row each', async () => {
+    const given = await approved();
+    const before = await count('audit_log');
+    const other = await post('/de-pseudonymize', service('api-gateway'), bodyOf(given));
+    expect(other.status).toBe(403);
+    expect(other.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    const admin = await asReconciliation(bodyOf(given), person('admin'));
+    expect(admin.status).toBe(403);
+    expect(admin.body).toMatchObject({ error: { reason: 'FORBIDDEN_ROLE' } });
+    expect(await count('audit_log')).toBe(before + 2);
+    expect(await lastAudit()).toMatchObject({ action: 'DE_PSEUDONYMIZE', status: 'DENIED' });
+    expect((await db.owner.query(`SELECT status FROM disclosure_request`)).rows[0]).toMatchObject({
+      status: 'APPROVED',
+    });
+  });
+
+  it('M3-05 AZ-22 N3 N4 an unknown field, a claimed requesting_service or a missing disclosure_id is 422 and not audited', async () => {
+    const given = await approved();
+    const before = await count('audit_log');
+    const without = { pseudonym: given.pseudonym, purpose: 'INTERNAL_AUDIT' };
+    const results = [
+      await asReconciliation({ ...bodyOf(given), extra: 1 }),
+      await asReconciliation({ ...bodyOf(given), requesting_service: 'ADMIN_CONSOLE' }),
+      await asReconciliation(without),
+    ];
+    expect(results.map((result) => result.status)).toEqual([422, 422, 422]);
+    expect(await count('audit_log')).toBe(before);
+  });
+
+  it('M3-05 AZ-22 TK-21 the auditor gets 200 with only the approved attribute and no subject; the log and the audit rows hold no value; a second use is 403', async () => {
+    const given = await approved();
+    const first = await asReconciliation(bodyOf(given));
+    expect(first.status).toBe(200);
+    expect(first.body).toEqual({
+      mapping_id: expect.any(String) as unknown,
+      attributes: { nama: IDENTITY.nama },
+    });
+    const again = await asReconciliation(bodyOf(given));
+    expect(again.status).toBe(403);
+    expect(again.body).toMatchObject({ error: { reason: 'DISCLOSURE_NOT_APPROVED' } });
+    expect(JSON.stringify(again.body)).not.toContain(IDENTITY.nama);
+
+    const rows = JSON.stringify((await db.owner.query('SELECT * FROM audit_log')).rows);
+    for (const value of Object.values(IDENTITY)) {
+      expect(rows).not.toContain(value);
+      expect(logLines.join(' ')).not.toContain(value);
+    }
+  });
+});
+
 describe('M3-03 GET /audit-log, /audit-log/timeline/{pseudonym}, /audit-log/summary', () => {
   const get = (path: string, token: string | undefined) => {
     const call = server().get(path);

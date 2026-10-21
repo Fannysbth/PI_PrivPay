@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M3-05 (Gerbang 3 M3)
+
+- M3-05 `POST /de-pseudonymize` (`DePseudonymizeService`): `RECONCILIATION` dengan aktor `auditor`; lima gerbang berurutan (token ada, milik pemanggil, purpose, status hidup saat dipakai, permintaan milik token dan pemohon, `APPROVED`, belum lewat 600 detik), lalu `boleh_dibuka`. Satu transaksi: kunci baris permintaan (`FOR UPDATE`) dan penanda sekali pakai (`UPDATE ... WHERE status = 'APPROVED'`), hanya kolom Tabel 5 dibaca dan didekripsi, status `USED`, audit `DE_PSEUDONYMIZE` dengan `attribute_names` dan `disclosure_id`. Token dibaca `FOR SHARE`, sehingga pencabutan di antara persetujuan dan pemakaian membuat pemakaian `REVOKED`. Urutan peran: N-29. Tes: 24 integrasi layanan (antrean paksa di baris persetujuan; mutasi dengan kunci dan penanda dihapus membuat tiga pemakaian berhasil, tes gagal) dan 4 HTTP (AZ-22).
+
 ### M3-03 dan M3-04 (Gerbang 2 M3)
 
 - `pnpm db:migrate` (`packages/common/src/db-migrate.ts`, `bin/db-migrate.ts`): menerapkan file migrasi ke database layanan asli sebagai peran pemilik; idempoten, layanan tanpa folder `migrations` dilewati. Sebelumnya hanya tes yang memigrasi (database sementara), jadi `privpay_*` kosong. Dijalankan sekali pada 2026-10-21 (Privacy: 0001 sampai 0003).
