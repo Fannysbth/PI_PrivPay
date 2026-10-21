@@ -1,0 +1,35 @@
+import {
+  httpConfigSchema,
+  idpConfigShape,
+  loadConfig,
+  pgConfigSchema,
+  type EnvSource,
+} from '@privpay/common';
+import { z } from 'zod';
+
+const hour = z.coerce.number().int().min(0).max(23);
+
+/**
+ * What the fraud service reads from the environment, on top of the shared bootstrap (spec fraud 4, PRD 17). No default
+ * for a threshold or an hour: a missing value stops the start (fail fast). The database password is a file named by
+ * `<NAME>_FILE`, read by `createPool`, not a value here.
+ */
+export const fraudConfigSchema = z
+  .object({
+    ...pgConfigSchema.shape,
+    ...httpConfigSchema.shape,
+    ...idpConfigShape,
+    FRAUD_AMOUNT_THRESHOLD: z.coerce.number().int().min(1),
+    FRAUD_ODD_HOUR_START: hour,
+    FRAUD_ODD_HOUR_END: hour,
+    // K-20: the score from which a transaction is held, and from which it is blocked.
+    FRAUD_HOLD_THRESHOLD: z.coerce.number().int().min(1),
+    FRAUD_BLOCK_THRESHOLD: z.coerce.number().int().min(1),
+  })
+  .refine((config) => config.FRAUD_HOLD_THRESHOLD < config.FRAUD_BLOCK_THRESHOLD, {
+    path: ['FRAUD_HOLD_THRESHOLD'],
+    message: 'must be under FRAUD_BLOCK_THRESHOLD',
+  });
+export type FraudConfig = z.output<typeof fraudConfigSchema>;
+
+export const loadFraudConfig = (env: EnvSource): FraudConfig => loadConfig(fraudConfigSchema, env);

@@ -90,6 +90,11 @@ writeFileSync(
   join(privacySecrets, 'privpay_transaction_app_password'),
   'fake-password-for-the-smoke-run',
 );
+// M4-04: the fraud service needs its role password and its thresholds to start; its pool is lazy too.
+writeFileSync(
+  join(privacySecrets, 'privpay_fraud_app_password'),
+  'fake-password-for-the-smoke-run',
+);
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
@@ -122,15 +127,27 @@ const extraEnv = (id: string): Record<string, string> =>
           BLIND_INDEX_SECRET_FILE: join(privacySecrets, 'blind_index_secret'),
           FIELD_ENCRYPTION_KEY_FILE: join(privacySecrets, 'field_key'),
         }
-      : id === 'transaction-service'
+      : id === 'fraud-service'
         ? {
             PG_HOST: '127.0.0.1',
             PG_PORT: '9',
             PG_SECRETS_DIR: privacySecrets,
             IDP_URL: 'http://127.0.0.1:9',
             FRAUD_AMOUNT_THRESHOLD: '1000000',
+            FRAUD_ODD_HOUR_START: '22',
+            FRAUD_ODD_HOUR_END: '6',
+            FRAUD_HOLD_THRESHOLD: '50',
+            FRAUD_BLOCK_THRESHOLD: '90',
           }
-        : {};
+        : id === 'transaction-service'
+          ? {
+              PG_HOST: '127.0.0.1',
+              PG_PORT: '9',
+              PG_SECRETS_DIR: privacySecrets,
+              IDP_URL: 'http://127.0.0.1:9',
+              FRAUD_AMOUNT_THRESHOLD: '1000000',
+            }
+          : {};
 
 describe.each(SERVICE_IDS)('N-04 the built %s runs as a process', (id) => {
   const entry = join('services', id, 'dist', 'main.js');
