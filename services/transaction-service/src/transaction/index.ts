@@ -24,6 +24,7 @@ export {
   type NewTransaction,
   type Outcome,
   type StoredTransaction,
+  type TransactionDetail,
   type TransactionStatus,
 } from './repository';
 export { Followups } from './followups';

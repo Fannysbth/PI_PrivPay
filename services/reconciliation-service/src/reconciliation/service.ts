@@ -1,16 +1,25 @@
-import type { Clock, Logger } from '@privpay/common';
-import type { PrivacyClient, TransactionClient } from './ports';
+import { DomainError, type Clock, type Logger } from '@privpay/common';
+import { disclosedAttributes } from './attributes';
+import type { Actor, DisclosedAttributes, PrivacyClient, TransactionClient } from './ports';
 import { match, type ReconTransaction } from './reconciler';
-import type { ReconciliationRepository, ReportItem } from './repository';
+import type { AuditReason, ReconciliationRepository, ReportItem } from './repository';
 import { batchIdOf } from './repository';
 
 export interface ReconciliationServiceDeps {
-  readonly repository: Pick<ReconciliationRepository, 'storeReport' | 'settle'>;
+  readonly repository: Pick<ReconciliationRepository, 'storeReport' | 'settle' | 'recordAudit'>;
   readonly transactions: TransactionClient;
   readonly privacy: PrivacyClient;
   readonly clock: Clock;
   /** Only a transaction id and a reason are ever logged (invariant 6). */
   readonly logger: Pick<Logger, 'warn'>;
+}
+
+export interface AuditResult {
+  readonly request_id: string;
+  readonly transaction_id: string;
+  readonly audit_token: string;
+  readonly amount: number;
+  readonly status: string;
 }
 
 export interface RunResult {
@@ -84,5 +93,49 @@ export class ReconciliationService {
       unmatched: outcome.unmatched,
       status: outcome.status,
     };
+  }
+
+  /**
+   * E1 and E2 (spec reconciliation 3.3): the data of the transaction and a P7 token for the person who asked, nothing
+   * that names the customer. The request is recorded once Privacy has issued the token, so a row means a token exists;
+   * a refusal is already a DENIED row of Privacy's own audit, with this actor.
+   */
+  async auditRequest(
+    request: { readonly transactionId: string; readonly reasonCode: AuditReason },
+    actor: Actor,
+  ): Promise<AuditResult> {
+    const transaction = await this.deps.transactions.byId(request.transactionId);
+    const auditToken = await this.deps.privacy.auditToken(request.transactionId, actor);
+    const requestId = await this.deps.repository.recordAudit({
+      transactionId: request.transactionId,
+      reasonCode: request.reasonCode,
+      actorId: actor.actorId,
+      at: this.deps.clock.now(),
+    });
+    return {
+      request_id: requestId,
+      transaction_id: transaction.transactionId,
+      audit_token: auditToken,
+      amount: transaction.amount,
+      status: transaction.status,
+    };
+  }
+
+  /**
+   * E3 (spec reconciliation 3.4, K-15): hands the request on to Privacy with this person's token and returns what
+   * Privacy released. There is no other way to an identity here: no purpose, no attribute list and no requester are
+   * the caller's to name, and the answer is kept nowhere (T-14). An answer that is not exactly some of the three
+   * attributes of Tabel 5 is not passed on.
+   */
+  async disclose(
+    request: { readonly auditToken: string; readonly disclosureId: string },
+    actor: Actor,
+  ): Promise<{ attributes: DisclosedAttributes }> {
+    const released = await this.deps.privacy.open(request, actor);
+    const checked = disclosedAttributes.safeParse(released);
+    if (!checked.success || Object.keys(checked.data).length === 0) {
+      throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
+    }
+    return { attributes: checked.data };
   }
 }

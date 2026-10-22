@@ -1,5 +1,6 @@
 import { decodeCursor, encodeCursor } from './cursor';
-import type { CompletedItem, TransactionRepository } from './repository';
+import { DomainError } from '@privpay/common';
+import type { CompletedItem, TransactionDetail, TransactionRepository } from './repository';
 
 export interface CompletedPage {
   readonly items: readonly CompletedItem[];
@@ -14,7 +15,9 @@ const DAY_MS = 86_400_000;
  */
 export class TransactionReads {
   constructor(
-    private readonly deps: { readonly repository: Pick<TransactionRepository, 'listCompleted'> },
+    private readonly deps: {
+      readonly repository: Pick<TransactionRepository, 'listCompleted' | 'findDetail'>;
+    },
   ) {}
 
   /** `date` is `YYYY-MM-DD`, already checked by the caller; the day is that UTC date (NFR-20). */
@@ -36,5 +39,12 @@ export class TransactionReads {
           ? encodeCursor({ at: last.completedText, transactionId: last.item.transaction_id })
           : null,
     };
+  }
+
+  /** K-02: a transaction that is not there is `TRANSACTION_NOT_FOUND`, not an empty answer. */
+  async detail(transactionId: string): Promise<TransactionDetail> {
+    const found = await this.deps.repository.findDetail(transactionId);
+    if (found === undefined) throw new DomainError('TRANSACTION_NOT_FOUND');
+    return found;
   }
 }

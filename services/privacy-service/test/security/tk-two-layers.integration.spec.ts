@@ -1,81 +1,36 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import { loadConfig, migrate, pgConfigSchema } from '@privpay/common';
-import { createServiceApp, type ServiceApp } from '@privpay/common/nest';
-import { createTestDb, type TestDb } from '@privpay/common/testing';
+import { type ServiceApp } from '@privpay/common/nest';
+import { type TestDb } from '@privpay/common/testing';
 import request from 'supertest';
-import { HOSTS, startGateway, type Harness } from '../../../gateway/test/harness';
-import { privacyModules } from '../../src/privacy.module';
+import { HOSTS, type Harness } from '../../../gateway/test/harness';
+import { startStack, type Stack } from '../../../reconciliation-service/test/support/stack';
 
 // TK-01..TK-06, TK-08, TK-09 and TK-13..TK-15 (spec pengujian 4, M3-06), each in two layers. Service layer: the real
 // Privacy Service over HTTP, with the detailed reason and exactly one DENIED row in the audit log, counted through the
-// auditor role. Gateway layer: the answer Privacy really gave is relayed by the downstream stand-in through the real
-// Gateway, and the client must see one of the eight codes and no reason. TK-07 and TK-10 are in their own tickets.
-// The Reconciliation of M4-07 does not exist yet, so a stand-in answers on its route with Privacy's wire answer; the
-// end-to-end run through Newman is M6-01. Every value is invented. Needs PostgreSQL and scripts/db/bootstrap.ps1.
-const pg = loadConfig(pgConfigSchema, process.env);
-const migrations = join(__dirname, '..', '..', 'migrations');
+// auditor role. Gateway layer, in two kinds (M4-07). Where the refused caller is Reconciliation (TK-02..TK-05, TK-08)
+// the refusal travels the whole real path: a client of the real Gateway asks the real Reconciliation to open the token,
+// which asks the real Privacy, and the client must see one of the eight codes and no reason. Where it is another service
+// (TK-01, 06, 09, 13..15: Notification, the Gateway's own tokenizer, Transaction, Fraud), no client route leads to that
+// call, so the answer Privacy really gave is relayed by a stand-in of the downstream host through the real Gateway, as
+// before M4-07: that only shows what the Gateway makes of a refusal. TK-07 and TK-10 are in their own tickets; the end-to-end
+// run through Newman is M6-01. Every value is invented. Needs PostgreSQL and scripts/db/bootstrap.ps1.
 const CUSTOMER = 'CUST-000101';
 const ACCOUNT = '1234567801';
 const ABSENT = 'PSEU-ABCDEF01';
 const A_REQUEST = '11111111-1111-4111-8111-111111111111';
-const hex = (byte: number): string => Buffer.alloc(32, byte).toString('hex');
 
+let stack: Stack;
 let db: TestDb;
 let privacy: ServiceApp;
 let gateway: Harness;
-let dir: string;
 
 beforeEach(async () => {
-  db = await createTestDb(pg, { service: 'privacy', suffix: 'm306' });
-  await migrate(db.owner, { root: migrations, mode: 'proposed' });
-  dir = mkdtempSync(join(tmpdir(), 'privpay-security-'));
-  for (const [name, byte] of [
-    ['hmac', 1],
-    ['index', 2],
-    ['field', 3],
-  ] as const) {
-    writeFileSync(join(dir, name), `${hex(byte)}\n`);
-  }
-  gateway = await startGateway();
-  privacy = await createServiceApp(
-    {
-      service: 'privacy-service',
-      modules: privacyModules({
-        fetch: gateway.network.fetch,
-        pools: { app: db.app, ...(db.auditor === undefined ? {} : { auditor: db.auditor }) },
-      }),
-    },
-    {
-      PRIVACY_MODE: 'proposed',
-      PORT: '0',
-      PG_HOST: pg.PG_HOST,
-      PG_PORT: String(pg.PG_PORT),
-      PG_SECRETS_DIR: pg.PG_SECRETS_DIR,
-      IDP_URL: `http://${HOSTS.idp}`,
-      IDP_ISSUER: 'privpay-dev-idp',
-      GRACE_PERIOD_SECONDS: '30',
-      TTL_PAYMENT_PROCESSING: '900',
-      TTL_FRAUD_DETECTION: '2592000',
-      TTL_NOTIFICATION: '900',
-      TTL_NOTIFICATION_REGISTRATION: '31536000',
-      TTL_DAILY_RECONCILIATION: '86400',
-      TTL_INTERNAL_AUDIT: '600',
-      DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
-      PSEUDONYM_KEY_VERSION: '1',
-      PSEUDONYM_HMAC_SECRET_FILE: join(dir, 'hmac'),
-      BLIND_INDEX_SECRET_FILE: join(dir, 'index'),
-      FIELD_ENCRYPTION_KEY_FILE: join(dir, 'field'),
-    },
-    { clock: gateway.clock },
-  );
+  stack = await startStack('m306');
+  db = stack.privacyDb;
+  privacy = stack.privacy;
+  gateway = stack.gateway;
 });
 afterEach(async () => {
-  await privacy.close();
-  await gateway.close();
-  rmSync(dir, { recursive: true, force: true });
-  await db.close();
+  await stack.close();
 });
 
 interface Answer {
@@ -179,16 +134,36 @@ const denied = async (): Promise<Record<string, unknown>[]> =>
     )
   ).rows;
 
-/** What the Gateway tells an auditor who asks for a disclosure while downstream relays `relayed` (spec gateway 2). */
-async function throughGateway(relayed: Answer) {
-  gateway.network.respond(HOSTS['reconciliation-service'], () => ({
+/** What the Gateway tells a client for a call to one of the Gateway's routes, as the client of that role. */
+const viaGateway = async (role: 'auditor' | 'admin', path: string, body: object) => {
+  const answer = await request(gateway.app.httpServer)
+    .post(path)
+    .set('authorization', `Bearer ${gateway.tokens.person(role)}`)
+    .send(body);
+  return { status: answer.status, body: answer.body as { error: Record<string, unknown> } };
+};
+
+/**
+ * The real path (M4-07): the client of the Gateway asks Reconciliation to open an audit token. The Gateway checks the
+ * role, the real Reconciliation checks it again and asks the real Privacy with the same person's token, and whatever
+ * Privacy answers comes back masked.
+ */
+const disclosureViaGateway = (token: string, role: 'auditor' | 'admin' = 'auditor') =>
+  viaGateway(role, '/reconciliation/disclosure', { audit_token: token, disclosure_id: A_REQUEST });
+
+/**
+ * The relay, for a refusal whose caller has no route for a client (Notification, Transaction, Fraud, the Gateway's own
+ * tokenizer): the answer Privacy gave on the wire is returned by the host of Transaction behind a route of the real
+ * Gateway. It shows what the Gateway makes of a refusal and nothing about the service that was refused.
+ */
+async function relayedThroughGateway(relayed: Answer) {
+  gateway.network.respond(HOSTS['transaction-service'], () => ({
     status: relayed.status,
     body: relayed.body,
   }));
   const answer = await request(gateway.app.httpServer)
-    .post('/reconciliation/disclosure')
-    .set('authorization', `Bearer ${gateway.tokens.person('auditor')}`)
-    .send({ audit_token: ABSENT, disclosure_id: A_REQUEST });
+    .get('/transaction/held')
+    .set('authorization', `Bearer ${gateway.tokens.person('fraud_analyst')}`);
   return { status: answer.status, body: answer.body as { error: Record<string, unknown> } };
 }
 
@@ -199,6 +174,15 @@ interface Scenario {
   readonly reason: string;
   /** Sets the state up and returns the refused call. */
   readonly run: () => Promise<Answer>;
+  /**
+   * When the refused caller is Reconciliation: the same state, and the same refusal asked for through the real Gateway
+   * and the real Reconciliation. `denials` is how many DENIED rows it leaves in Privacy (none when the Gateway or
+   * Reconciliation refuses the role before Privacy is asked).
+   */
+  readonly real?: {
+    readonly run: () => Promise<{ status: number; body: { error: Record<string, unknown> } }>;
+    readonly denials: number;
+  };
   readonly after?: () => Promise<void>;
 }
 const SCENARIOS: readonly Scenario[] = [
@@ -215,6 +199,7 @@ const SCENARIOS: readonly Scenario[] = [
     status: 403,
     reason: 'PURPOSE_MISMATCH',
     run: async () => deIdentify('reconciliation', await issueP6(), 'INTERNAL_AUDIT', 'auditor'),
+    real: { run: async () => disclosureViaGateway(await issueP6()), denials: 1 },
   },
   {
     tk: 'TK-03',
@@ -225,6 +210,14 @@ const SCENARIOS: readonly Scenario[] = [
       const token = await issueP7();
       gateway.clock.advance(600 + 30 + 1);
       return deIdentify('reconciliation', token, 'INTERNAL_AUDIT', 'auditor');
+    },
+    real: {
+      run: async () => {
+        const token = await issueP7();
+        gateway.clock.advance(600 + 30 + 1);
+        return disclosureViaGateway(token);
+      },
+      denials: 1,
     },
   },
   {
@@ -237,6 +230,14 @@ const SCENARIOS: readonly Scenario[] = [
       expect((await asAdminConsole(`/pseudonym/${token}/revoke`, 'admin', {})).status).toBe(200);
       return deIdentify('reconciliation', token, 'INTERNAL_AUDIT', 'auditor');
     },
+    real: {
+      run: async () => {
+        const token = await issueP7();
+        expect((await asAdminConsole(`/pseudonym/${token}/revoke`, 'admin', {})).status).toBe(200);
+        return disclosureViaGateway(token);
+      },
+      denials: 1,
+    },
   },
   {
     tk: 'TK-05',
@@ -244,6 +245,7 @@ const SCENARIOS: readonly Scenario[] = [
     status: 404,
     reason: 'TOKEN_NOT_FOUND',
     run: () => deIdentify('reconciliation', ABSENT, 'INTERNAL_AUDIT', 'auditor'),
+    real: { run: () => disclosureViaGateway(ABSENT), denials: 1 },
   },
   {
     tk: 'TK-06',
@@ -262,6 +264,8 @@ const SCENARIOS: readonly Scenario[] = [
     status: 403,
     reason: 'FORBIDDEN_ROLE',
     run: async () => deIdentify('reconciliation', await issueP7(), 'INTERNAL_AUDIT', 'admin'),
+    // The Gateway refuses an admin on this route before Reconciliation or Privacy hear of it (AZ-07).
+    real: { run: async () => disclosureViaGateway(await issueP7(), 'admin'), denials: 0 },
   },
   {
     tk: 'TK-09',
@@ -328,7 +332,10 @@ describe.each(SCENARIOS)('M3-06 $tk $title', (scenario) => {
   });
 
   it(`M3-06 ${scenario.tk} gateway layer: the client sees ACCESS_DENIED 403 and no reason (NFR-10, ADR-0008)`, async () => {
-    const seen = await throughGateway(await scenario.run());
+    const before = (await denied()).length;
+    const seen = scenario.real
+      ? await scenario.real.run()
+      : await relayedThroughGateway(await scenario.run());
     expect(seen.status).toBe(403);
     expect(seen.body.error).toEqual({
       code: 'ACCESS_DENIED',
@@ -336,15 +343,35 @@ describe.each(SCENARIOS)('M3-06 $tk $title', (scenario) => {
       request_id: expect.any(String) as unknown,
     });
     expect(JSON.stringify(seen.body)).not.toContain(scenario.reason);
+    if (scenario.real !== undefined) {
+      // Through the real path Privacy was asked once by Reconciliation, and wrote its own DENIED row for the person.
+      const rows = await denied();
+      expect(rows).toHaveLength(before + scenario.real.denials);
+      if (scenario.real.denials > 0) {
+        expect(rows[rows.length - 1]).toMatchObject({ reason: scenario.reason });
+      }
+    }
   });
 });
 
 describe('M3-06 NFR-10 a token that exists and one that does not look the same to the client', () => {
-  it('M3-06 TK-01 TK-05 the whole answer is identical except request_id', async () => {
-    const exists = await throughGateway(
+  it('M3-06 TK-02 TK-05 through the real Reconciliation the whole answer is identical except request_id', async () => {
+    // A token that exists (an account token, the wrong kind to open as an audit) against one that was never made.
+    const exists = await disclosureViaGateway(await issueP6());
+    const absent = await disclosureViaGateway(ABSENT);
+    const bare = ({ status, body }: typeof exists) => ({
+      status,
+      error: { ...body.error, request_id: undefined },
+    });
+    expect(exists.status).toBe(403);
+    expect(bare(exists)).toEqual(bare(absent));
+  });
+
+  it('M3-06 TK-01 TK-05 the same holds for a refusal relayed from another service', async () => {
+    const exists = await relayedThroughGateway(
       await call('/resolve-domain', 'notification', { notif_token: await issueFraud() }),
     );
-    const absent = await throughGateway(
+    const absent = await relayedThroughGateway(
       await call('/resolve-domain', 'notification', { notif_token: ABSENT }),
     );
     const bare = ({ status, body }: typeof exists) => ({

@@ -39,6 +39,8 @@ PRD 9 (D1, E1) mengandaikan Reconciliation membaca transaksi, tetapi PRD 10 tida
 - `GET /transaction/completed?date=YYYY-MM-DD&limit&cursor`: `{items:[{transaction_id, amount, completed_at}], next_cursor}`; hanya `COMPLETED` (HELD dan FAILED tidak ikut); tanggal menurut `completed_at` UTC; tanpa token dan tanpa identitas; pemanggil `RECONCILIATION`.
 - `GET /transaction/{transaction_id}`: `{transaction_id, amount, status, created_at, completed_at}`; pemanggil `RECONCILIATION`; tidak ada: 404 `TRANSACTION_NOT_FOUND` (K-02).
 
+**[M4-06, M4-07]** Diimplementasikan: kursor `completed` bersama dengan `held` (`cursor.ts`), `GET /transaction/{id}` mengembalikan juga `status` `PENDING`, `HELD`, `FAILED` (audit boleh menanyakan transaksi apa pun), dan id yang tidak berbentuk `TX-<angka>` dijawab `VALIDATION_ERROR` sebelum basis data disentuh. Rute literal (`held`, `completed`) dideklarasikan sebelum `{id}`.
+
 ### 3.5 `GET /health`, `GET /metrics`
 
 Sesuai `platform-dan-ci.md` bagian 8.

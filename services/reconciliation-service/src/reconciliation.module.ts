@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import {
   Body,
   Controller,
+  Header,
   HttpCode,
   Inject,
   Injectable,
@@ -70,6 +71,21 @@ class ReconciliationController {
   @HttpCode(200)
   run(@Req() req: Request, @Body() body: unknown) {
     return this.reconciliation.run(req.headers, body);
+  }
+
+  @Post('reconciliation/audit-request')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  auditRequest(@Req() req: Request, @Body() body: unknown) {
+    return this.reconciliation.auditRequest(req.headers, body);
+  }
+
+  // What this answer holds is an identity: it is not stored by anything between Privacy and the auditor.
+  @Post('reconciliation/disclosure')
+  @HttpCode(200)
+  @Header('Cache-Control', 'no-store')
+  disclosure(@Req() req: Request, @Body() body: unknown) {
+    return this.reconciliation.disclosure(req.headers, body);
   }
 }
 

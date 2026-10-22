@@ -79,6 +79,12 @@ class TransactionController {
     return this.transactions.completed(req.headers, query);
   }
 
+  // Last of the GET routes: `held` and `completed` above are literal names, not ids (spec transaction 3.4, AZ-30).
+  @Get('transaction/:id')
+  detail(@Req() req: Request, @Param('id') id: string) {
+    return this.transactions.detail(req.headers, id);
+  }
+
   @Post('transaction/:id/review')
   @HttpCode(200)
   review(@Req() req: Request, @Param('id') id: string, @Body() body: unknown) {

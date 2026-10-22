@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { DomainError } from '@privpay/common';
 import type { Pool, PoolClient } from 'pg';
 import type { ReconItem } from './reconciler';
@@ -17,6 +18,8 @@ export interface BatchOutcome {
   readonly status: 'MATCHED' | 'PARTIAL' | 'MISMATCHED';
 }
 
+export type AuditReason = 'AMOUNT_MISMATCH' | 'DISPUTE' | 'OTHER';
+
 export const batchIdOf = (date: string): string => `B-${date.replaceAll('-', '')}`;
 
 /** Every value is a bind parameter (CLAUDE.md). */
@@ -33,6 +36,10 @@ export const RECON_SQL = {
      SELECT $1, t.account, t.amount, t.reference
      FROM unnest($2::text[], $3::bigint[], $4::text[]) AS t(account, amount, reference)`,
   markMatched: 'UPDATE settlement_items SET matched = (id = ANY($2::uuid[])) WHERE batch_id = $1',
+  // Spec reconciliation 3.3: one row per request, a coded reason and the actor, never a free text. The application role
+  // can insert and nothing else, so the id is made here and no RETURNING is needed.
+  insertAudit: `INSERT INTO audit_requests (request_id, transaction_id, reason_code, actor_id, requested_at)
+     VALUES ($1, $2, $3, $4, $5)`,
   updateBatch: `UPDATE settlement_batches SET tx_count = $2, total_amount = $3, status = $4
      WHERE batch_id = $1`,
 } as const;
@@ -57,7 +64,7 @@ const signature = (item: { accountPseudonym: string; amount: number; bankReferen
 
 /** The proposed adapter of the repository seam: the key is the account token. The baseline one, by account, is M5-01. */
 export class ReconciliationRepository {
-  constructor(private readonly pool: Pick<Pool, 'connect'>) {}
+  constructor(private readonly pool: Pick<Pool, 'connect' | 'query'>) {}
 
   private async inTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
@@ -139,5 +146,23 @@ export class ReconciliationRepository {
       ]);
       return outcome;
     });
+  }
+
+  /** Spec reconciliation 3.3: the record that an audit was asked for. Returns the id of the request. */
+  async recordAudit(request: {
+    readonly transactionId: string;
+    readonly reasonCode: AuditReason;
+    readonly actorId: string;
+    readonly at: Date;
+  }): Promise<string> {
+    const requestId = randomUUID();
+    await this.pool.query(RECON_SQL.insertAudit, [
+      requestId,
+      request.transactionId,
+      request.reasonCode,
+      request.actorId,
+      request.at,
+    ]);
+    return requestId;
   }
 }

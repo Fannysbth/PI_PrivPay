@@ -16,6 +16,8 @@ const SERVICE = 'reconciliation-service';
 const CALLER = 'API_GATEWAY';
 
 const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
+const TRANSACTION_ID = /^TX-[0-9]{1,29}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const BANK_REFERENCE = /^[A-Z0-9-]{1,32}$/;
 const ISO_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
 
@@ -46,12 +48,25 @@ const settlementReport = z.strictObject({
     .refine((items) => new Set(items.map((item) => item.bank_reference)).size === items.length),
 });
 const runBody = z.strictObject({ date: isoDate });
+// Spec reconciliation 3.3: a coded reason, never free text; the customer is not named, the transaction is.
+const auditBody = z.strictObject({
+  transaction_id: z.string().regex(TRANSACTION_ID),
+  reason_code: z.enum(['AMOUNT_MISMATCH', 'DISPUTE', 'OTHER']),
+});
+// Spec reconciliation 3.4: the token and the approved request, nothing about what to open or why.
+const disclosureBody = z.strictObject({
+  audit_token: z.string().regex(PSEUDONYM),
+  disclosure_id: z.string().regex(UUID),
+});
 
 export interface ReconciliationHttpDeps {
   readonly clock: Clock;
   readonly issuer: string;
   readonly keys: JwksKeys;
-  readonly reconciliation: Pick<ReconciliationService, 'receiveReport' | 'run'>;
+  readonly reconciliation: Pick<
+    ReconciliationService,
+    'receiveReport' | 'run' | 'auditRequest' | 'disclose'
+  >;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -119,5 +134,36 @@ export class ReconciliationHttp {
     const parsed = runBody.safeParse(body);
     if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
     return this.deps.reconciliation.run(parsed.data.date);
+  }
+
+  /** The Gateway for an `auditor`: the id of the person and their token, both read from the verified actor token. */
+  private async auditor(headers: AuthHeaders): Promise<{ actorId: string; token: string }> {
+    const who = await this.gateway(headers);
+    const token = single(headers['x-actor-token']);
+    if (who.actor?.role !== 'auditor' || token === undefined)
+      throw new DomainError('FORBIDDEN_ROLE');
+    return { actorId: who.actor.actorId, token };
+  }
+
+  /** Spec reconciliation 3.3 (AZ-06, AZ-36). */
+  async auditRequest(headers: AuthHeaders, body: unknown) {
+    const actor = await this.auditor(headers);
+    const parsed = auditBody.safeParse(body);
+    if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
+    return this.deps.reconciliation.auditRequest(
+      { transactionId: parsed.data.transaction_id, reasonCode: parsed.data.reason_code },
+      actor,
+    );
+  }
+
+  /** Spec reconciliation 3.4 (AZ-07, AZ-37, K-15). */
+  async disclosure(headers: AuthHeaders, body: unknown) {
+    const actor = await this.auditor(headers);
+    const parsed = disclosureBody.safeParse(body);
+    if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
+    return this.deps.reconciliation.disclose(
+      { auditToken: parsed.data.audit_token, disclosureId: parsed.data.disclosure_id },
+      actor,
+    );
   }
 }

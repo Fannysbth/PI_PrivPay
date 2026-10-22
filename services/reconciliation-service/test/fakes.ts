@@ -1,18 +1,36 @@
-import { DomainError } from '@privpay/common';
-import type { CompletedTransaction, PrivacyClient, TransactionClient } from '../src/reconciliation';
+import { DomainError, type Reason } from '@privpay/common';
+import type {
+  Actor,
+  CompletedTransaction,
+  DisclosedAttributes,
+  PrivacyClient,
+  TransactionClient,
+  TransactionDetail,
+} from '../src/reconciliation';
 
 // Doubles for the neighbours of Reconciliation. They record what they were asked and fail on command; every token and
 // amount here is invented (PRD 16 gives the shape).
 
 export class FakeTransactions implements TransactionClient {
   completed: CompletedTransaction[] = [];
+  details = new Map<string, TransactionDetail>();
   fail = false;
   readonly dates: string[] = [];
+  readonly asked: string[] = [];
 
   completedOn(date: string): Promise<readonly CompletedTransaction[]> {
     this.dates.push(date);
     if (this.fail) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
     return Promise.resolve(this.completed);
+  }
+
+  byId(transactionId: string): Promise<TransactionDetail> {
+    this.asked.push(transactionId);
+    if (this.fail) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
+    const found = this.details.get(transactionId);
+    return found === undefined
+      ? Promise.reject(new DomainError('TRANSACTION_NOT_FOUND'))
+      : Promise.resolve(found);
   }
 }
 
@@ -22,10 +40,37 @@ export class FakePrivacy implements PrivacyClient {
   fail = false;
   readonly asked: string[] = [];
 
+  /** E2: the audit token Privacy gives, or the refusal it answers with. */
+  tokenGiven = ['PSEU', '6C3F8A21'].join('-');
+  auditRefusal: Reason | undefined;
+  readonly auditCalls: { transactionId: string; actor: Actor }[] = [];
+  /** E3: what Privacy releases, or the refusal it answers with. */
+  openAnswer: DisclosedAttributes | Reason = {};
+  readonly openCalls: { auditToken: string; disclosureId: string; actor: Actor }[] = [];
+
   accountToken(transactionId: string): Promise<string | null> {
     this.asked.push(transactionId);
     if (this.fail) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
     return Promise.resolve(this.tokens.get(transactionId) ?? null);
+  }
+
+  auditToken(transactionId: string, actor: Actor): Promise<string> {
+    this.auditCalls.push({ transactionId, actor });
+    if (this.fail) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
+    return this.auditRefusal === undefined
+      ? Promise.resolve(this.tokenGiven)
+      : Promise.reject(new DomainError(this.auditRefusal));
+  }
+
+  open(
+    request: { auditToken: string; disclosureId: string },
+    actor: Actor,
+  ): Promise<DisclosedAttributes> {
+    this.openCalls.push({ ...request, actor });
+    if (this.fail) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
+    return typeof this.openAnswer === 'string'
+      ? Promise.reject(new DomainError(this.openAnswer))
+      : Promise.resolve(this.openAnswer);
   }
 }
 

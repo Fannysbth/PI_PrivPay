@@ -45,6 +45,15 @@ export interface HeldItem {
   readonly created_at: string;
 }
 
+/** One transaction for an audit (spec transaction 3.4): amount and status, no token and no identity. */
+export interface TransactionDetail {
+  readonly transaction_id: string;
+  readonly amount: number;
+  readonly status: TransactionStatus;
+  readonly created_at: string;
+  readonly completed_at: string | null;
+}
+
 /** One COMPLETED transaction for Reconciliation (spec transaction 3.4): no token and no identity. */
 export interface CompletedItem {
   readonly transaction_id: string;
@@ -118,6 +127,9 @@ export const TRANSACTION_SQL = {
      WHERE status = 'COMPLETED' AND completed_at >= $1 AND completed_at < $2
        AND ($3::text IS NULL OR (completed_at, transaction_id) > ($3::timestamptz, $4::text))
      ORDER BY completed_at ASC, transaction_id ASC LIMIT $5`,
+  // Spec transaction 3.4: what an audit may read of one transaction. No pseudonym and no merchant.
+  detail: `SELECT transaction_id, amount, status, created_at, completed_at
+     FROM transactions WHERE transaction_id = $1`,
   findById: `SELECT transaction_id, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash, status
      FROM transactions WHERE transaction_id = $1`,
 } as const;
@@ -328,6 +340,26 @@ export class TransactionRepository {
         completed_at: new Date(row.completed_text).toISOString(),
       },
     }));
+  }
+
+  async findDetail(transactionId: string): Promise<TransactionDetail | undefined> {
+    const found = await this.pool.query<{
+      transaction_id: string;
+      amount: string;
+      status: TransactionStatus;
+      created_at: Date;
+      completed_at: Date | null;
+    }>(TRANSACTION_SQL.detail, [transactionId]);
+    const row = found.rows[0];
+    return row === undefined
+      ? undefined
+      : {
+          transaction_id: row.transaction_id,
+          amount: Number(row.amount),
+          status: row.status,
+          created_at: row.created_at.toISOString(),
+          completed_at: row.completed_at === null ? null : row.completed_at.toISOString(),
+        };
   }
 
   async findById(transactionId: string): Promise<StoredTransaction | undefined> {

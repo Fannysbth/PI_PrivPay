@@ -351,6 +351,18 @@ describe('M1-03 what goes downstream (gateway spec 3, invariants 1 and 6)', () =
   });
 });
 
+describe('M4-07 FR-43 nothing that goes through the gateway is kept by a cache', () => {
+  it('M4-07 FR-43 an answer from downstream, an identity included, carries Cache-Control: no-store', async () => {
+    const forwarded = await request(gateway.app.httpServer)
+      .post('/reconciliation/disclosure')
+      .set('authorization', `Bearer ${gateway.tokens.person('auditor')}`)
+      .send({ audit_token: PSEUDONYM, disclosure_id: UUID_A });
+    expect(forwarded.status).toBe(200);
+    // A refusal is the uniform error of ADR-0008 and carries no value, so it needs no such header.
+    expect(forwarded.headers['cache-control']).toBe('no-store');
+  });
+});
+
 describe('M1-03 rate limit per azp and sub (TK-11, FR-26, NFR-08)', () => {
   const held = (token: string): request.Test =>
     request(gateway.app.httpServer)

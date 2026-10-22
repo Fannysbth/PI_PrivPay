@@ -79,7 +79,7 @@ export interface TransactionHttpDeps {
   readonly keys: JwksKeys;
   readonly processor: Pick<TransactionProcessor, 'process'>;
   readonly review: Pick<TransactionReview, 'listHeld' | 'review'>;
-  readonly reads: Pick<TransactionReads, 'completedOn'>;
+  readonly reads: Pick<TransactionReads, 'completedOn' | 'detail'>;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -174,5 +174,13 @@ export class TransactionHttp {
       limit,
       ...(parsed.data.cursor === undefined ? {} : { cursor: parsed.data.cursor }),
     });
+  }
+
+  /** Spec transaction 3.4 (AZ-30): one transaction for an audit, asked for by Reconciliation alone. */
+  async detail(headers: AuthHeaders, transactionId: string) {
+    const who = await this.caller(headers);
+    if (who.requestingService !== READER) throw new DomainError('POLICY_NOT_ALLOWED');
+    if (!TRANSACTION_ID.test(transactionId)) throw new DomainError('VALIDATION_ERROR');
+    return this.deps.reads.detail(transactionId);
   }
 }
