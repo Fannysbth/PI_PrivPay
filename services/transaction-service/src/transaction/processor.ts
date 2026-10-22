@@ -33,7 +33,13 @@ export interface ProcessResult {
 export interface TransactionProcessorDeps {
   readonly repository: Pick<
     TransactionRepository,
-    'merchantExists' | 'insertPending' | 'findByKey' | 'findById' | 'finish' | 'updateTokens'
+    | 'merchantExists'
+    | 'insertPending'
+    | 'findByKey'
+    | 'findById'
+    | 'finish'
+    | 'updateTokens'
+    | 'markPrivacySynced'
   >;
   readonly clock: Clock;
   readonly delay: Delay;

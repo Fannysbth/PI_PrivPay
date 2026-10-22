@@ -4,7 +4,10 @@ import type { NotificationClient, PrivacyStatusClient, SubjectReferencePort } fr
 import type { HeldCursor, HeldItem, TransactionRepository } from './repository';
 
 export interface TransactionReviewDeps {
-  readonly repository: Pick<TransactionRepository, 'listHeld' | 'decideHeld' | 'updateTokens'>;
+  readonly repository: Pick<
+    TransactionRepository,
+    'listHeld' | 'decideHeld' | 'updateTokens' | 'markPrivacySynced'
+  >;
   readonly clock: Clock;
   readonly subjects: SubjectReferencePort;
   readonly notifications: NotificationClient;

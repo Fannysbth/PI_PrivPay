@@ -1,4 +1,4 @@
-import { DomainError, type Logger, type Reason } from '@privpay/common';
+import { DomainError, type Clock, type Logger, type Reason } from '@privpay/common';
 import {
   privacyStatusOf,
   TokenExpiredError,
@@ -27,7 +27,8 @@ const TEMPLATES = {
 } as const satisfies Record<Settled, NotificationTemplate>;
 
 export interface FollowupsDeps {
-  readonly repository: Pick<TransactionRepository, 'updateTokens'>;
+  readonly repository: Pick<TransactionRepository, 'updateTokens' | 'markPrivacySynced'>;
+  readonly clock: Clock;
   readonly subjects: SubjectReferencePort;
   readonly notifications: NotificationClient;
   readonly privacy: PrivacyStatusClient;
@@ -42,12 +43,25 @@ export interface FollowupsDeps {
 export class Followups {
   constructor(private readonly deps: FollowupsDeps) {}
 
-  /** The status here stays; Privacy catches up when it can. */
+  /**
+   * The status here stays. A PATCH that does not go through leaves the row unmarked, and the cleaner repeats it
+   * (`PendingSweeper.resync`); the failure is logged by id, never silent (spec transaction 7).
+   */
   async patchPrivacy(transactionId: string, status: Settled): Promise<void> {
     try {
       await this.deps.privacy.patchStatus(transactionId, privacyStatusOf(status));
     } catch (error) {
       this.deps.logger.warn('status_patch_failed', {
+        transaction_id: transactionId,
+        reason: reasonOf(error),
+      });
+      return;
+    }
+    try {
+      await this.deps.repository.markPrivacySynced(transactionId, status, this.deps.clock.now());
+    } catch (error) {
+      // Privacy has heard it; an unmarked row only makes the cleaner repeat an idempotent PATCH.
+      this.deps.logger.warn('status_mark_failed', {
         transaction_id: transactionId,
         reason: reasonOf(error),
       });

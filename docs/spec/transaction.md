@@ -66,7 +66,9 @@ PENDING ─(lewat TX_PENDING_TIMEOUT_SECONDS)─▶ FAILED
 
 Mode baseline: langkah sama; `SubjectReferencePort` baseline tidak memanggil Privacy, Fraud menerima `customer_id`, Notification menerima `customer_id`; repositori baseline menyimpan `customer_id` dan `account_number` (ADR-0006).
 
-**[M4-02/M4-03]** Urutan langkah 3 dan 4 dibalik di kode: notifikasi dikirim sebelum `PATCH` status final, karena Privacy menolak re-issue (`TX_TERMINAL`) setelah transaksi final dan TF-04 menuntut re-issue masih mungkin (menunggu persetujuan Fanny). Review pada id yang tidak ada dijawab `NOT_HELD`; `reason_code` divalidasi tetapi tidak disimpan (tidak ada kolom, PRD 11). `PendingSweeper.sweep()` ada tetapi penjadwalannya (`TX_SWEEP_INTERVAL_SECONDS`) belum.
+**[M4-02/M4-03, disetujui Fanny pada Gerbang 2 M4]** Di kode, langkah 4 (notifikasi) berjalan **sebelum** `PATCH` status final dari langkah 3. Alasannya: Privacy menolak `re-issue` (`TX_TERMINAL`, privacy 4.4) setelah transaksi final, dan TF-04 menuntut token yang kedaluwarsa di tengah proses masih dapat diterbitkan ulang untuk notifikasi; bila `PATCH` lebih dulu, nasabah tidak diberi tahu. Status lokal sudah disimpan (langkah 3, bagian pertama) sebelum keduanya.
+
+**[Δ PRD 11, M4-02/M4-03; menunggu persetujuan Fanny]** `PATCH` yang gagal (atau proses yang berhenti setelah notifikasi) tidak dibiarkan diam: status lokal tetap benar, kegagalan dicatat dengan `transaction_id`, dan kolom `privacy_synced_at` (migrasi 0003; waktu saja) tetap `NULL` sampai Privacy menjawab. `PendingSweeper.resync()` mengirim ulang `PATCH` (idempoten, privacy 4.7) untuk baris `NULL` yang sudah lewat jendela `TX_PENDING_TIMEOUT_SECONDS` sejak `created_at` (atau `reviewed_at`), sehingga pemenang yang masih bekerja tidak diganggu; notifikasi tidak pernah dikirim ulang. Setiap perubahan status mengosongkan kolom itu lagi, dan penandaan dijaga status yang dikirim. Penjadwalan `resync` bersama `sweep` (K-19) menunggu siklus hidup proses. Review pada id yang tidak ada dijawab `NOT_HELD`; `reason_code` divalidasi tetapi tidak disimpan (tidak ada kolom, PRD 11); pelaku tercatat di `reviewed_by` (`sub` token aktor) dan `reviewed_at`. `PendingSweeper.sweep()` ada tetapi penjadwalannya belum.
 
 ## 6. Invarian keamanan
 
@@ -78,7 +80,7 @@ Tidak ada kolom, log, atau muatan keluar berisi identitas (proposed); log hanya 
 | --- | --- |
 | Fraud mati/timeout/pertukaran gagal | `HELD`, `FRAUD_UNAVAILABLE`, `TX_HELD_VERIFY` |
 | Notification mati/pertukaran gagal | transaksi tetap `COMPLETED`, notifikasi dilewati dan dicatat |
-| `PATCH` ke Privacy gagal | status lokal tetap, dicatat di log |
+| `PATCH` ke Privacy gagal | status lokal tetap, dicatat di log dengan `transaction_id`; baris ditandai belum didengar Privacy dan `PendingSweeper.resync()` mengulangnya; notifikasi tidak dikirim ulang |
 | Proses berhenti di tengah | `PENDING` → `FAILED` oleh pembersih |
 | Merchant tidak dikenal | 422 |
 | Kunci idempotensi sama, isi beda | 409 |
