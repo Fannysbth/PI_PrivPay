@@ -1,8 +1,9 @@
 import type { HumanRole } from '@privpay/common';
 import { z } from 'zod';
-import { settlementBody, transactionBody } from './tokenizer/schemas';
+import { notificationBody, settlementBody, transactionBody } from './tokenizer/schemas';
 
-export type Upstream = 'privacy-service' | 'transaction-service' | 'reconciliation-service';
+export type Upstream =
+  'privacy-service' | 'transaction-service' | 'reconciliation-service' | 'notification-service';
 
 /**
  * How the call goes on (gateway spec 3):
@@ -29,7 +30,7 @@ export interface Route {
   /** A customer or bank route lists no role. */
   readonly caller: CallerKind;
   /** Set on the routes whose identifiers are replaced by tokens before the call goes on (gateway spec 4, 5). */
-  readonly tokenize: 'transaction' | 'settlement' | null;
+  readonly tokenize: 'transaction' | 'settlement' | 'notification' | null;
   readonly upstream: Upstream;
   /** Path on the upstream, with the same `{name}` placeholders. */
   readonly upstreamPath: string;
@@ -289,6 +290,17 @@ export const TOKENIZING_ROUTES: readonly Route[] = [
     upstream: 'transaction-service',
     auth: 'gateway-token',
     body: transactionBody,
+  }),
+  forward({
+    id: 'AZ-02',
+    method: 'POST',
+    pattern: '/notification/register',
+    who: [],
+    caller: 'customer',
+    tokenize: 'notification',
+    upstream: 'notification-service',
+    auth: 'gateway-token',
+    body: notificationBody,
   }),
   forward({
     id: 'AZ-09',

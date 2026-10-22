@@ -237,8 +237,8 @@ describe('M1-03 only what the route table lists exists, and nobody learns which 
   const unknown = [
     ['GET', '/'],
     ['GET', '/register'],
-    ['POST', '/register'],
-    ['POST', '/notification/register'],
+    // POST /register and POST /notification/register exist since M4-08 (AZ-01, AZ-02): see registration.spec.ts.
+    ['GET', '/notification/register'],
     ['GET', '/admin/users'],
     ['DELETE', '/audit-log'],
     ['GET', '/transaction/../audit-log'],

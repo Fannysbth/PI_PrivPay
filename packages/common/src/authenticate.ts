@@ -135,6 +135,8 @@ interface Principal {
   readonly customerId?: string;
 }
 
+const MAX_SUBJECT_LENGTH = 64;
+
 /**
  * Who a verified token says it is, by its `azp`, and a refusal for a token whose claims do not fit that kind of
  * caller. Used for the Authorization token and for the actor token alike, so both are held to the same rules.
@@ -145,6 +147,10 @@ function principalOf(claims: Record<string, unknown>): Principal {
   if (typeof subject !== 'string' || subject === '' || typeof azp !== 'string') {
     return refuse('UNAUTHENTICATED', 'claims');
   }
+  // The columns that record a person (reviewed_by, actor_id, requester_id, approver_id) hold 64 characters: a longer id
+  // is refused here as a bad request, instead of becoming a database error halfway through the operation.
+  if (subject.length > MAX_SUBJECT_LENGTH)
+    throw new DomainError('VALIDATION_ERROR', 'subject_length');
   const roles = rolesOf(claims);
   const hasCustomerId = claims['customer_id'] !== undefined;
 

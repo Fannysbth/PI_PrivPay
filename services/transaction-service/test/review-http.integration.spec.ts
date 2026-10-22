@@ -113,6 +113,16 @@ const review = (id: string, body: unknown, token?: string, actor?: string) => {
 const gateway = () => service('api-gateway');
 const approve = { decision: 'APPROVE', reason_code: 'CONFIRMED_BY_CUSTOMER' };
 
+describe('M4-08 a person id longer than the 64 characters of reviewed_by', () => {
+  it('M4-08 a review by a person whose sub is 65 characters is 422, not a 500, and changes nothing', async () => {
+    const id = await seedHeld();
+    const answer = await review(id, approve, gateway(), person('fraud_analyst', 'u'.repeat(65)));
+    expect(answer.status).toBe(422);
+    expect(answer.body).toMatchObject({ error: { code: 'VALIDATION_ERROR' } });
+    expect(await statusOf(id)).toMatchObject({ status: 'HELD', reviewed_by: null });
+  });
+});
+
 describe('M4-03 AZ-27 GET /transaction/held', () => {
   it('M4-03 AZ-27 the analyst through the Gateway gets the list, without identity or token', async () => {
     const id = await seedHeld();

@@ -1,7 +1,7 @@
 import { DomainError, type HttpClient, type TokenCache } from '@privpay/common';
 import { z } from 'zod';
 import type { ErrorMasker } from '../error-masker';
-import type { PrivacyPort, PseudonymizeRequest } from './privacy-port';
+import type { IdentityToStore, PrivacyPort, PseudonymizeRequest } from './privacy-port';
 
 const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 const answer = z.object({ pseudonym: z.string().regex(PSEUDONYM) });
@@ -43,5 +43,35 @@ export class HttpPrivacyPort implements PrivacyPort {
     const parsed = answer.safeParse(response.body);
     if (!parsed.success) throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
     return parsed.data.pseudonym;
+  }
+
+  async storeIdentity(identity: IdentityToStore): Promise<void> {
+    await this.send('/identity', {
+      customer_id: identity.customerId,
+      nik: identity.nik,
+      nama: identity.nama,
+      hp: identity.hp,
+      rekening: identity.rekening,
+    });
+  }
+
+  async revokeCustomer(customerId: string): Promise<void> {
+    await this.send('/subject/revoke', { subject_type: 'CUSTOMER', subject_id: customerId });
+  }
+
+  /** Both calls are idempotent (privacy 4.9, 4.6), so the shared client may retry them (NFR-12). */
+  private async send(path: string, body: object): Promise<void> {
+    const response = await this.deps.http.request({
+      service: 'privacy-service',
+      method: 'POST',
+      path,
+      body,
+      idempotent: true,
+      authorization: `Bearer ${await this.deps.serviceToken.get()}`,
+    });
+    if (response.status >= 500) throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_5xx');
+    if (response.status < 200 || response.status > 299) {
+      throw this.deps.masker.fromDownstream(response.status, response.body);
+    }
   }
 }

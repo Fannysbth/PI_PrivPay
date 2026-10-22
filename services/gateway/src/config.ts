@@ -20,6 +20,7 @@ export const gatewayConfigSchema = z.object({
   PRIVACY_SERVICE_URL: serviceUrl,
   TRANSACTION_SERVICE_URL: serviceUrl,
   RECONCILIATION_SERVICE_URL: serviceUrl,
+  NOTIFICATION_SERVICE_URL: serviceUrl,
   RATE_LIMIT_ENABLED: z
     .enum(['true', 'false'])
     .default('true')

@@ -1,5 +1,5 @@
 import type { DomainError } from '@privpay/common';
-import type { PrivacyPort, PseudonymizeRequest } from './privacy-port';
+import type { IdentityToStore, PrivacyPort, PseudonymizeRequest } from './privacy-port';
 
 /**
  * The second adapter of PrivacyPort (gateway spec 2): for tests and the contract vectors. It records what it was
@@ -7,6 +7,8 @@ import type { PrivacyPort, PseudonymizeRequest } from './privacy-port';
  */
 export class FakePrivacyPort implements PrivacyPort {
   readonly calls: PseudonymizeRequest[] = [];
+  readonly stored: IdentityToStore[] = [];
+  readonly revoked: string[] = [];
   private issued = 0;
   /** What was answered for a subject, so the same subject and context gets the same token (privacy spec 7.2). */
   private readonly known = new Map<string, string>();
@@ -15,6 +17,16 @@ export class FakePrivacyPort implements PrivacyPort {
     private readonly decide: (request: PseudonymizeRequest) => DomainError | undefined = () =>
       undefined,
   ) {}
+
+  storeIdentity(identity: IdentityToStore): Promise<void> {
+    this.stored.push(identity);
+    return Promise.resolve();
+  }
+
+  revokeCustomer(customerId: string): Promise<void> {
+    this.revoked.push(customerId);
+    return Promise.resolve();
+  }
 
   pseudonymize(request: PseudonymizeRequest): Promise<string> {
     this.calls.push(request);

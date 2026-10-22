@@ -379,8 +379,8 @@ describe('M3-02 FR-29 FR-44 TK-17 revoke a subject (spec privacy 4.6)', () => {
 
   it.each([
     [
-      'a service that is not the admin console',
-      { requestingService: 'API_GATEWAY' },
+      'a service that is neither the admin console nor the Gateway',
+      { requestingService: 'TRANSACTION' },
       'POLICY_NOT_ALLOWED',
     ],
     ['an auditor', { actorRole: 'auditor' }, 'FORBIDDEN_ROLE'],
@@ -421,5 +421,50 @@ describe('M3-02 FR-29 FR-44 TK-17 revoke a subject (spec privacy 4.6)', () => {
     expect(
       (await auditOf('REVOKE_SUBJECT')).filter((row) => row['status'] === 'SUCCESS'),
     ).toHaveLength(3);
+  });
+});
+
+describe('M4-08 ADR-0014 the Gateway may revoke a customer subject, as the compensation of a registration', () => {
+  const GATEWAY = { requestingService: 'API_GATEWAY' };
+
+  it('M4-08 ADR-0014 the Gateway empties the vault and revokes the tokens of a CUSTOMER; the audit names the Gateway and no person', async () => {
+    await store();
+    const token = await p5();
+    const result = await revocation.revokeSubject({
+      ...GATEWAY,
+      subjectType: 'CUSTOMER',
+      subjectId: CUSTOMER,
+    });
+    expect(result).toEqual({ revokedCount: 1 });
+    expect(await mapping(token)).toMatchObject({ status: 'revoked' });
+    const purged = await auditOf('PURGE_IDENTITY');
+    expect(purged).toHaveLength(1);
+    expect(purged[0]).toMatchObject({ requesting_service: 'API_GATEWAY', actor_id: null });
+    expect(JSON.stringify(await auditOf('REVOKE_SUBJECT'))).not.toContain(CUSTOMER);
+  });
+
+  it('M4-08 ADR-0014 the Gateway cannot revoke an ACCOUNT, nor a single token: POLICY_NOT_ALLOWED, one DENIED row, nothing changed', async () => {
+    const token = (
+      await tokens.generate({
+        requestingService: 'API_GATEWAY',
+        subjectType: 'ACCOUNT',
+        subjectId: ACCOUNT,
+        targetService: 'TRANSACTION',
+        purpose: 'PAYMENT_PROCESSING',
+        transactionId: 'TX-8010',
+      })
+    ).pseudonym;
+    expect(
+      await reasonOf(
+        revocation.revokeSubject({ ...GATEWAY, subjectType: 'ACCOUNT', subjectId: ACCOUNT }),
+      ),
+    ).toBe('POLICY_NOT_ALLOWED');
+    expect(await reasonOf(revocation.revokeToken({ ...GATEWAY, pseudonym: token }))).toBe(
+      'POLICY_NOT_ALLOWED',
+    );
+    expect(await mapping(token)).toMatchObject({ status: 'active' });
+    expect((await auditOf('REVOKE_SUBJECT')).filter((r) => r['status'] === 'DENIED')).toHaveLength(
+      1,
+    );
   });
 });

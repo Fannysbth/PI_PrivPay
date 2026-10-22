@@ -24,6 +24,8 @@ export const REVOCATION_SQL = {
 /** Spec privacy 4.5, 4.6 and ADR-0007: the admin console, acting as a person of the role admin. */
 const CALLER = 'ADMIN_CONSOLE';
 const ROLE = 'admin';
+/** ADR-0014: the Gateway compensates a registration that failed halfway, for a customer subject only. */
+const GATEWAY = 'API_GATEWAY';
 
 interface Actor {
   readonly requestingService: string;
@@ -156,7 +158,8 @@ export class RevocationService {
     const lookup = this.deps.index.lookup(request.subjectType, request.subjectId);
     try {
       return await this.deps.operation.run<RevokeSubjectResult>(async (tx) => {
-        refuseUnlessAdmin(base, request);
+        // ADR-0014: the Gateway, with its own token, may do this for a customer; everyone else as before.
+        if (!(request.requestingService === GATEWAY && customer)) refuseUnlessAdmin(base, request);
         const revoked = await tx.query<RevokedRow>(REVOCATION_SQL.revokeSubject, [
           lookup,
           this.deps.clock.now(),
