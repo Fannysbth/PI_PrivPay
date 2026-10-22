@@ -70,7 +70,13 @@ export interface Stack {
   close(): Promise<void>;
 }
 
-export async function startStack(suffix: string): Promise<Stack> {
+export interface StackOptions {
+  /** TTL of a payment token and the grace after it, in seconds. Shorter than the 300 s of a JWT, a token can end mid-flow. */
+  readonly paymentTtl?: string;
+  readonly grace?: string;
+}
+
+export async function startStack(suffix: string, options: StackOptions = {}): Promise<Stack> {
   const clock = new FakeClock('2026-10-05T12:05:00.000Z');
   const logs = {} as Record<Host | 'gateway', string[]>;
   const sink = (name: Host | 'gateway') => {
@@ -165,17 +171,17 @@ export async function startStack(suffix: string): Promise<Stack> {
     PG_SECRETS_DIR: pg.PG_SECRETS_DIR,
   };
   const idpEnv = { IDP_URL: 'http://idp.test', IDP_ISSUER: ISSUER };
-  const options = (name: Host | 'gateway') => ({ clock, logDestination: sink(name) });
+  const appOptions = (name: Host | 'gateway') => ({ clock, logDestination: sink(name) });
 
   running['idp.test'] = await createServiceApp(
     { service: 'dev-idp', modules: devIdpModules },
     { ...base, DEV_IDP_ENABLED: 'true', NODE_ENV: 'test', DEV_IDP_SECRETS_DIR: secretsDir },
-    options('idp.test'),
+    appOptions('idp.test'),
   );
   running['sms.test'] = await createServiceApp(
     { service: 'sms-simulator', modules: smsSimulatorModules({ fetch: network }) },
     { ...base, ...idpEnv, SMS_SIMULATOR_TEST_ENDPOINTS: 'true' },
-    options('sms.test'),
+    appOptions('sms.test'),
   );
   running['privacy.test'] = await createServiceApp(
     {
@@ -192,8 +198,8 @@ export async function startStack(suffix: string): Promise<Stack> {
       ...base,
       ...pgEnv,
       ...idpEnv,
-      GRACE_PERIOD_SECONDS: '30',
-      TTL_PAYMENT_PROCESSING: '900',
+      GRACE_PERIOD_SECONDS: options.grace ?? '30',
+      TTL_PAYMENT_PROCESSING: options.paymentTtl ?? '900',
       TTL_FRAUD_DETECTION: '2592000',
       TTL_NOTIFICATION: '900',
       TTL_NOTIFICATION_REGISTRATION: '31536000',
@@ -205,7 +211,7 @@ export async function startStack(suffix: string): Promise<Stack> {
       BLIND_INDEX_SECRET_FILE: join(dir, 'index'),
       FIELD_ENCRYPTION_KEY_FILE: join(dir, 'field'),
     },
-    options('privacy.test'),
+    appOptions('privacy.test'),
   );
   running['fraud.test'] = await createServiceApp(
     {
@@ -222,7 +228,7 @@ export async function startStack(suffix: string): Promise<Stack> {
       FRAUD_HOLD_THRESHOLD: '50',
       FRAUD_BLOCK_THRESHOLD: '90',
     },
-    options('fraud.test'),
+    appOptions('fraud.test'),
   );
   running['notification.test'] = await createServiceApp(
     {
@@ -237,7 +243,7 @@ export async function startStack(suffix: string): Promise<Stack> {
       SMS_SIMULATOR_URL: 'http://sms.test',
       NOTIFICATION_CLIENT_SECRET_FILE: secret('notification'),
     },
-    options('notification.test'),
+    appOptions('notification.test'),
   );
   running['transaction.test'] = await createServiceApp(
     {
@@ -255,7 +261,7 @@ export async function startStack(suffix: string): Promise<Stack> {
       NOTIFICATION_SERVICE_URL: 'http://notification.test',
       TRANSACTION_CLIENT_SECRET_FILE: secret('transaction'),
     },
-    options('transaction.test'),
+    appOptions('transaction.test'),
   );
   running['reconciliation.test'] = await createServiceApp(
     {
@@ -271,7 +277,7 @@ export async function startStack(suffix: string): Promise<Stack> {
       TRANSACTION_SERVICE_URL: 'http://transaction.test',
       RECONCILIATION_CLIENT_SECRET_FILE: secret('reconciliation'),
     },
-    options('reconciliation.test'),
+    appOptions('reconciliation.test'),
   );
   const gateway = await createServiceApp(
     {
@@ -288,7 +294,7 @@ export async function startStack(suffix: string): Promise<Stack> {
       API_GATEWAY_CLIENT_SECRET_FILE: secret('api-gateway'),
       RATE_LIMIT_ENABLED: 'false',
     },
-    options('gateway'),
+    appOptions('gateway'),
   );
 
   const apps = { ...running, gateway } as Record<Host | 'gateway', ServiceApp>;
