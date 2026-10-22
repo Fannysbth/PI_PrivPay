@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M4-06 (Gerbang 3 M4)
+
+- M4-06 Reconciliation inti: `POST /reconciliation/settlement-report` (hanya `API_GATEWAY`; 1..500 item, 64 KiB, token bukan rekening, `bank_reference` tidak ganda; 202 pertama, 200 isi sama, 409 isi beda) dan `POST /reconciliation/run` (Gateway dengan aktor `admin`); `Reconciler` murni (satu-ke-satu, urutan deterministik, status K-22), `ReconciliationService` (D1..D4; `TOKEN_NOT_FOUND`/`REVOKED` tak berpasangan, Privacy atau Transaction mati = 503 tanpa batch), `DailyRun` (K-23, belum dijadwalkan), skema reconciliation-db (CHECK token, `UNIQUE (batch_id, bank_reference)`, tanpa DELETE untuk peran aplikasi). Transaction: `GET /transaction/completed` (spek 3.4, hanya `RECONCILIATION`, kursor keyset, hari UTC). Simulator bank: `POST /simulate/settlement` (hanya bila `BANK_SIMULATOR_TEST_ENDPOINTS=true`; suntik `EMPTY_ACCOUNT`, `NEGATIVE_AMOUNT`, `UNPAIRED`; tanpa rahasia, `dev_login` peran `bank`). Tes: 10 `Reconciler`, 9 skema, 17 layanan (konkurensi: dua laporan serentak 20 putaran), 43 HTTP (AZ-34, AZ-35, AZ-08, N-27), 22 adapter dan jadwal, 4 alur dengan Privacy asli (token D2 = token D3; pemindai kenari), 7 rantai bank simulator → Gateway → Privacy → Reconciliation (TF-13, TF-16), 18 `completed` (AZ-29), 19 simulator bank. Mutasi terbunuh: kunci baris batch, batas 500 item, batas 64 KiB, pemeriksa pemanggil, pemeriksa peran `admin`, skema ketat, filter `COMPLETED`. Penyimpangan: N-32, N-33. Dependensi: tidak ada paket baru (hanya entri importer lockfile untuk `reconciliation-service` dan `bank-simulator`, paket yang sudah ada). `pnpm pii-scan` kini juga menjalankan alur Reconciliation.
+
+### Keputusan Gerbang 2 M4 (Gerbang 3 M4)
+
+- Keputusan 1: urutan notifikasi sebelum `PATCH` final disetujui dan spek 5 diubah; `PATCH` yang gagal tidak diam: baris ditandai (`privacy_synced_at`, migrasi 0003, N-34) dan `PendingSweeper.resync()` mengulangnya tanpa mengirim ulang notifikasi (8 tes; dua mutasi terbunuh). Keputusan 3: pelaku review tercatat di `reviewed_by` (`sub` token aktor) dan `reviewed_at`, tanpa data pribadi. Flake basis data: batas jumlah putaran pada poll diganti tenggat 20 detik dan pool tes mendapat batas koneksi 20 detik (lihat HANDOFF).
+
 ### M4-02 dan M4-03 (Gerbang 2 M4)
 
 - M4-02 orkestrasi `POST /transaction`: keputusan Fraud (`ALLOW`, `HOLD_FOR_VERIFICATION`, `BLOCK`; skor disimpan), Fraud mati menjadi `HELD` + `FRAUD_UNAVAILABLE`, `PATCH /transaction-status` ke Privacy, notifikasi (gagal tidak mengubah status), re-issue sekali bila token kedaluwarsa; `fraud/assess` dan `notification/send` tidak pernah di-retry. Mesin status dijaga di SQL. Env baru wajib: tiga URL layanan, `TRANSACTION_CLIENT_SECRET_FILE`, `TX_PENDING_TIMEOUT_SECONDS`.

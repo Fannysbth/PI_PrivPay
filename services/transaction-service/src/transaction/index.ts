@@ -27,5 +27,6 @@ export {
   type TransactionStatus,
 } from './repository';
 export { Followups } from './followups';
+export { TransactionReads, type CompletedPage } from './reads';
 export { PendingSweeper, type PendingSweeperDeps } from './sweeper';
 export { TransactionReview, type HeldPage, type TransactionReviewDeps } from './review';

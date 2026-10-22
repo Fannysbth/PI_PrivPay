@@ -49,6 +49,8 @@ Sesuai `platform-dan-ci.md` bagian 8.
 
 Layanan NestJS kecil; `POST /simulate/settlement {batch_date}` membangun laporan dari seed fiktif (rekening `1234567801..03` dan nominal dari PRD 16) lalu memanggil Gateway `POST /settlement/report` dengan JWT peran `bank` (`azp=bank-simulator`). Data uji fiktif jelas palsu, tidak ada PII nyata, dan tidak ada kredensial di repo (rahasia klien dari berkas `secrets/`). Dapat menyuntikkan item tidak valid (rekening kosong, nominal negatif) dan item tak berpasangan untuk TF-13/TF-16.
 
+**[M4-06, N-32, N-33]** Batch dibuat saat laporan atau run pertama tiba (`tx_count = 0`, `total_amount = 0`, `status = MISMATCHED` sampai run menimpa); laporan yang tiba setelah run tanpa laporan adalah laporan pertama. `TOKEN_NOT_FOUND` dan `REVOKED` dari Privacy pada D2 = transaksi tak berpasangan; jawaban Privacy lain = run berhenti 503 sebelum batch disentuh. Reconciliation sendiri menegakkan 500 item dan 64 KiB (N-27) dan menolak `bank_reference` ganda dalam satu laporan (422), bukan hanya Gateway. `DailyRun` (`nextRunAt`, `runPrevious`) ada tetapi belum dijadwalkan ke siklus hidup proses.
+
 ## 5. Invarian dan kasus gagal
 
 Tidak ada nomor rekening di `settlement_items` dan tidak ada hasil pembukaan di `reconciliation-db` (inspeksi skema dan pemindai kenari); `audit-request` tidak membuka atribut brankas; hanya peran yang disebut dapat memanggil; kegagalan satu transaksi tidak menghentikan batch; laporan tidak valid → 422 tanpa token terbit (validasi di Gateway). Privacy mati saat D2: transaksi dihitung tidak berpasangan atau batch ditunda dengan 503 (K-22). Transaction mati saat D1: 503, batch tidak dibuat.

@@ -109,6 +109,15 @@ writeFileSync(
   join(privacySecrets, 'transaction_client_secret'),
   'fake-secret-transaction-0123456789abcdef\n',
 );
+// M4-06: the reconciliation service needs its role password and its client secret at the IdP to start; its pool is lazy.
+writeFileSync(
+  join(privacySecrets, 'privpay_reconciliation_app_password'),
+  'fake-password-for-the-smoke-run',
+);
+writeFileSync(
+  join(privacySecrets, 'reconciliation_client_secret'),
+  'fake-secret-reconciliation-0123456789abcdef\n',
+);
 afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
@@ -178,7 +187,27 @@ const extraEnv = (id: string): Record<string, string> =>
                   NOTIFICATION_SERVICE_URL: 'http://127.0.0.1:9',
                   TRANSACTION_CLIENT_SECRET_FILE: join(privacySecrets, 'transaction_client_secret'),
                 }
-              : {};
+              : id === 'reconciliation-service'
+                ? {
+                    PG_HOST: '127.0.0.1',
+                    PG_PORT: '9',
+                    PG_SECRETS_DIR: privacySecrets,
+                    IDP_URL: 'http://127.0.0.1:9',
+                    RECON_DAILY_RUN_UTC: '00:10',
+                    PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+                    TRANSACTION_SERVICE_URL: 'http://127.0.0.1:9',
+                    RECONCILIATION_CLIENT_SECRET_FILE: join(
+                      privacySecrets,
+                      'reconciliation_client_secret',
+                    ),
+                  }
+                : id === 'bank-simulator'
+                  ? {
+                      IDP_URL: 'http://127.0.0.1:9',
+                      GATEWAY_URL: 'http://127.0.0.1:9',
+                      BANK_USERNAME: 'bank.uji.1',
+                    }
+                  : {};
 
 describe.each(SERVICE_IDS)('N-04 the built %s runs as a process', (id) => {
   const entry = join('services', id, 'dist', 'main.js');

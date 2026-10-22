@@ -45,6 +45,13 @@ export interface HeldItem {
   readonly created_at: string;
 }
 
+/** One COMPLETED transaction for Reconciliation (spec transaction 3.4): no token and no identity. */
+export interface CompletedItem {
+  readonly transaction_id: string;
+  readonly amount: number;
+  readonly completed_at: string;
+}
+
 /** The position after the last row of a page; the HTTP layer makes it opaque. */
 export interface HeldCursor {
   readonly createdAt: string;
@@ -104,6 +111,13 @@ export const TRANSACTION_SQL = {
   // Re-issue in the middle of a transaction (spec transaction 5, step 5): while it is still open, PENDING or HELD.
   updateTokens: `UPDATE transactions SET customer_pseudonym = $2, account_pseudonym = $3
      WHERE transaction_id = $1 AND status IN ('PENDING', 'HELD')`,
+  // Spec transaction 3.4: the day is the UTC date of completed_at, [$1, $2). The text keeps microseconds for the cursor.
+  listCompleted: `SELECT transaction_id, amount,
+       to_char(completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS completed_text
+     FROM transactions
+     WHERE status = 'COMPLETED' AND completed_at >= $1 AND completed_at < $2
+       AND ($3::text IS NULL OR (completed_at, transaction_id) > ($3::timestamptz, $4::text))
+     ORDER BY completed_at ASC, transaction_id ASC LIMIT $5`,
   findById: `SELECT transaction_id, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash, status
      FROM transactions WHERE transaction_id = $1`,
 } as const;
@@ -286,6 +300,34 @@ export class TransactionRepository {
       status: Exclude<TransactionStatus, 'PENDING'>;
     }>(TRANSACTION_SQL.unsynced, [cutoff, limit]);
     return found.rows.map((row) => ({ transactionId: row.transaction_id, status: row.status }));
+  }
+
+  /** One page of the COMPLETED transactions that fall in `[from, to)`, with the exact time text a cursor needs. */
+  async listCompleted(
+    from: Date,
+    to: Date,
+    limit: number,
+    after?: { readonly at: string; readonly transactionId: string },
+  ): Promise<{ readonly item: CompletedItem; readonly completedText: string }[]> {
+    const found = await this.pool.query<{
+      transaction_id: string;
+      amount: string;
+      completed_text: string;
+    }>(TRANSACTION_SQL.listCompleted, [
+      from,
+      to,
+      after?.at ?? null,
+      after?.transactionId ?? null,
+      limit,
+    ]);
+    return found.rows.map((row) => ({
+      completedText: row.completed_text,
+      item: {
+        transaction_id: row.transaction_id,
+        amount: Number(row.amount),
+        completed_at: new Date(row.completed_text).toISOString(),
+      },
+    }));
   }
 
   async findById(transactionId: string): Promise<StoredTransaction | undefined> {
