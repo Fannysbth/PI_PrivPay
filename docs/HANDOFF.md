@@ -1,4 +1,52 @@
-# HANDOFF (2026-10-22): Gerbang 3 M4 LULUS (dua putaran hijau); berikutnya Gerbang 4 (M4-08, M4-09), belum dimulai
+# HANDOFF (2026-10-22): Gerbang 4 M4 LULUS (dua putaran hijau); berikutnya penutup M4 (belum dimulai), lalu M5
+
+## Status Gerbang 4 M4
+
+Cabang `feat/m4-gerbang-4` (tidak dihapus), commit: `8476b6c` validasi panjang `sub` (64 karakter, 422), `50a86fc` M4-08 (termasuk ADR-0014), `f598537` M4-09, `a1a5801` satu pola HP. `/code-review`: 10 temuan, 1 diperbaiki, 9 ditolak. `/security-review`: tanpa temuan keyakinan 8 ke atas.
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 62 suite, 1227 tes | 62 suite, 1227 tes |
+| integrasi | 51 suite, 1046 tes | 51 suite, 1046 tes (lihat catatan) |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks riwayat | bersih | bersih |
+| pii-scan | 35 + 68 tes | 35 + 68 tes |
+
+Catatan putaran 2: lari integrasi pertama gagal satu tes (`db.integration`, "recreates the database from scratch", batas 30 detik). Stempel waktu log melompat ±2 jam di tengah suite itu (mesin tidur/sleep; durasi suite 6975 detik), jadi batas jam dinding habis oleh tidur mesin, bukan kode. Suite itu sendirian lulus (26 tes) dan seluruh integrasi diulang hijau (51 suite, 1046 tes). Bila gagal lagi tanpa tidur mesin, perlakukan sebagai bug.
+
+### Yang dibangun
+
+- ADR-0014 (E-31): `API_GATEWAY` boleh `revoke_subject` untuk `CUSTOMER` (kompensasi pendaftaran). Dua tes lama diubah dengan alasan di CHANGELOG.
+- M4-08: `POST /register` (A2, A5, A3, A4, kompensasi, laju per alamat sumber) dan `POST /notification/register` (AZ-02) di Gateway; env baru wajib `NOTIFICATION_SERVICE_URL`.
+- M4-09: tumpukan E2E dengan dev-idp, Privacy, Transaction, Fraud, Notification, simulator SMS, Reconciliation asli di `services/gateway/test/e2e` (`registration` 28 tes, `scenarios` 13 tes); `pnpm pii-scan` menjalankannya. Rute `held` dan `review` kini teruji lewat Gateway (AZ-04, AZ-05).
+
+### Keputusan yang butuh persetujuan Fanny
+
+N-38 (email divalidasi lalu dibuang: brankas tidak punya kolom email, jadi "email hanya di brankas" tidak terpenuhi harfiah; email tidak ada di mana pun), N-39 (kompensasi mengosongkan brankas walau A5 melaporkan gagal), ADR-0014 sudah Accepted atas pilihanmu.
+
+### Hasil pencarian penjadwalan (K-19, K-23, RetentionJob)
+
+Tidak ada tiket, spek, ADR, atau butir milestone (M5, M6, M7) yang mencakup penghubungan `RetentionJob` (M2-09, K-26), `PendingSweeper.sweep/resync` (M4-03, K-19), dan `DailyRun` (M4-06, K-23) ke siklus hidup proses. Kriteria M4-06 menyebut "scheduler `RECON_DAILY_RUN_UTC`" tetapi hanya kelas dan jadwalnya yang dibuat dan diuji. Dicatat sebagai "belum dijadwalkan" di `docs/security/review-M3.md` (S-36) dan komentar kode. Butuh tiket baru atau keputusanmu.
+
+### Temuan `/code-review` yang ditolak
+
+Telepon yatim di Notification bila jawaban A4 hilang (batas ADR-0005: Notification tak punya hapus kontak; token domainnya dicabut); pengguna IdP yatim bila jawaban A2 hilang (batas yang dicatat); batas panjang `sub` untuk semua jenis token (diminta); ADR-0014 berlaku untuk semua `CUSTOMER` (risiko diterima di ADR); `req.ip` tanpa `trust proxy` (belum ada proksi; harus ditinjau saat Kong/Docker); `customerId ?? ''` (tak terjangkau, `mayCall` memeriksa klaim lebih dulu); enumerasi nama pengguna lewat 422 (tak terhindarkan, dibatasi laju); `Content-Length` tak ada pada badan chunked (setiap field dibatasi skema); kompensasi karena NIK ganda mengosongkan brankas pelanggan lain (tidak: purge berkunci `customer_lookup` dari id pelanggan baru).
+
+### TK yang belum teruji end-to-end (keputusanmu)
+
+TK-01, TK-06, TK-09, TK-13, TK-14, TK-15: lapis layanan dan relay jawaban kawat saja, sampai M6-01 (Newman lewat Gateway).
+
+### Belum teruji
+
+Penjadwalan job ke siklus hidup proses; adapter baseline (M5); Newman (M6-01); fail-closed dengan Docker; `trust proxy` di belakang Kong; kinerja D2 untuk ribuan transaksi.
+
+### Untuk penutup M4
+
+`/security-review` seluruh M4, centang `docs/security/security-checklist.md`, `/improve-codebase-architecture` (boilerplate autentikasi dan pool terulang di enam layanan), persetujuan Fanny, lalu `/retro`. M5 belum dimulai.
+
+# (Riwayat) Gerbang 3 M4 LULUS (dua putaran hijau)
 
 ## Status Gerbang 3 M4
 
