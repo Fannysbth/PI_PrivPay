@@ -40,6 +40,9 @@ export const RECON_SQL = {
   // can insert and nothing else, so the id is made here and no RETURNING is needed.
   insertAudit: `INSERT INTO audit_requests (request_id, transaction_id, reason_code, actor_id, requested_at)
      VALUES ($1, $2, $3, $4, $5)`,
+  // A report that arrives after a run makes the run's counts out of date: back to the weakest status until the next run.
+  resetBatch: `UPDATE settlement_batches SET tx_count = 0, total_amount = 0, status = 'MISMATCHED'
+     WHERE batch_id = $1`,
   updateBatch: `UPDATE settlement_batches SET tx_count = $2, total_amount = $3, status = $4
      WHERE batch_id = $1`,
 } as const;
@@ -113,6 +116,7 @@ export class ReconciliationRepository {
           items.map((item) => item.amount),
           items.map((item) => item.bankReference),
         ]);
+        await client.query(RECON_SQL.resetBatch, [batchId]);
         return 'CREATED';
       }
       const same =

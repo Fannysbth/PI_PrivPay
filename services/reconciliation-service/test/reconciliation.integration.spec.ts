@@ -225,6 +225,16 @@ describe('M4-06 K-22 K-05 one report per date', () => {
     expect(await service.run(DATE)).toMatchObject({ matched: 2, status: 'MATCHED' });
   });
 
+  it('M4-06 K-22 a report that comes after a run puts the batch back to "nothing counted yet", not a stale status', async () => {
+    transactions.completed = [];
+    await service.run(DATE);
+    expect(await batches()).toMatchObject([{ tx_count: 0, status: 'MATCHED' }]);
+    await service.receiveReport({ batchDate: DATE, items: REPORT });
+    expect(await batches()).toMatchObject([
+      { tx_count: 0, total_amount: '0.00', status: 'MISMATCHED' },
+    ]);
+  });
+
   it('M4-06 K-22 a report after a run that used another report is still the same or a conflict, never a silent second one', async () => {
     await service.receiveReport({ batchDate: DATE, items: REPORT });
     await service.run(DATE);

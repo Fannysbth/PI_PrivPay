@@ -147,6 +147,17 @@ describe('M4-06 TF-13 TF-16 the bank sends its report through the Gateway', () =
     });
   });
 
+  it('M4-06 TF-16 all three faults at once still give every line its own bank reference', async () => {
+    const app = await start();
+    await simulate(app, {
+      batch_date: DATE,
+      inject: ['EMPTY_ACCOUNT', 'NEGATIVE_AMOUNT', 'UNPAIRED'],
+    });
+    const items = (toGateway()[0]?.body as { items: { bank_reference: string }[] }).items;
+    expect(items).toHaveLength(5);
+    expect(new Set(items.map((item) => item.bank_reference)).size).toBe(5);
+  });
+
   it('M4-06 AZ-40 what the Gateway says is relayed as it is, a 403 included', async () => {
     gatewayAnswer = { status: 403, body: { error: { code: 'ACCESS_DENIED' } } };
     const app = await start();

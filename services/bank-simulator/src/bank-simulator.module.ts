@@ -70,7 +70,11 @@ export function buildReport(batchDate: string, inject: readonly Injection[] = []
   }
   if (inject.includes('UNPAIRED')) {
     // A valid line the bank has and the platform does not: an account no transaction of the day used.
-    items.push({ account_number: '1234567899', amount: 777_000, bank_reference: reference(3) });
+    items.push({
+      account_number: '1234567899',
+      amount: 777_000,
+      bank_reference: reference(items.length + 1),
+    });
   }
   return items;
 }
