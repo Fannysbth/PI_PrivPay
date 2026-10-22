@@ -136,6 +136,10 @@ Subagent mematuhi berkas ini. Satu subagent satu tiket. Tidak menyentuh berkas b
 
 - Sebelum setiap commit yang menyentuh `services/`: jalankan `gitleaks detect --no-git --redact --config .gitleaks.toml` pada pohon kerja. UUID dan token contoh dibentuk saat tes berjalan (mis. `['7c9e6679', '7425', '40de', '944b', 'e07fc1f90ae7'].join('-')`), tidak ditulis literal di `services/` (allowlist hanya untuk `docs/` dan `tests/`); literal yang terlanjur masuk commit membuat `gitleaks --all` merah dan hanya bisa dibersihkan dengan menulis ulang riwayat.
 
+- (Retro M4, `docs/RETRO_M4.md`) Skrip penyunting dan mutasi ditulis ke berkas, bukan heredoc Bash berisi tanda kutip tunggal. Setelah Prettier, cocokkan pola dari teks yang sudah diformat; setelah proses mutasi dihentikan paksa, periksa berkas sudah kembali.
+- Tes yang membuka sumber daya nyata (timer, soket, kolam) menutupnya di `finally`: satu asersi gagal tidak boleh meninggalkan handle (Jest menunggu satu jam). Jam palsu satu tumpukan layanan hanya maju (token yang disimpan cache membawa `iat`).
+- Tes habis waktu atau gagal tak stabil: baca stempel waktu log lebih dulu; lompatan jam berarti mesin tidur, bukan bug. Keluaran sebuah skill review bukan balasan akhir: lanjutkan sampai laporan akhir yang diminta.
+
 ## Menjaga berkas ini tetap berguna
 
 Singkat dan faktual. Tambahkan aturan baru hanya dari kesalahan yang benar-benar berulang (hasil `/retro`), dengan persetujuan user.
