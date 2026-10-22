@@ -4,6 +4,8 @@ import {
   loadConfig,
   pgConfigSchema,
   readSecret,
+  runTimeUtc,
+  schedulerConfigShape,
   type EnvSource,
 } from '@privpay/common';
 import { z } from 'zod';
@@ -20,8 +22,9 @@ export const reconciliationConfigSchema = z.object({
   ...pgConfigSchema.shape,
   ...httpConfigSchema.shape,
   ...idpConfigShape,
+  ...schedulerConfigShape,
   // K-23: the daily run, as HH:MM in UTC.
-  RECON_DAILY_RUN_UTC: z.string().regex(/^([01][0-9]|2[0-3]):[0-5][0-9]$/),
+  RECON_DAILY_RUN_UTC: runTimeUtc,
   PRIVACY_SERVICE_URL: serviceUrl,
   TRANSACTION_SERVICE_URL: serviceUrl,
 });

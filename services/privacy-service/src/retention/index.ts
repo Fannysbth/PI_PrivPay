@@ -4,4 +4,3 @@ export {
   type RetentionJobDeps,
   type RetentionResult,
 } from './retention-job';
-export { nextRunAt } from './schedule';

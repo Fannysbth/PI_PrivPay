@@ -35,6 +35,17 @@ export class PendingSweeper {
   }
 
   /**
+   * What the timer runs (M4-10, K-19): the stale PENDING rows first, then the status Privacy has not heard. In one
+   * job, in this order, so the two never work on the same row at the same moment (a row the first just failed and told
+   * Privacy about is already marked when the second looks).
+   */
+  async clean(): Promise<{ failed: number; repaired: number }> {
+    const failed = await this.sweep();
+    const repaired = await this.resync();
+    return { failed, repaired };
+  }
+
+  /**
    * Gate 2 decision 1: a final status that Privacy has not heard (its PATCH failed, or the process stopped before it)
    * is sent again, once the request that made it can no longer be working on it. The PATCH is idempotent (privacy
    * spec 4.7), and nothing is sent to the customer here: the message was another step and is never repeated.

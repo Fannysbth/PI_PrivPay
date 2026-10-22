@@ -13,4 +13,4 @@ export type {
   TransactionDetail,
 } from './ports';
 export { HttpPrivacyClient, HttpTransactionClient } from './clients';
-export { DailyRun, nextRunAt, previousDate } from './schedule';
+export { previousDate } from './schedule';

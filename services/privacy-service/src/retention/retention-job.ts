@@ -1,7 +1,6 @@
-import type { Clock } from '@privpay/common';
+import { DAY_MS, type Clock } from '@privpay/common';
 import type { Pool } from 'pg';
 import { AuditWriter } from '../audit';
-import { DAY_MS } from './schedule';
 
 /** Every value is a bind parameter (CLAUDE.md). The predicates are those of PRD 6.2. */
 export const RETENTION_SQL = {

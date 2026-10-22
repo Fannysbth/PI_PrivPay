@@ -78,6 +78,7 @@ Gerbang M5 tetap berlaku: tidak ada pengukuran performa sebelum mode baseline da
 | [M4-07](M4-07-reconciliation-audit-disclosure.md) | Audit-request dan pemicu pembukaan | M | M4-06, M3-05 | /implement |
 | [M4-08](M4-08-registration-flow.md) | Alur pendaftaran di Gateway | M | M2-08, M4-05, M1-01 | /implement |
 | [M4-09](M4-09-e2e-scenarios.md) | Skenario ujung ke ujung TX-10001..10003 | M | M4-02, M4-03, M4-06, M4-08 | /implement |
+| [M4-10](M4-10-job-scheduler.md) | Penjadwalan job berkala (retensi, pembersih, harian) | M | M2-09, M4-03, M4-06 | /tdd |
 
 ### M5
 

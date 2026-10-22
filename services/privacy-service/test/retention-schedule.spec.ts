@@ -1,4 +1,4 @@
-import { nextRunAt } from '../src/retention';
+import { nextRunAt } from '@privpay/common';
 
 // Seam: nextRunAt, pure. K-26: the retention job runs daily at RETENTION_JOB_RUN_UTC ("HH:MM", UTC, default 01:00).
 // It returns the first such instant strictly after `now`: a job that has just run at that minute waits for tomorrow.

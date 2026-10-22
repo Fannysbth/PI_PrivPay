@@ -17,6 +17,8 @@ const env = (): Record<string, string> => ({
   TTL_DAILY_RECONCILIATION: '86400',
   TTL_INTERNAL_AUDIT: '600',
   DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
+  RETENTION_DAYS: '90',
+  RETENTION_JOB_RUN_UTC: '01:00',
 });
 
 describe('M3-04 FR-09 the disclosure approval window comes from the environment, with no default', () => {
@@ -34,5 +36,33 @@ describe('M3-04 FR-09 the disclosure approval window comes from the environment,
     if (value === undefined) Reflect.deleteProperty(settings, 'DISCLOSURE_APPROVAL_TTL_SECONDS');
     else settings['DISCLOSURE_APPROVAL_TTL_SECONDS'] = value;
     expect(() => loadPrivacyConfig(settings)).toThrow('DISCLOSURE_APPROVAL_TTL_SECONDS');
+  });
+});
+
+describe('M4-10 K-26 the retention job: how long and when, from the environment, with no default', () => {
+  it.each([
+    ['RETENTION_DAYS', undefined],
+    ['RETENTION_DAYS', '0'],
+    ['RETENTION_DAYS', 'ninety'],
+    ['RETENTION_JOB_RUN_UTC', undefined],
+    ['RETENTION_JOB_RUN_UTC', '24:00'],
+    ['RETENTION_JOB_RUN_UTC', '1:00'],
+    ['RETENTION_JOB_RUN_UTC', '01:00:00'],
+    ['SCHEDULER_ENABLED', 'TRUE'],
+    ['SCHEDULER_ENABLED', '1'],
+  ])('M4-10 %s as %j stops the start, by name', (name, value) => {
+    const settings = env();
+    if (value === undefined) Reflect.deleteProperty(settings, name);
+    else settings[name] = value;
+    expect(() => loadPrivacyConfig(settings)).toThrow(name);
+  });
+
+  it('M4-10 the values are read as given, and the jobs may be switched on or off by name', () => {
+    const config = loadPrivacyConfig({ ...env(), SCHEDULER_ENABLED: 'true' });
+    expect(config).toMatchObject({
+      RETENTION_DAYS: 90,
+      RETENTION_JOB_RUN_UTC: '01:00',
+      SCHEDULER_ENABLED: 'true',
+    });
   });
 });

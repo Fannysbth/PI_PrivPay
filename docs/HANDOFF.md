@@ -1,4 +1,55 @@
-# HANDOFF (2026-10-22): Gerbang 4 M4 LULUS (dua putaran hijau); berikutnya penutup M4 (belum dimulai), lalu M5
+# HANDOFF (2026-10-23): M4 DITUTUP (M4-10 + penutup, dua putaran hijau), di-merge ke `main` lokal; berikutnya M5 (belum dimulai)
+
+## Status M4-10 dan penutup M4
+
+Cabang `feat/m4-10-penjadwal` (tidak dihapus): `e49d50b` M4-10, `b894e2c` perbaikan review, `dc6d8c4` penutup (`review-M4.md`, checklist, `RETRO_M4.md`, pelajaran di CLAUDE.md). `/simplify` (4 agen), `/code-review` (10 temuan: 6 diperbaiki, 4 ditolak), `/security-review` seluruh M4 (`857cad1..HEAD`): tanpa temuan keyakinan 8 ke atas, jadi persetujuan penutup M4 yang diberikan di muka berlaku.
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 65 suite, 1286 tes | 65 suite, 1286 tes |
+| integrasi | 52 suite, 1055 tes | 52 suite, 1055 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks riwayat penuh | bersih | bersih |
+| pii-scan | 35 + 76 tes | 35 + 76 tes |
+
+Riwayat percobaan (jujur): lari pertama gagal satu tes integrasi (`reconciliation-http` N-27, batas 30 detik pada hook `createTestDb`; celah ±3 menit di stempel waktu log). Suite itu sendirian lulus (43 tes). Lari ulang kedua hijau penuh (= putaran 1 di atas). Lari ketiga gagal 2 tes `pii-scan` E2E (`scenarios` TX-10002, batas 30 detik; suite 3735 detik padahal log hanya mencakup 33 detik); log daya Windows membuktikan standby (Kernel-Power 506) 22:32-23:19 dan 23:19-23:34, tepat di jendela itu, jadi lari itu tidak dihitung (bukan kegagalan kode). Lari keempat dengan mesin dicegah tidur (`SetThreadExecutionState`, tanpa mengubah pengaturan daya) hijau penuh = putaran 2 di atas, tanpa peristiwa daya. Dua putaran hijau itu tidak berurutan langsung (lari ketiga di antaranya gugur karena tidur mesin); ini dicatat agar kamu yang menilai. Bila gagal lagi tanpa tidur mesin, perlakukan sebagai bug. Pelajaran untuk gerbang panjang di laptop: jalankan dengan keep-awake (`privpay-keepawake.ps1`-sejenis) atau colokkan daya dan matikan sleep.
+
+### Yang dibangun (M4-10, K-19/K-23/K-26)
+
+- `Scheduler` bersama di `packages/common` (jam dan timer disuntik, tanpa tumpang tindih, galat dicatat dengan nama job dan `reason` saja, dimulai setelah `listen`, berhenti sebelum kolam ditutup dengan penantian dibatasi `SHUTDOWN_TIMEOUT_MS`). Mati bawaan saat `NODE_ENV=test`; `SCHEDULER_ENABLED=true/false`. Satu instans per layanan.
+- Privacy: `RetentionJob` harian (`RETENTION_DAYS`, `RETENTION_JOB_RUN_UTC`). Transaction: satu job `clean()` (sweep PENDING lalu resync PATCH) tiap `TX_SWEEP_INTERVAL_SECONDS`. Reconciliation: rekonsiliasi harian hari kemarin (`RECON_DAILY_RUN_UTC`).
+- Bukti proses nyata: layanan Transaction hasil build, interval 1 detik, PostgreSQL tak terjangkau: job berjalan tiap detik, galat tanpa data pribadi, `/health` 200. SIGTERM di Windows = hard kill; jalur sinyal teruji di CI Linux.
+- S-36 (retensi sampai identitas kosong) kini terbukti end-to-end (`scheduler.integration.spec.ts`).
+
+### Keputusan yang butuh persetujuan Fanny
+
+- N-40: `resync` memberi 100 baris belum-didengar tertua; baris yang ditolak Privacy permanen (4xx) tidak ditandai dan menahan baris baru. Butuh kolom penghitung (PRD 11) atau aturan lewati-4xx.
+- N-41: penantian job saat shutdown dibatasi `SHUTDOWN_TIMEOUT_MS` (10 detik).
+- Poin 5 `docs/RETRO_M4.md` ("Yang kuhentikan") menunggu isianmu.
+
+### Temuan `/code-review` M4-10 yang ditolak
+
+Resync membeku pada baris ditolak permanen (N-40); job harian yang terlewat tidak dikejar setelah restart (desain, terdokumentasi); logger kedua di Privacy (modul tak punya logger); tanggal `previousDate` dihitung saat eksekusi.
+
+### Butir checklist keamanan
+
+Dicentang pada penutup M4: S-20, S-27, S-30, S-36, S-38, S-43, S-52, S-54. Tetap sebagian: S-41 (Semgrep belum), S-42 (TK-01/06/09/13/14/15 sampai M6-01), S-44 (Kong), S-50 (Docker, M7), S-07, S-08.
+
+### Belum teruji
+
+Newman/M6-01 (TK end-to-end); fail-closed dengan Docker (M7); `trust proxy` di belakang Kong; Semgrep/CI; kinerja D2; kontak HP dan pengguna IdP yatim (ADR-0005); N-40.
+
+### Usulan pembagian gerbang M5
+
+1. Gerbang 1: M5-01 transaction + fraud (migrasi baseline, repositori, adapter `SubjectReferencePort` baseline).
+2. Gerbang 2: M5-01 notification + reconciliation, ditambah tes arsitektur (kode domain tidak mengimpor folder per mode).
+3. Gerbang 3: M5-02 (pengalih `PRIVACY_MODE`, suite kesetaraan perilaku di tumpukan E2E `services/gateway/test/e2e/stack.ts`, env tak konsisten ditolak saat start).
+4. Gerbang 4: M5-03 (Gateway mode baseline di `Tokenizer`) + penutup M5 (`/security-review`, `/retro`).
+Catatan: baseline memegang data asli; tidak boleh aktif pada konfigurasi proposed. `/improve-codebase-architecture` setelah M4 dan M5 belum dijalankan (menunggu perintahmu).
+
+# (Riwayat) Gerbang 4 M4 LULUS (dua putaran hijau)
 
 ## Status Gerbang 4 M4
 
@@ -26,10 +77,6 @@ Catatan putaran 2: lari integrasi pertama gagal satu tes (`db.integration`, "rec
 
 N-38 (email divalidasi lalu dibuang: brankas tidak punya kolom email, jadi "email hanya di brankas" tidak terpenuhi harfiah; email tidak ada di mana pun), N-39 (kompensasi mengosongkan brankas walau A5 melaporkan gagal), ADR-0014 sudah Accepted atas pilihanmu.
 
-### Hasil pencarian penjadwalan (K-19, K-23, RetentionJob)
-
-Tidak ada tiket, spek, ADR, atau butir milestone (M5, M6, M7) yang mencakup penghubungan `RetentionJob` (M2-09, K-26), `PendingSweeper.sweep/resync` (M4-03, K-19), dan `DailyRun` (M4-06, K-23) ke siklus hidup proses. Kriteria M4-06 menyebut "scheduler `RECON_DAILY_RUN_UTC`" tetapi hanya kelas dan jadwalnya yang dibuat dan diuji. Dicatat sebagai "belum dijadwalkan" di `docs/security/review-M3.md` (S-36) dan komentar kode. Butuh tiket baru atau keputusanmu.
-
 ### Temuan `/code-review` yang ditolak
 
 Telepon yatim di Notification bila jawaban A4 hilang (batas ADR-0005: Notification tak punya hapus kontak; token domainnya dicabut); pengguna IdP yatim bila jawaban A2 hilang (batas yang dicatat); batas panjang `sub` untuk semua jenis token (diminta); ADR-0014 berlaku untuk semua `CUSTOMER` (risiko diterima di ADR); `req.ip` tanpa `trust proxy` (belum ada proksi; harus ditinjau saat Kong/Docker); `customerId ?? ''` (tak terjangkau, `mayCall` memeriksa klaim lebih dulu); enumerasi nama pengguna lewat 422 (tak terhindarkan, dibatasi laju); `Content-Length` tak ada pada badan chunked (setiap field dibatasi skema); kompensasi karena NIK ganda mengosongkan brankas pelanggan lain (tidak: purge berkunci `customer_lookup` dari id pelanggan baru).
@@ -40,7 +87,7 @@ TK-01, TK-06, TK-09, TK-13, TK-14, TK-15: lapis layanan dan relay jawaban kawat 
 
 ### Belum teruji
 
-Penjadwalan job ke siklus hidup proses; adapter baseline (M5); Newman (M6-01); fail-closed dengan Docker; `trust proxy` di belakang Kong; kinerja D2 untuk ribuan transaksi.
+Adapter baseline (M5); Newman (M6-01); fail-closed dengan Docker; `trust proxy` di belakang Kong; kinerja D2 untuk ribuan transaksi.
 
 ### Untuk penutup M4
 
@@ -82,11 +129,11 @@ N-32 (batch pengganti `MISMATCHED` sampai run), N-33 (D2: `TOKEN_NOT_FOUND`/`REV
 
 ### Temuan `/code-review` yang ditolak
 
-`resync` PATCH status basi (Privacy menolak balik ke non-final, tanda dijaga status, baris dibaca ulang dengan status baru); penjadwal `resync`/`sweep`/`DailyRun` belum dihubungkan (sengaja, seperti `RetentionJob`); D2 berurutan (volume prototipe); atomisitas `audit-request` dengan Privacy (lintas layanan, Privacy sudah mencatat aktor); kursor bersama `held`/`completed` (hanya posisi, tanpa dampak keamanan); urutan tie-break referensi bank (deterministik); parameter query ganda (sudah 422); back-fill migrasi 0003 (hanya basis data pengembangan).
+`resync` PATCH status basi (Privacy menolak balik ke non-final, tanda dijaga status, baris dibaca ulang dengan status baru); D2 berurutan (volume prototipe); atomisitas `audit-request` dengan Privacy (lintas layanan, Privacy sudah mencatat aktor); kursor bersama `held`/`completed` (hanya posisi, tanpa dampak keamanan); urutan tie-break referensi bank (deterministik); parameter query ganda (sudah 422); back-fill migrasi 0003 (hanya basis data pengembangan).
 
 ### Belum teruji
 
-Penjadwalan `PendingSweeper.sweep/resync` dan `DailyRun` ke siklus hidup proses (K-19, K-23); adapter baseline (M5); Newman lewat Gateway (M6-01); alur `/register` dan E2E TX-10001..10003 (M4-08, M4-09); fail-closed dengan Docker; kinerja D2 untuk ribuan transaksi per hari.
+Adapter baseline (M5); Newman lewat Gateway (M6-01); alur `/register` dan E2E TX-10001..10003 (M4-08, M4-09); fail-closed dengan Docker; kinerja D2 untuk ribuan transaksi per hari.
 
 ### Untuk Gerbang 4
 
@@ -125,11 +172,11 @@ Catatan putaran 1: lari integrasi pertama gagal satu tes, `M0-04 a runner waits 
 
 ### Temuan `/code-review` yang ditolak
 
-`PendingSweeper` belum dijadwalkan (sengaja, seperti `RetentionJob`; tiket menyuruh dicatat); re-issue dua token berurutan (Privacy mengembalikan token baru yang sama pada panggilan kedua, jadi gagal sebagian aman diulang); penantian pemenang tetap `HTTP_TIMEOUT_MS` (ADR-0009 / K-25, 409 aman diulang); env baru wajib (CLAUDE.md: gagal cepat); `MutableSubject` (gaya, berurutan, tidak ada balapan).
+re-issue dua token berurutan (Privacy mengembalikan token baru yang sama pada panggilan kedua, jadi gagal sebagian aman diulang); penantian pemenang tetap `HTTP_TIMEOUT_MS` (ADR-0009 / K-25, 409 aman diulang); env baru wajib (CLAUDE.md: gagal cepat); `MutableSubject` (gaya, berurutan, tidak ada balapan).
 
 ### Belum teruji
 
-Penjadwalan `PendingSweeper` ke siklus hidup proses (`TX_SWEEP_INTERVAL_SECONDS`, K-19, belum ada); adapter baseline `SubjectReferencePort` (M5); rute Gateway ke `held` dan `review` (AZ-04, AZ-05 di sisi Gateway; hanya sisi layanan AZ-27 dan AZ-28 yang diuji); Privacy, Fraud, Notification asli di belakang Transaction end-to-end (M4-09); endpoint 3.4 untuk Reconciliation (M4-06); fail-closed dengan Docker.
+adapter baseline `SubjectReferencePort` (M5); rute Gateway ke `held` dan `review` (AZ-04, AZ-05 di sisi Gateway; hanya sisi layanan AZ-27 dan AZ-28 yang diuji); Privacy, Fraud, Notification asli di belakang Transaction end-to-end (M4-09); endpoint 3.4 untuk Reconciliation (M4-06); fail-closed dengan Docker.
 
 ### Untuk Gerbang 3 (M4-06, M4-07)
 
@@ -277,7 +324,7 @@ Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit m
 ### Keterbatasan yang diketahui (dari `/security-review`)
 
 - (a) Token yang terbit bersamaan dengan `revoke_subject` bisa lolos dari pencabutan. Gateway boleh menerbitkan token baru untuk subjek yang sama kapan saja, jadi pencabutan memang bukan blokir penerbitan.
-- (b) Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject` (spec 4.6: hanya baris `active`); diserahkan ke retensi, dan `RetentionJob` belum dijadwalkan.
+- (b) Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject` (spec 4.6: hanya baris `active`); diserahkan ke retensi (berjalan terjadwal sejak M4-10).
 
 ### Keputusan di tiket (tidak ada ADR yang bertabrakan)
 
@@ -289,7 +336,6 @@ Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit m
 ## Belum teruji / belum ada
 
 - Fail-closed dengan Privacy mati di compose (butuh Docker, M7): tidak dinyatakan lulus. Diuji di tingkat Gateway dengan Privacy asli dihentikan.
-- `RetentionJob` belum dijadwalkan ke siklus hidup proses.
 - Rute `/register` dan `/notification/register` serta `RegistrationFlow` (M4-08). Plugin Lua belum diuji terhadap vektor kontrak (DK-02).
 - Body bukan JSON tanpa token mendapat 422 sebelum 401 (parser JSON bersama). Dicatat, belum diubah.
 - `pnpm test:security` dan `pnpm newman` belum ada (M3-06, M6-01); Docker belum ada.
@@ -297,7 +343,7 @@ Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit m
 ## Keterbatasan yang sudah dicatat
 
 - Token yang terbit bersamaan dengan `revoke_subject` bisa lolos pencabutan (Gateway boleh menerbitkan token baru untuk subjek yang sama).
-- Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject`; diserahkan ke retensi, dan `RetentionJob` belum dijadwalkan.
+- Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject`; diserahkan ke retensi (berjalan terjadwal sejak M4-10).
 
 ## Langkah berikutnya
 

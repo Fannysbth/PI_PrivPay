@@ -66,6 +66,7 @@ beforeEach(async () => {
       FRAUD_SERVICE_URL: 'http://fraud.test',
       NOTIFICATION_SERVICE_URL: 'http://notification.test',
       TX_PENDING_TIMEOUT_SECONDS: '300',
+      TX_SWEEP_INTERVAL_SECONDS: '30',
     },
     { clock },
   );

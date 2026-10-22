@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { request as httpRequest } from 'node:http';
 import { networkInterfaces } from 'node:os';
-import { Controller, Get, Module, Param, Res } from '@nestjs/common';
+import { Controller, Get, Module, Param, Res, type Type } from '@nestjs/common';
 import type { Response } from 'express';
 import request from 'supertest';
 import { FakeClock } from '../src/clock';
@@ -9,6 +9,7 @@ import { ConfigError } from '../src/config';
 import { type Delay } from '../src/delay';
 import { DomainError, RateLimitedError } from '../src/errors';
 import { createServiceApp, SERVICE_IDS, type ServiceApp, type ServiceId } from '../src/nest';
+import { SCHEDULER } from '../src/scheduler';
 import { capture } from './log-capture';
 import { probe, probeAll } from './tcp-probe';
 
@@ -91,7 +92,7 @@ async function start(
   service: ServiceId,
   extra: {
     env?: Record<string, string>;
-    modules?: (typeof ProbeModule)[];
+    modules?: Type[];
     delay?: Delay;
     closeables?: { close(): Promise<void> }[];
   } = {},
@@ -562,5 +563,102 @@ describe('M1-01 a service may build its modules from the validated environment',
     );
     await expect(failure).rejects.toThrow('PRIVACY_MODE (missing)');
     expect(called).toBe(false);
+  });
+});
+
+// M4-10: a service that has jobs provides them under SCHEDULER; the skeleton starts them once the service listens and
+// stops them, waiting for the jobs that run, before the pools are closed.
+const background: string[] = [];
+let stopFails = false;
+// Whether the server already listens at the moment the jobs are started: set by the test that has the app.
+let listensNow: () => boolean = () => false;
+const work = {
+  start: () => void background.push(listensNow() ? 'start' : 'start-before-listening'),
+  stop: () => {
+    background.push('stop');
+    return stopFails ? Promise.reject(new Error('a job did not end')) : Promise.resolve();
+  },
+};
+@Module({ providers: [{ provide: SCHEDULER, useValue: work }] })
+class JobsModule {}
+const originalStop = work.stop;
+const pool = {
+  close: () => {
+    background.push('pool');
+    return Promise.resolve();
+  },
+};
+
+describe('M4-10 the skeleton starts the jobs after listening and stops them before the pools', () => {
+  beforeEach(() => {
+    background.length = 0;
+    stopFails = false;
+    listensNow = () => true;
+  });
+
+  it('M4-10 the jobs do not start when the app is made, start once it listens, and not again on a second listen', async () => {
+    const { service } = await start('transaction-service', { modules: [JobsModule] });
+    listensNow = () => service.httpServer.listening;
+    expect(background).toEqual([]);
+    await service.listen();
+    await service.listen();
+    expect(background).toEqual(['start']);
+  });
+
+  it('M4-10 close stops the jobs, and only then closes the pools', async () => {
+    const { service } = await start('transaction-service', {
+      modules: [JobsModule],
+      closeables: [pool],
+    });
+    await service.listen();
+    await service.close();
+    expect(background).toEqual(['start', 'stop', 'pool']);
+  });
+
+  it('M4-10 a service that never listened still stops its jobs on close, and they never started', async () => {
+    const { service } = await start('transaction-service', {
+      modules: [JobsModule],
+      closeables: [pool],
+    });
+    await service.close();
+    expect(background).toEqual(['stop', 'pool']);
+  });
+
+  it('M4-10 a stop that fails does not keep the pools open, and the failure is reported', async () => {
+    stopFails = true;
+    const { service } = await start('transaction-service', {
+      modules: [JobsModule],
+      closeables: [pool],
+    });
+    await service.listen();
+    await expect(service.close()).rejects.toThrow('shutdown');
+    expect(background).toEqual(['start', 'stop', 'pool']);
+  });
+
+  it('M4-10 a job that never ends cannot keep the pools open for ever: the wait is the shutdown timeout', async () => {
+    work.stop = () => {
+      background.push('stop');
+      return new Promise<void>(() => undefined);
+    };
+    try {
+      const { service } = await start('transaction-service', {
+        modules: [JobsModule],
+        closeables: [pool],
+        delay: IMMEDIATELY,
+      });
+      await service.listen();
+      await service.close();
+      expect(background).toEqual(['start', 'stop', 'pool']);
+      expect(waits).toContain(10_000);
+    } finally {
+      work.stop = originalStop;
+    }
+  });
+
+  it('M4-10 a service with no jobs starts and stops as before', async () => {
+    const { service } = await start('sms-simulator', { closeables: [pool] });
+    await service.listen();
+    await service.close();
+    expect(background).toEqual(['pool']);
   });
 });

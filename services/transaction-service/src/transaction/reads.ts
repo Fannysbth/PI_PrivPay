@@ -1,13 +1,11 @@
 import { decodeCursor, encodeCursor } from './cursor';
-import { DomainError } from '@privpay/common';
+import { DAY_MS, DomainError } from '@privpay/common';
 import type { CompletedItem, TransactionDetail, TransactionRepository } from './repository';
 
 export interface CompletedPage {
   readonly items: readonly CompletedItem[];
   readonly next_cursor: string | null;
 }
-
-const DAY_MS = 86_400_000;
 
 /**
  * What Reconciliation reads from Transaction (spec transaction 3.4, K-18): amounts and times, never a token and never
