@@ -8,13 +8,14 @@ import {
 import { z } from 'zod';
 import type { ErrorMasker } from './error-masker';
 import type { PrivacyPort } from './tokenizer/privacy-port';
+import { PHONE } from './tokenizer/schemas';
 
 // The form of A1 (gateway spec 6). Everything in it is real data and none of it is logged, answered or kept here: it goes
 // to Privacy (NIK, name, phone, account) or is dropped (the email, which the vault has no column for).
 const registrationBody = z.strictObject({
   nik: z.string().regex(/^[0-9]{16}$/),
   nama: z.string().regex(/^[\p{L} .'-]{1,100}$/u),
-  hp: z.string().regex(/^08[0-9]{8,12}$/),
+  hp: z.string().regex(PHONE),
   email: z.email().max(200),
   rekening: z.string().regex(/^[0-9]{8,20}$/),
   username: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,31}$/),

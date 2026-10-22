@@ -53,8 +53,11 @@ export const settlementBody = z.strictObject({
 });
 export type SettlementBody = z.output<typeof settlementBody>;
 
+/** One shape of a phone for the registration (A1) and the change of it (AZ-02), so the two cannot drift apart. */
+export const PHONE = /^08[0-9]{8,12}$/;
+
 /** AZ-02: the phone a customer wants Notification to use, and nothing else (the customer is the token's). */
 export const notificationBody = z.strictObject({
-  phone: z.string().regex(/^08[0-9]{8,12}$/),
+  phone: z.string().regex(PHONE),
   channel: z.literal('SMS'),
 });
