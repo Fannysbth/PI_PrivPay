@@ -126,8 +126,12 @@ class ServiceExceptionFilter implements ExceptionFilter {
 function jobsOf(app: INestApplication): BackgroundWork | undefined {
   try {
     return app.get<BackgroundWork>(SCHEDULER, { strict: false });
-  } catch {
-    return undefined;
+  } catch (error) {
+    // Only "not provided" means a service without jobs; any other failure must not silently turn the jobs off.
+    if (error instanceof Error && error.constructor.name === 'UnknownElementException') {
+      return undefined;
+    }
+    throw error;
   }
 }
 
@@ -261,10 +265,20 @@ export async function createServiceApp(
         await drained;
       }
     }
-    try {
-      await background?.stop();
-    } catch (error) {
-      failures.push(error);
+    if (background !== undefined) {
+      // Running jobs are waited for, but no longer than the requests are: a job that does not end cannot keep the pools
+      // open for ever.
+      const stopWaiting = new AbortController();
+      try {
+        await Promise.race([
+          background.stop(),
+          delay.wait(config.SHUTDOWN_TIMEOUT_MS, stopWaiting.signal),
+        ]);
+      } catch (error) {
+        failures.push(error);
+      } finally {
+        stopWaiting.abort();
+      }
     }
     for (const resource of closeables) {
       try {

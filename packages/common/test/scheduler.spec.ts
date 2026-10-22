@@ -134,6 +134,8 @@ describe('M4-10 a job never overlaps itself', () => {
     clock.advance(10);
     timers.fire();
     expect(runs).toBe(1);
+    // The two occurrences that were skipped are said so: a day that was not run must not pass unnoticed.
+    expect(log.entries.map((e) => e.event)).toEqual(['job_skipped_slow', 'job_skipped_slow']);
     release?.();
     await scheduler.idle();
     clock.advance(10);
@@ -263,6 +265,52 @@ describe('M4-10 an error in a job is caught and the process goes on', () => {
   });
 });
 
+describe('M4-10 a log destination that fails does not take the process with it', () => {
+  it('M4-10 a failing job whose log line cannot be written is not an unhandled rejection, and the job runs again', async () => {
+    const unhandled: unknown[] = [];
+    const watch = (reason: unknown): void => void unhandled.push(reason);
+    process.on('unhandledRejection', watch);
+    try {
+      let runs = 0;
+      const broken = {
+        info: () => undefined,
+        warn: () => {
+          throw new Error('the log destination is closed');
+        },
+      };
+      const scheduler = new Scheduler({
+        clock,
+        timers,
+        logger: broken,
+        jobs: [
+          {
+            name: 'failing',
+            schedule: { kind: 'every', seconds: 10 },
+            run: () => {
+              runs += 1;
+              return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
+            },
+          },
+        ],
+      });
+      scheduler.start();
+      // No idle() here: waiting for a rejected promise would count as handling it, and hide the very thing looked for.
+      for (let occurrence = 0; occurrence < 2; occurrence += 1) {
+        clock.advance(10);
+        timers.fire();
+        for (let turn = 0; turn < 3; turn += 1) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+      }
+      expect(runs).toBe(2);
+      expect(unhandled).toEqual([]);
+      await scheduler.stop();
+    } finally {
+      process.off('unhandledRejection', watch);
+    }
+  });
+});
+
 describe('M4-10 a schedule that cannot work stops the start', () => {
   it.each([
     ['an interval of 0', { kind: 'every', seconds: 0 }],
@@ -309,11 +357,15 @@ describe('M4-10 no handle is left behind', () => {
     const { job } = counting('daily', { kind: 'daily', runUtc: '03:00' });
     const scheduler = new Scheduler({ clock, logger: log.logger, jobs: [job] });
     scheduler.start();
-    // The timer must not keep the process alive by itself: the server does that, and a stop is not to wait for a run.
-    const handle = spy.mock.results[0]?.value as NodeJS.Timeout;
-    expect(handle.hasRef()).toBe(false);
-    spy.mockRestore();
-    await scheduler.stop();
+    try {
+      // The timer must not keep the process alive by itself: the server does that, and a stop is not to wait for a run.
+      const handle = spy.mock.results[0]?.value as NodeJS.Timeout;
+      expect(handle.hasRef()).toBe(false);
+    } finally {
+      // Always stopped, so a failing assertion cannot leave a real timer that keeps the test process waiting.
+      spy.mockRestore();
+      await scheduler.stop();
+    }
     const after = process.getActiveResourcesInfo().filter((name) => name === 'Timeout').length;
     expect(after).toBe(before);
   });
@@ -329,6 +381,8 @@ describe('M4-10 what a service gets from the environment', () => {
   it('M4-10 the scheduler is provided when the jobs are on and not when they are off', () => {
     const options = { clock, timers, logger: log.logger, jobs: [job] };
     expect(schedulerProviders({ NODE_ENV: 'test' }, options)).toEqual([]);
+    // Off is said once, so a deployment that has NODE_ENV=test by accident does not run without anyone knowing.
+    expect(log.entries).toEqual([{ event: 'scheduler_off', fields: undefined }]);
     const [on] = schedulerProviders({ NODE_ENV: 'test', SCHEDULER_ENABLED: 'true' }, options);
     expect(on?.provide).toBe(SCHEDULER);
     expect(on?.useValue.describe()).toEqual([

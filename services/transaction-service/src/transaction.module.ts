@@ -211,14 +211,9 @@ export function transactionModules(
             timers: overrides.timers,
             jobs: [
               {
-                name: 'pending-sweep',
+                name: 'pending-cleaner',
                 schedule: { kind: 'every', seconds: config.TX_SWEEP_INTERVAL_SECONDS },
-                run: () => sweeper.sweep(),
-              },
-              {
-                name: 'privacy-resync',
-                schedule: { kind: 'every', seconds: config.TX_SWEEP_INTERVAL_SECONDS },
-                run: () => sweeper.resync(),
+                run: () => sweeper.clean(),
               },
             ],
           }),

@@ -234,3 +234,28 @@ describe('M4-03 FR-35 a review whose PATCH fails', () => {
     expect((await rowOf(id))?.privacy_synced_at).toBeNull();
   });
 });
+
+describe('M4-10 K-19 the cleaner does both in one pass, in order', () => {
+  it('M4-10 K-19 clean() fails the stale PENDING row, then repeats the PATCH Privacy missed, and nothing is sent twice', async () => {
+    await db.owner.query(
+      `INSERT INTO transactions (transaction_id, idempotency_key, customer_pseudonym, account_pseudonym,
+          merchant_id, amount, geohash, status, created_at)
+        VALUES ('TX-7950', $1, 'PSEU-00000001', 'PSEU-00000002', 'MRC-001', 35000, 'qqgu4', 'PENDING', $2)`,
+      [KEY, new Date(clock.now().getTime() - (TIMEOUT_SECONDS + 1) * 1000)],
+    );
+    privacy.fail = true;
+    const missed = request();
+    await processor.process(missed);
+    privacy.fail = false;
+    privacy.patches.length = 0;
+    clock.advance(TIMEOUT_SECONDS + 1);
+    // The row the sweep failed was told to Privacy and marked by the sweep itself, so only the missed one is repaired.
+    expect(await sweeper.clean()).toEqual({ failed: 1, repaired: 1 });
+    expect(privacy.patches.map((p) => `${p.transactionId}:${p.status}`).sort()).toEqual(
+      ['TX-7950:FAILED', `${missed.transactionId}:COMPLETED`].sort(),
+    );
+    privacy.patches.length = 0;
+    expect(await sweeper.clean()).toEqual({ failed: 0, repaired: 0 });
+    expect(privacy.patches).toEqual([]);
+  });
+});

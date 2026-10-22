@@ -69,7 +69,7 @@ export const SCHEDULER = Symbol.for('privpay.scheduler');
 export interface SchedulerOptions {
   readonly clock: Clock;
   /** Only a job name and a reason are ever logged (invariant 6). */
-  readonly logger: Pick<Logger, 'warn'>;
+  readonly logger: Pick<Logger, 'info' | 'warn'>;
   readonly jobs: readonly Job[];
   readonly timers?: Timers | undefined;
 }
@@ -164,8 +164,9 @@ export class Scheduler implements BackgroundWork {
     for (const entry of this.entries) {
       if (entry.nextDue.getTime() > now.getTime()) continue;
       entry.nextDue = dueAfter(entry.job.schedule, now);
-      // Still running from an earlier occurrence: this one is skipped.
+      // Still running from an earlier occurrence: this one is skipped, and said so.
       if (entry.running === undefined) this.launch(entry);
+      else this.options.logger.warn(`job_skipped_${entry.job.name}`);
     }
     this.arm();
   }
@@ -175,10 +176,15 @@ export class Scheduler implements BackgroundWork {
       try {
         await entry.job.run();
       } catch (error) {
-        // The message of an error may hold a value; only the reason of one of ours is kept.
-        this.options.logger.warn(`job_failed_${entry.job.name}`, {
-          reason: error instanceof DomainError ? error.reason : 'INTERNAL_ERROR',
-        });
+        // The message of an error may hold a value; only the reason of one of ours is kept. A log that cannot be
+        // written is not allowed to become an unhandled rejection that takes the process down.
+        try {
+          this.options.logger.warn(`job_failed_${entry.job.name}`, {
+            reason: error instanceof DomainError ? error.reason : 'INTERNAL_ERROR',
+          });
+        } catch {
+          // Nothing left to tell: the job runs again at its next time.
+        }
       }
     })();
     const tracked = work.finally(() => {
@@ -211,5 +217,7 @@ export function schedulerProviders(
   options: SchedulerOptions,
 ): { provide: symbol; useValue: Scheduler }[] {
   const scheduler = new Scheduler(options);
-  return schedulerEnabled(env) ? [{ provide: SCHEDULER, useValue: scheduler }] : [];
+  if (schedulerEnabled(env)) return [{ provide: SCHEDULER, useValue: scheduler }];
+  options.logger.info('scheduler_off');
+  return [];
 }

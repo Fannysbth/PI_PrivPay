@@ -74,8 +74,7 @@ describe('M4-10 the jobs start with the service and are described by what the en
       { name: 'retention', schedule: { kind: 'daily', runUtc: '01:00' } },
     ]);
     expect(schedulerOf('transaction.test').describe()).toEqual([
-      { name: 'pending-sweep', schedule: { kind: 'every', seconds: 30 } },
-      { name: 'privacy-resync', schedule: { kind: 'every', seconds: 30 } },
+      { name: 'pending-cleaner', schedule: { kind: 'every', seconds: 30 } },
     ]);
     expect(schedulerOf('reconciliation.test').describe()).toEqual([
       { name: 'daily-reconciliation', schedule: { kind: 'daily', runUtc: '00:10' } },

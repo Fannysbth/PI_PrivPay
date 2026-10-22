@@ -581,6 +581,7 @@ const work = {
 };
 @Module({ providers: [{ provide: SCHEDULER, useValue: work }] })
 class JobsModule {}
+const originalStop = work.stop;
 const pool = {
   close: () => {
     background.push('pool');
@@ -632,6 +633,26 @@ describe('M4-10 the skeleton starts the jobs after listening and stops them befo
     await service.listen();
     await expect(service.close()).rejects.toThrow('shutdown');
     expect(background).toEqual(['start', 'stop', 'pool']);
+  });
+
+  it('M4-10 a job that never ends cannot keep the pools open for ever: the wait is the shutdown timeout', async () => {
+    work.stop = () => {
+      background.push('stop');
+      return new Promise<void>(() => undefined);
+    };
+    try {
+      const { service } = await start('transaction-service', {
+        modules: [JobsModule],
+        closeables: [pool],
+        delay: IMMEDIATELY,
+      });
+      await service.listen();
+      await service.close();
+      expect(background).toEqual(['start', 'stop', 'pool']);
+      expect(waits).toContain(10_000);
+    } finally {
+      work.stop = originalStop;
+    }
   });
 
   it('M4-10 a service with no jobs starts and stops as before', async () => {
