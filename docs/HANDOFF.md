@@ -1,4 +1,55 @@
-# HANDOFF (2026-10-22): Gerbang 4 M4 LULUS (dua putaran hijau); berikutnya penutup M4 (belum dimulai), lalu M5
+# HANDOFF (2026-10-23): M4 DITUTUP (M4-10 + penutup, dua putaran hijau), di-merge ke `main` lokal; berikutnya M5 (belum dimulai)
+
+## Status M4-10 dan penutup M4
+
+Cabang `feat/m4-10-penjadwal` (tidak dihapus): `e49d50b` M4-10, `b894e2c` perbaikan review, `dc6d8c4` penutup (`review-M4.md`, checklist, `RETRO_M4.md`, pelajaran di CLAUDE.md). `/simplify` (4 agen), `/code-review` (10 temuan: 6 diperbaiki, 4 ditolak), `/security-review` seluruh M4 (`857cad1..HEAD`): tanpa temuan keyakinan 8 ke atas, jadi persetujuan penutup M4 yang diberikan di muka berlaku.
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 65 suite, 1286 tes | 65 suite, 1286 tes |
+| integrasi | 52 suite, 1055 tes | 52 suite, 1055 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks riwayat penuh | bersih | bersih |
+| pii-scan | 35 + 76 tes | 35 + 76 tes |
+
+Riwayat percobaan (jujur): lari pertama gagal satu tes integrasi (`reconciliation-http` N-27, batas 30 detik pada hook `createTestDb`; celah ±3 menit di stempel waktu log). Suite itu sendirian lulus (43 tes). Lari ulang kedua hijau penuh (= putaran 1 di atas). Lari ketiga gagal 2 tes `pii-scan` E2E (`scenarios` TX-10002, batas 30 detik; suite 3735 detik padahal log hanya mencakup 33 detik); log daya Windows membuktikan standby (Kernel-Power 506) 22:32-23:19 dan 23:19-23:34, tepat di jendela itu, jadi lari itu tidak dihitung (bukan kegagalan kode). Lari keempat dengan mesin dicegah tidur (`SetThreadExecutionState`, tanpa mengubah pengaturan daya) hijau penuh = putaran 2 di atas, tanpa peristiwa daya. Dua putaran hijau itu tidak berurutan langsung (lari ketiga di antaranya gugur karena tidur mesin); ini dicatat agar kamu yang menilai. Bila gagal lagi tanpa tidur mesin, perlakukan sebagai bug. Pelajaran untuk gerbang panjang di laptop: jalankan dengan keep-awake (`privpay-keepawake.ps1`-sejenis) atau colokkan daya dan matikan sleep.
+
+### Yang dibangun (M4-10, K-19/K-23/K-26)
+
+- `Scheduler` bersama di `packages/common` (jam dan timer disuntik, tanpa tumpang tindih, galat dicatat dengan nama job dan `reason` saja, dimulai setelah `listen`, berhenti sebelum kolam ditutup dengan penantian dibatasi `SHUTDOWN_TIMEOUT_MS`). Mati bawaan saat `NODE_ENV=test`; `SCHEDULER_ENABLED=true/false`. Satu instans per layanan.
+- Privacy: `RetentionJob` harian (`RETENTION_DAYS`, `RETENTION_JOB_RUN_UTC`). Transaction: satu job `clean()` (sweep PENDING lalu resync PATCH) tiap `TX_SWEEP_INTERVAL_SECONDS`. Reconciliation: rekonsiliasi harian hari kemarin (`RECON_DAILY_RUN_UTC`).
+- Bukti proses nyata: layanan Transaction hasil build, interval 1 detik, PostgreSQL tak terjangkau: job berjalan tiap detik, galat tanpa data pribadi, `/health` 200. SIGTERM di Windows = hard kill; jalur sinyal teruji di CI Linux.
+- S-36 (retensi sampai identitas kosong) kini terbukti end-to-end (`scheduler.integration.spec.ts`).
+
+### Keputusan yang butuh persetujuan Fanny
+
+- N-40: `resync` memberi 100 baris belum-didengar tertua; baris yang ditolak Privacy permanen (4xx) tidak ditandai dan menahan baris baru. Butuh kolom penghitung (PRD 11) atau aturan lewati-4xx.
+- N-41: penantian job saat shutdown dibatasi `SHUTDOWN_TIMEOUT_MS` (10 detik).
+- Poin 5 `docs/RETRO_M4.md` ("Yang kuhentikan") menunggu isianmu.
+
+### Temuan `/code-review` M4-10 yang ditolak
+
+Resync membeku pada baris ditolak permanen (N-40); job harian yang terlewat tidak dikejar setelah restart (desain, terdokumentasi); logger kedua di Privacy (modul tak punya logger); tanggal `previousDate` dihitung saat eksekusi.
+
+### Butir checklist keamanan
+
+Dicentang pada penutup M4: S-20, S-27, S-30, S-36, S-38, S-43, S-52, S-54. Tetap sebagian: S-41 (Semgrep belum), S-42 (TK-01/06/09/13/14/15 sampai M6-01), S-44 (Kong), S-50 (Docker, M7), S-07, S-08.
+
+### Belum teruji
+
+Newman/M6-01 (TK end-to-end); fail-closed dengan Docker (M7); `trust proxy` di belakang Kong; Semgrep/CI; kinerja D2; kontak HP dan pengguna IdP yatim (ADR-0005); N-40.
+
+### Usulan pembagian gerbang M5
+
+1. Gerbang 1: M5-01 transaction + fraud (migrasi baseline, repositori, adapter `SubjectReferencePort` baseline).
+2. Gerbang 2: M5-01 notification + reconciliation, ditambah tes arsitektur (kode domain tidak mengimpor folder per mode).
+3. Gerbang 3: M5-02 (pengalih `PRIVACY_MODE`, suite kesetaraan perilaku di tumpukan E2E `services/gateway/test/e2e/stack.ts`, env tak konsisten ditolak saat start).
+4. Gerbang 4: M5-03 (Gateway mode baseline di `Tokenizer`) + penutup M5 (`/security-review`, `/retro`).
+Catatan: baseline memegang data asli; tidak boleh aktif pada konfigurasi proposed. `/improve-codebase-architecture` setelah M4 dan M5 belum dijalankan (menunggu perintahmu).
+
+# (Riwayat) Gerbang 4 M4 LULUS (dua putaran hijau)
 
 ## Status Gerbang 4 M4
 
