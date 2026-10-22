@@ -396,7 +396,8 @@ describe('M3-04 FR-09 TK-24 approve (four eyes, 600 s)', () => {
       await holder.query('SELECT 1 FROM disclosure_request WHERE id = $1 FOR UPDATE', [id]);
       const outcomes = Promise.all([reasonOf(first()), reasonOf(second())]);
       let queued = false;
-      for (let polls = 0; polls < 5000 && !queued; polls += 1) {
+      const until = Date.now() + 20_000;
+      while (Date.now() < until && !queued) {
         const { rows } = await db.owner.query<{ n: string }>(
           "SELECT count(*) AS n FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')",
         );

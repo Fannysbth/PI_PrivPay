@@ -62,6 +62,8 @@ export interface PoolOptions {
   readonly role: string;
   readonly database: string;
   readonly max?: number;
+  /** How long opening one new connection may take; production keeps the default. */
+  readonly connectionTimeoutMillis?: number;
   /** Idle-connection errors are surfaced on the next query; set this to observe them. */
   readonly onError?: (error: Error) => void;
 }
@@ -83,7 +85,7 @@ export function createPool(config: PgConfig, options: PoolOptions): Pool {
     password: readRolePassword(config.PG_SECRETS_DIR, options.role),
     database: options.database,
     max: options.max ?? 10,
-    connectionTimeoutMillis: 5000,
+    connectionTimeoutMillis: options.connectionTimeoutMillis ?? 5000,
   });
   pool.on('error', options.onError ?? (() => undefined));
   return pool;

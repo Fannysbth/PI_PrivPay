@@ -264,7 +264,8 @@ describe('M4-03 FR-35 TF-10 review', () => {
 
 /** Waits (by looking at the database, not by sleeping) until `count` sessions are queued on a row lock. */
 async function waitUntilBlocked(test: TestDb, count: number): Promise<void> {
-  for (let attempt = 0; attempt < 2000; attempt += 1) {
+  const until = Date.now() + 20_000;
+  while (Date.now() < until) {
     // pg_locks is readable by every role; pg_stat_activity hides other roles' waits from a non-superuser.
     const blocked = await test.owner.query<{ n: string }>(
       'SELECT count(*) AS n FROM pg_locks WHERE NOT granted',

@@ -10,15 +10,19 @@ import {
 } from '@privpay/common';
 import { z } from 'zod';
 import type {
+  CompletedPage,
   HeldPage,
   ProcessResult,
   TransactionProcessor,
+  TransactionReads,
   TransactionReview,
 } from './transaction';
 
 const SERVICE = 'transaction-service';
 /** Spec transaction 3: only the Gateway starts a transaction (AZ-26). */
 const CALLER = 'API_GATEWAY';
+/** Spec transaction 3.4 (K-18): only Reconciliation reads the completed transactions (AZ-29). */
+const READER = 'RECONCILIATION';
 
 // The formats the Gateway already guarantees (gateway tokenizer): checked again here, since this service does not trust
 // its caller's validation. Tokens are the only link to a person and never an account number.
@@ -51,6 +55,21 @@ const reviewBody = z.strictObject({
   decision: z.enum(['APPROVE', 'REJECT']),
   reason_code: z.enum(['CONFIRMED_BY_CUSTOMER', 'SUSPECTED_FRAUD', 'OTHER']),
 });
+const isRealDate = (value: string): boolean => {
+  const date = new Date(`${value}T00:00:00Z`);
+  // An impossible date (02-30) is not an instant at all or rolls over; neither is a date.
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(value);
+};
+// Spec transaction 3.4: a real calendar date, a page size and the cursor this service handed out; nothing else.
+const ISO_DATE = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+const completedQuery = z.strictObject({
+  date: z.string().regex(ISO_DATE).refine(isRealDate),
+  limit: z
+    .string()
+    .regex(/^[0-9]{1,3}$/)
+    .optional(),
+  cursor: z.string().min(1).max(256).optional(),
+});
 const MAX_LIMIT = 200;
 const DEFAULT_LIMIT = 50;
 
@@ -60,6 +79,7 @@ export interface TransactionHttpDeps {
   readonly keys: JwksKeys;
   readonly processor: Pick<TransactionProcessor, 'process'>;
   readonly review: Pick<TransactionReview, 'listHeld' | 'review'>;
+  readonly reads: Pick<TransactionReads, 'completedOn' | 'detail'>;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -140,5 +160,27 @@ export class TransactionHttp {
       decision: parsed.data.decision,
       reviewedBy,
     });
+  }
+
+  /** Spec transaction 3.4 (AZ-29): the caller is Reconciliation, by its service token alone. */
+  async completed(headers: AuthHeaders, query: unknown): Promise<CompletedPage> {
+    const who = await this.caller(headers);
+    if (who.requestingService !== READER) throw new DomainError('POLICY_NOT_ALLOWED');
+    const parsed = completedQuery.safeParse(query);
+    if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
+    const limit = parsed.data.limit === undefined ? DEFAULT_LIMIT : Number(parsed.data.limit);
+    if (limit < 1 || limit > MAX_LIMIT) throw new DomainError('VALIDATION_ERROR');
+    return this.deps.reads.completedOn(parsed.data.date, {
+      limit,
+      ...(parsed.data.cursor === undefined ? {} : { cursor: parsed.data.cursor }),
+    });
+  }
+
+  /** Spec transaction 3.4 (AZ-30): one transaction for an audit, asked for by Reconciliation alone. */
+  async detail(headers: AuthHeaders, transactionId: string) {
+    const who = await this.caller(headers);
+    if (who.requestingService !== READER) throw new DomainError('POLICY_NOT_ALLOWED');
+    if (!TRANSACTION_ID.test(transactionId)) throw new DomainError('VALIDATION_ERROR');
+    return this.deps.reads.detail(transactionId);
   }
 }

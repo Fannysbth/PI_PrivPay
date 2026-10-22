@@ -45,9 +45,13 @@ PRD 9 (E3) menyebut Reconciliation memanggil `/de-pseudonymize` pada pembukaan b
 
 Sesuai `platform-dan-ci.md` bagian 8.
 
+**[M4-07, N-35, N-36]** `audit-request`: baris `audit_requests` ditulis sesudah Privacy menerbitkan token (satu baris berarti satu token), penolakan Privacy diteruskan dengan `reason`-nya, `TRANSACTION_NOT_FOUND` dijawab sebelum Privacy ditanya. `disclosure`: tujuan `INTERNAL_AUDIT` tetap di kode (bukan milik pemanggil), atribut yang dibuka ditentukan persetujuan di Privacy, bukan badan permintaan; jawaban Privacy yang bukan tepat sebagian dari `customer_id`, `nik`, `nama` (teks tak kosong) tidak diteruskan (503); `/de-pseudonymize` dipanggil sekali, tidak pernah di-retry (pemakaian kedua = pemakaian kedua); `Cache-Control: no-store` di kedua jawaban dan di Gateway.
+
 ## 4. Bank simulator
 
 Layanan NestJS kecil; `POST /simulate/settlement {batch_date}` membangun laporan dari seed fiktif (rekening `1234567801..03` dan nominal dari PRD 16) lalu memanggil Gateway `POST /settlement/report` dengan JWT peran `bank` (`azp=bank-simulator`). Data uji fiktif jelas palsu, tidak ada PII nyata, dan tidak ada kredensial di repo (rahasia klien dari berkas `secrets/`). Dapat menyuntikkan item tidak valid (rekening kosong, nominal negatif) dan item tak berpasangan untuk TF-13/TF-16.
+
+**[M4-06, N-32, N-33]** Batch dibuat saat laporan atau run pertama tiba (`tx_count = 0`, `total_amount = 0`, `status = MISMATCHED` sampai run menimpa); laporan yang tiba setelah run tanpa laporan adalah laporan pertama. `TOKEN_NOT_FOUND` dan `REVOKED` dari Privacy pada D2 = transaksi tak berpasangan; jawaban Privacy lain = run berhenti 503 sebelum batch disentuh. Reconciliation sendiri menegakkan 500 item dan 64 KiB (N-27) dan menolak `bank_reference` ganda dalam satu laporan (422), bukan hanya Gateway. `DailyRun` (`nextRunAt`, `runPrevious`) ada tetapi belum dijadwalkan ke siklus hidup proses.
 
 ## 5. Invarian dan kasus gagal
 

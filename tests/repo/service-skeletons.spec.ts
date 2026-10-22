@@ -16,6 +16,20 @@ const ALLOWED_DEPENDENCIES: Readonly<Record<string, readonly string[]>> = {
   'fraud-service': HTTP_LAYER,
   'notification-service': HTTP_LAYER,
   'sms-simulator': HTTP_LAYER,
+  'reconciliation-service': HTTP_LAYER,
+  'bank-simulator': HTTP_LAYER,
+};
+
+// The module factory each built service passes to runService (the file in src/ and the name it exports).
+const MODULE_OF: Readonly<Record<string, { readonly file: string; readonly factory: string }>> = {
+  gateway: { file: 'gateway.module', factory: 'gatewayModules' },
+  'privacy-service': { file: 'privacy.module', factory: 'privacyModules' },
+  'transaction-service': { file: 'transaction.module', factory: 'transactionModules' },
+  'fraud-service': { file: 'fraud.module', factory: 'fraudModules' },
+  'notification-service': { file: 'notification.module', factory: 'notificationModules' },
+  'sms-simulator': { file: 'sms-simulator.module', factory: 'smsSimulatorModules' },
+  'reconciliation-service': { file: 'reconciliation.module', factory: 'reconciliationModules' },
+  'bank-simulator': { file: 'bank-simulator.module', factory: 'bankSimulatorModules' },
 };
 
 describe.each(SERVICE_IDS)('M0-06 %s is only the shared bootstrap', (id) => {
@@ -24,22 +38,19 @@ describe.each(SERVICE_IDS)('M0-06 %s is only the shared bootstrap', (id) => {
       /\r\n/g,
       '\n',
     );
-    // The gateway and the privacy service add their own module (routes, keys, pools); every other service is the bare
-    // bootstrap.
+    // Every service that has been built has its own module factory; one that has none is the bare bootstrap.
+    const module = MODULE_OF[id];
     expect(main).toBe(
-      id === 'gateway'
-        ? "import { runService } from '@privpay/common/nest';\nimport { gatewayModules } from './gateway.module';\n\nvoid runService({ service: 'gateway', modules: gatewayModules() });\n"
-        : id === 'privacy-service'
-          ? "import { runService } from '@privpay/common/nest';\nimport { privacyModules } from './privacy.module';\n\nvoid runService({ service: 'privacy-service', modules: privacyModules() });\n"
-          : id === 'notification-service'
-            ? "import { runService } from '@privpay/common/nest';\nimport { notificationModules } from './notification.module';\n\nvoid runService({ service: 'notification-service', modules: notificationModules() });\n"
-            : id === 'sms-simulator'
-              ? "import { runService } from '@privpay/common/nest';\nimport { smsSimulatorModules } from './sms-simulator.module';\n\nvoid runService({ service: 'sms-simulator', modules: smsSimulatorModules() });\n"
-              : id === 'fraud-service'
-                ? "import { runService } from '@privpay/common/nest';\nimport { fraudModules } from './fraud.module';\n\nvoid runService({ service: 'fraud-service', modules: fraudModules() });\n"
-                : id === 'transaction-service'
-                  ? "import { runService } from '@privpay/common/nest';\nimport { transactionModules } from './transaction.module';\n\nvoid runService({ service: 'transaction-service', modules: transactionModules() });\n"
-                  : `import { runService } from '@privpay/common/nest';\n\nvoid runService({ service: '${id}' });\n`,
+      module === undefined
+        ? `import { runService } from '@privpay/common/nest';
+
+void runService({ service: '${id}' });
+`
+        : `import { runService } from '@privpay/common/nest';
+import { ${module.factory} } from './${module.file}';
+
+void runService({ service: '${id}', modules: ${module.factory}() });
+`,
     );
   });
 

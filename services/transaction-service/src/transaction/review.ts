@@ -1,10 +1,14 @@
 import { DomainError, type Clock, type Logger } from '@privpay/common';
+import { decodeCursor, encodeCursor } from './cursor';
 import { Followups, type MutableSubject, type Settled } from './followups';
 import type { NotificationClient, PrivacyStatusClient, SubjectReferencePort } from './ports';
-import type { HeldCursor, HeldItem, TransactionRepository } from './repository';
+import type { HeldItem, TransactionRepository } from './repository';
 
 export interface TransactionReviewDeps {
-  readonly repository: Pick<TransactionRepository, 'listHeld' | 'decideHeld' | 'updateTokens'>;
+  readonly repository: Pick<
+    TransactionRepository,
+    'listHeld' | 'decideHeld' | 'updateTokens' | 'markPrivacySynced'
+  >;
   readonly clock: Clock;
   readonly subjects: SubjectReferencePort;
   readonly notifications: NotificationClient;
@@ -15,24 +19,6 @@ export interface TransactionReviewDeps {
 export interface HeldPage {
   readonly items: readonly HeldItem[];
   readonly next_cursor: string | null;
-}
-
-/** Position text made by this service only: `<time with microseconds>|<transaction id>` in base64url. */
-const CURSOR = /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z)\|(TX-[0-9]{1,29})$/;
-const encode = (cursor: HeldCursor): string =>
-  Buffer.from(`${cursor.createdAt}|${cursor.transactionId}`, 'utf8').toString('base64url');
-
-function decode(text: string): HeldCursor {
-  const match = CURSOR.exec(Buffer.from(text, 'base64url').toString('utf8'));
-  // A cursor is only the position this service handed out; anything else is a malformed request, not a search.
-  if (
-    match?.[1] === undefined ||
-    match[2] === undefined ||
-    encode({ createdAt: match[1], transactionId: match[2] }) !== text
-  ) {
-    throw new DomainError('VALIDATION_ERROR');
-  }
-  return { createdAt: match[1], transactionId: match[2] };
 }
 
 /**
@@ -48,7 +34,11 @@ export class TransactionReview {
   }
 
   async listHeld(query: { readonly limit: number; readonly cursor?: string }): Promise<HeldPage> {
-    const after = query.cursor === undefined ? undefined : decode(query.cursor);
+    const position = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
+    const after =
+      position === undefined
+        ? undefined
+        : { createdAt: position.at, transactionId: position.transactionId };
     // One more than asked tells whether another page exists without a count query.
     const rows = await this.deps.repository.listHeld(query.limit + 1, after);
     const page = rows.slice(0, query.limit);
@@ -57,7 +47,7 @@ export class TransactionReview {
       items: page.map((row) => row.item),
       next_cursor:
         rows.length > query.limit && last !== undefined
-          ? encode({ createdAt: last.createdText, transactionId: last.item.transaction_id })
+          ? encodeCursor({ at: last.createdText, transactionId: last.item.transaction_id })
           : null,
     };
   }

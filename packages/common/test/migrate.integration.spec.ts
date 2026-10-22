@@ -177,9 +177,11 @@ describe('M0-04 each migration is one transaction', () => {
         () => (state.finished = true),
       );
       // Poll the lock table of this database instead of sleeping: the runner is blocked once its request shows up
-      // ungranted. The bound turns a runner that failed early, or never blocks, into a failure instead of a hang.
+      // ungranted. The bound is a deadline rather than a poll count (opening a connection takes longer on a loaded
+      // machine than a count allows) and turns a runner that failed early, or never blocks, into a failure instead of a hang.
       let blocked = false;
-      for (let attempt = 0; attempt < 5000 && !blocked && !state.finished; attempt += 1) {
+      const until = Date.now() + 20_000;
+      for (let attempt = 0; Date.now() < until && !blocked && !state.finished; attempt += 1) {
         const { rows } = await holder.query<{ n: string }>(
           `SELECT count(*) AS n FROM pg_locks
             WHERE locktype = 'advisory' AND NOT granted

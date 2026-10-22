@@ -590,7 +590,8 @@ describe('M2-06 a source is read under a share lock: a concurrent revocation or 
           return { error };
         },
       );
-      for (let polls = 0; polls < 5000 && !state.settled; polls += 1) {
+      const until = Date.now() + 20_000;
+      while (Date.now() < until && !state.settled) {
         const { rows } = await db.owner.query(
           `SELECT 1 FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')`,
         );

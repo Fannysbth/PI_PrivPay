@@ -45,6 +45,22 @@ export interface HeldItem {
   readonly created_at: string;
 }
 
+/** One transaction for an audit (spec transaction 3.4): amount and status, no token and no identity. */
+export interface TransactionDetail {
+  readonly transaction_id: string;
+  readonly amount: number;
+  readonly status: TransactionStatus;
+  readonly created_at: string;
+  readonly completed_at: string | null;
+}
+
+/** One COMPLETED transaction for Reconciliation (spec transaction 3.4): no token and no identity. */
+export interface CompletedItem {
+  readonly transaction_id: string;
+  readonly amount: number;
+  readonly completed_at: string;
+}
+
 /** The position after the last row of a page; the HTTP layer makes it opaque. */
 export interface HeldCursor {
   readonly createdAt: string;
@@ -75,8 +91,18 @@ export const TRANSACTION_SQL = {
   // so a terminal row never changes (spec transaction 4). A value that is NULL here keeps what the row has.
   transition: `UPDATE transactions SET status = $3, risk_score = COALESCE($4, risk_score),
        fraud_decision = COALESCE($5, fraud_decision), completed_at = COALESCE($6, completed_at),
-       reviewed_by = COALESCE($7, reviewed_by), reviewed_at = COALESCE($8, reviewed_at)
+       reviewed_by = COALESCE($7, reviewed_by), reviewed_at = COALESCE($8, reviewed_at),
+       privacy_synced_at = NULL
      WHERE transaction_id = $1 AND status = $2`,
+  // A new status is not heard until Privacy says so. Guarded by the status that was told, so a PATCH for an earlier
+  // status (HELD) cannot mark the one that came after it (COMPLETED).
+  markSynced: `UPDATE transactions SET privacy_synced_at = $3
+     WHERE transaction_id = $1 AND status = $2`,
+  // Rows Privacy has not heard, once a request in flight can no longer be working on them: a winner for at most the
+  // pending timeout after creation, a review after its own time. Oldest first, so a long backlog drains in order.
+  unsynced: `SELECT transaction_id, status FROM transactions
+     WHERE privacy_synced_at IS NULL AND status <> 'PENDING' AND COALESCE(reviewed_at, created_at) < $1
+     ORDER BY created_at ASC, transaction_id ASC LIMIT $2`,
   // Spec transaction 3.3: the row is locked first, so two reviews take turns and the second sees the first one's status.
   lockForReview: `SELECT status, customer_pseudonym, account_pseudonym, amount
      FROM transactions WHERE transaction_id = $1 FOR UPDATE`,
@@ -94,6 +120,16 @@ export const TRANSACTION_SQL = {
   // Re-issue in the middle of a transaction (spec transaction 5, step 5): while it is still open, PENDING or HELD.
   updateTokens: `UPDATE transactions SET customer_pseudonym = $2, account_pseudonym = $3
      WHERE transaction_id = $1 AND status IN ('PENDING', 'HELD')`,
+  // Spec transaction 3.4: the day is the UTC date of completed_at, [$1, $2). The text keeps microseconds for the cursor.
+  listCompleted: `SELECT transaction_id, amount,
+       to_char(completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS completed_text
+     FROM transactions
+     WHERE status = 'COMPLETED' AND completed_at >= $1 AND completed_at < $2
+       AND ($3::text IS NULL OR (completed_at, transaction_id) > ($3::timestamptz, $4::text))
+     ORDER BY completed_at ASC, transaction_id ASC LIMIT $5`,
+  // Spec transaction 3.4: what an audit may read of one transaction. No pseudonym and no merchant.
+  detail: `SELECT transaction_id, amount, status, created_at, completed_at
+     FROM transactions WHERE transaction_id = $1`,
   findById: `SELECT transaction_id, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash, status
      FROM transactions WHERE transaction_id = $1`,
 } as const;
@@ -253,6 +289,77 @@ export class TransactionRepository {
     } finally {
       client.release();
     }
+  }
+
+  /** Records that Privacy has heard `status`; false when the row has moved on meanwhile, which says nothing about it. */
+  async markPrivacySynced(
+    transactionId: string,
+    status: Exclude<TransactionStatus, 'PENDING'>,
+    at: Date,
+  ): Promise<boolean> {
+    const marked = await this.pool.query(TRANSACTION_SQL.markSynced, [transactionId, status, at]);
+    return marked.rowCount === 1;
+  }
+
+  async unsyncedBefore(
+    cutoff: Date,
+    limit: number,
+  ): Promise<
+    { readonly transactionId: string; readonly status: Exclude<TransactionStatus, 'PENDING'> }[]
+  > {
+    const found = await this.pool.query<{
+      transaction_id: string;
+      status: Exclude<TransactionStatus, 'PENDING'>;
+    }>(TRANSACTION_SQL.unsynced, [cutoff, limit]);
+    return found.rows.map((row) => ({ transactionId: row.transaction_id, status: row.status }));
+  }
+
+  /** One page of the COMPLETED transactions that fall in `[from, to)`, with the exact time text a cursor needs. */
+  async listCompleted(
+    from: Date,
+    to: Date,
+    limit: number,
+    after?: { readonly at: string; readonly transactionId: string },
+  ): Promise<{ readonly item: CompletedItem; readonly completedText: string }[]> {
+    const found = await this.pool.query<{
+      transaction_id: string;
+      amount: string;
+      completed_text: string;
+    }>(TRANSACTION_SQL.listCompleted, [
+      from,
+      to,
+      after?.at ?? null,
+      after?.transactionId ?? null,
+      limit,
+    ]);
+    return found.rows.map((row) => ({
+      completedText: row.completed_text,
+      item: {
+        transaction_id: row.transaction_id,
+        amount: Number(row.amount),
+        completed_at: new Date(row.completed_text).toISOString(),
+      },
+    }));
+  }
+
+  async findDetail(transactionId: string): Promise<TransactionDetail | undefined> {
+    const found = await this.pool.query<{
+      transaction_id: string;
+      amount: string;
+      status: TransactionStatus;
+      created_at: Date;
+      completed_at: Date | null;
+    }>(TRANSACTION_SQL.detail, [transactionId]);
+    const row = found.rows[0];
+    return row === undefined
+      ? undefined
+      : {
+          transaction_id: row.transaction_id,
+          amount: Number(row.amount),
+          status: row.status,
+          created_at: row.created_at.toISOString(),
+          completed_at: row.completed_at === null ? null : row.completed_at.toISOString(),
+        };
   }
 
   async findById(transactionId: string): Promise<StoredTransaction | undefined> {

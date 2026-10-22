@@ -70,6 +70,9 @@ class GatewayController {
     // rendered as a page).
     if (!empty && typeof answer.body !== 'object')
       throw new DomainError('INTERNAL_ERROR', 'non_json_upstream');
+    // An answer through the Gateway may carry an identity (the opening of an audit, FR-43), a token or a decision: no cache,
+    // browser or proxy, keeps any of them. The services set it too; this one covers what reaches a client.
+    res.setHeader('Cache-Control', 'no-store');
     res.status(answer.status);
     if (empty) res.end();
     else res.json(answer.body);

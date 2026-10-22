@@ -44,6 +44,7 @@ import {
   PendingSweeper,
   TransactionProcessor,
   TransactionRepository,
+  TransactionReads,
   TransactionReview,
   type FraudClient,
   type NotificationClient,
@@ -70,6 +71,18 @@ class TransactionController {
   @Get('transaction/held')
   held(@Req() req: Request, @Query() query: unknown) {
     return this.transactions.held(req.headers, query);
+  }
+
+  // Spec transaction 3.4: also before the parameter routes, so `completed` is never read as a transaction id.
+  @Get('transaction/completed')
+  completed(@Req() req: Request, @Query() query: unknown) {
+    return this.transactions.completed(req.headers, query);
+  }
+
+  // Last of the GET routes: `held` and `completed` above are literal names, not ids (spec transaction 3.4, AZ-30).
+  @Get('transaction/:id')
+  detail(@Req() req: Request, @Param('id') id: string) {
+    return this.transactions.detail(req.headers, id);
   }
 
   @Post('transaction/:id/review')
@@ -170,6 +183,7 @@ export function transactionModules(
         logger,
       }),
       review: new TransactionReview({ repository, clock, ...neighbours, logger }),
+      reads: new TransactionReads({ repository }),
     });
     // M4-03: built and validated at start; running it on a timer waits for the process lifecycle, like RetentionJob.
     const sweeper = new PendingSweeper({

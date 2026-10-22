@@ -1,4 +1,50 @@
-# HANDOFF (2026-10-21): Gerbang 2 M4 LULUS (dua putaran hijau), di-merge ke `main` lokal; berikutnya Gerbang 3 M4
+# HANDOFF (2026-10-22): Gerbang 3 M4 LULUS (dua putaran hijau); berikutnya Gerbang 4 (M4-08, M4-09), belum dimulai
+
+## Status Gerbang 3 M4
+
+Cabang `feat/m4-gerbang-3` (tidak dihapus), commit: `ffe2081` flake basis data, `24ebfd6` keputusan Gerbang 2 nomor 1 (PATCH yang tak didengar Privacy), `34f28ac` M4-06, `57c5f45` M4-07, `9426ce2` perbaikan `/code-review`. `/code-review`: 10 temuan, 2 diperbaiki, 8 ditolak. `/security-review`: tanpa temuan keyakinan 8 ke atas (Gateway tanpa `no-store` ditemukan tes M4-07 sendiri dan diperbaiki, N-36).
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 61 suite, 1216 tes | 61 suite, 1216 tes |
+| integrasi | 49 suite, 1001 tes | 49 suite, 1001 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks riwayat (tanpa cabang cadangan) | bersih | bersih |
+| pii-scan | 35 + 27 tes | 35 + 27 tes |
+
+### Penyelidikan flake basis data (M2-09, token-service, M0-04)
+
+Penyebab yang ditemukan (dibuktikan sebagian, tidak direproduksi di bawah beban): (1) `createPool` memakai `connectionTimeoutMillis: 5000` di tingkat klien `pg` (`client.js`: timer membunuh socket); membuka backend PostgreSQL baru di Windows lebih lambat dari itu bila memori sempit atau basis data baru dibuat, dan 50 permintaan paralel membuka sepuluh sekaligus. (2) Poll tes yang dibatasi jumlah putaran (M0-04: 5000 putaran = ±1,5 detik pada mesin tenang, terukur 300 ms untuk ±900 putaran) berakhir terlalu cepat saat beban. Perbaikan di konfigurasi tes, tanpa melonggarkan asersi: pool `createTestDb` dengan batas koneksi 20 detik (bawaan produksi tetap 5 detik, opsi baru `connectionTimeoutMillis`), dan tujuh poll diganti tenggat 20 detik. `max_connections` 100, `shared_buffers` 128 MB; puncak koneksi per suite ±18 dengan satu worker, bukan penyebab. Satu kegagalan tak stabil baru terlihat sekali (`reconciliation-http`, "service notification with an admin", saat gerbang parsial) dan tidak terulang dalam 3 + 2 lari penuh; bila muncul lagi, perlakukan sebagai bug.
+
+### Keputusan Gerbang 2 yang dikerjakan
+
+1. Notifikasi sebelum `PATCH`: spek 5 diubah dengan alasannya. `PATCH` yang gagal kini tidak diam: kolom `privacy_synced_at` (migrasi 0003, **penyimpangan dari PRD 11, N-34, commit terpisah, dapat dibatalkan**) menandai baris yang belum didengar Privacy, dan `PendingSweeper.resync()` mengulang `PATCH` tanpa mengirim ulang notifikasi (8 tes, dua mutasi terbunuh). 3. Pelaku review sudah tercatat (`reviewed_by` = `sub` token aktor, `reviewed_at`), tanpa data pribadi; catatan: `sub` tanpa batas panjang, kolom 64 karakter. 2, 4, 5, 6 sesuai keputusan.
+
+### Yang dibangun
+
+- M4-06: Reconciliation (`settlement-report`, `run`, `Reconciler`, `DailyRun`), skema reconciliation-db, `GET /transaction/completed`, simulator bank (`POST /simulate/settlement`).
+- M4-07: `audit-request`, `disclosure`, `GET /transaction/{id}`; lapis Gateway M3-06 memakai Reconciliation sungguhan (N-37: TK-02..05 lewat jalur nyata, TK-08 ditolak Gateway, TK-01/06/09/13/14/15 tetap meneruskan jawaban kawat Privacy karena pemanggilnya tak punya rute klien).
+- Env baru wajib: Reconciliation `RECON_DAILY_RUN_UTC`, `PRIVACY_SERVICE_URL`, `TRANSACTION_SERVICE_URL`, `RECONCILIATION_CLIENT_SECRET_FILE`; simulator bank `GATEWAY_URL`, `BANK_USERNAME`, `BANK_SIMULATOR_TEST_ENDPOINTS` (opsional, `true`/`false`).
+
+### Keputusan yang butuh persetujuan Fanny
+
+N-32 (batch pengganti `MISMATCHED` sampai run), N-33 (D2: `TOKEN_NOT_FOUND`/`REVOKED` tak berpasangan, selain itu 503), N-34 (kolom `privacy_synced_at`), N-35 (baris `audit_requests` hanya sesudah token terbit), N-36 (`no-store` di Gateway), N-37 (perubahan lapis Gateway M3-06). Semuanya di `docs/OPEN_QUESTIONS.md`.
+
+### Temuan `/code-review` yang ditolak
+
+`resync` PATCH status basi (Privacy menolak balik ke non-final, tanda dijaga status, baris dibaca ulang dengan status baru); penjadwal `resync`/`sweep`/`DailyRun` belum dihubungkan (sengaja, seperti `RetentionJob`); D2 berurutan (volume prototipe); atomisitas `audit-request` dengan Privacy (lintas layanan, Privacy sudah mencatat aktor); kursor bersama `held`/`completed` (hanya posisi, tanpa dampak keamanan); urutan tie-break referensi bank (deterministik); parameter query ganda (sudah 422); back-fill migrasi 0003 (hanya basis data pengembangan).
+
+### Belum teruji
+
+Penjadwalan `PendingSweeper.sweep/resync` dan `DailyRun` ke siklus hidup proses (K-19, K-23); adapter baseline (M5); Newman lewat Gateway (M6-01); alur `/register` dan E2E TX-10001..10003 (M4-08, M4-09); fail-closed dengan Docker; kinerja D2 untuk ribuan transaksi per hari.
+
+### Untuk Gerbang 4
+
+M4-08 (alur pendaftaran, bergantung M2-08, M4-05, M1-01) dan M4-09 (E2E, bergantung M4-02, M4-03, M4-06, M4-08). `pnpm db:migrate` kini juga mengisi transaction-db, fraud-db, notification-db, reconciliation-db (bila `SERVICE_DBS` didaftar).
+
+# (Riwayat) Gerbang 2 M4 LULUS, di-merge ke `main` lokal
 
 ## Status Gerbang 2 M4
 
