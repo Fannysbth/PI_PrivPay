@@ -500,7 +500,8 @@ describe('M2-07 FR-13 re-issue is atomic with its audit row and with concurrent 
           return { error };
         },
       );
-      for (let polls = 0; polls < 5000 && !state.settled; polls += 1) {
+      const until = Date.now() + 20_000;
+      while (Date.now() < until && !state.settled) {
         const { rows } = await db.owner.query(
           `SELECT 1 FROM pg_locks WHERE NOT granted AND locktype IN ('transactionid', 'tuple')`,
         );

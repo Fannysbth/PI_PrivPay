@@ -429,7 +429,8 @@ describe('M3-05 TK-26 an approval is good for 600 seconds and one use', () => {
         ).rows[0]?.n,
       );
     // Each poll is a round trip, so no sleep is needed; it ends when all three wait, or when one finished anyway.
-    for (let polls = 0; polls < 5000 && settled === 0 && (await waiting()) < 3; polls += 1);
+    const until = Date.now() + 20_000;
+    while (Date.now() < until && settled === 0 && (await waiting()) < 3);
     await holder.query('COMMIT');
     holder.release();
     const outcomes = await Promise.all(uses);

@@ -13,6 +13,13 @@ export const TEST_ADMIN_ROLE = 'privpay_test_admin';
 
 const SUFFIX = /^[a-z0-9]{1,20}$/;
 
+/**
+ * Starting a PostgreSQL backend on Windows takes seconds when memory is short or a database was just recreated, and a
+ * burst (50 parallel requests on a pool of 10) opens ten at once; the 5 s of production would then fail a test that is
+ * about something else ("Connection terminated due to connection timeout", seen in M2-09, token-service, M0-04).
+ */
+const TEST_CONNECT_TIMEOUT_MS = 20_000;
+
 export interface TestDb {
   readonly database: string;
   /** Schema owner: what the migration runner uses. */
@@ -136,7 +143,12 @@ export async function createTestDb(
 
   const pools: Pool[] = [];
   const open = (role: string, max: number): Pool => {
-    const pool = createPool(config, { role, database, max });
+    const pool = createPool(config, {
+      role,
+      database,
+      max,
+      connectionTimeoutMillis: TEST_CONNECT_TIMEOUT_MS,
+    });
     pools.push(pool);
     return pool;
   };

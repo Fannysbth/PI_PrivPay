@@ -458,7 +458,8 @@ describe('M2-05 spec 7.2 the clock is read once the lock is held', () => {
       ]);
       const waiting = service.generate(p1());
       // Until the request is queued on the lock (observed in pg_locks, polled without a sleep) the clock must not move.
-      for (let polls = 0; polls < 5000; polls += 1) {
+      const until = Date.now() + 20_000;
+      while (Date.now() < until) {
         const { rows } = await db.owner.query(
           `SELECT 1 FROM pg_locks WHERE locktype = 'advisory' AND NOT granted`,
         );
