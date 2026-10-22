@@ -391,6 +391,27 @@ describe('M1-02 the actor token (X-Actor-Token) carries a person, never a servic
       extra,
     );
 
+  it('M4-08 a person id of 64 characters is accepted, one of 65 is VALIDATION_ERROR (the actor columns hold 64)', () => {
+    const named = (length: number): string =>
+      humanToken(
+        'admin-console',
+        'auditor',
+        ['api-gateway', 'reconciliation-service', 'privacy-service'],
+        { sub: 'u'.repeat(length) },
+      );
+    expect(
+      authenticate({ authorization: caller(), 'x-actor-token': named(64) }, options(service)).actor
+        ?.actorId,
+    ).toHaveLength(64);
+    expect(reason({ authorization: caller(), 'x-actor-token': named(65) }, options(service))).toBe(
+      'VALIDATION_ERROR',
+    );
+    // A person token as the Authorization token itself is held to the same limit.
+    expect(reason({ authorization: bearer(named(65)) }, options('api-gateway'))).toBe(
+      'VALIDATION_ERROR',
+    );
+  });
+
   it('M1-02 a service call with a valid person token gives actor id and role, and keeps the service', () => {
     const result = authenticate(
       { authorization: caller(), 'x-actor-token': auditor() },
