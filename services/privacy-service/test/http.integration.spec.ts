@@ -504,6 +504,23 @@ describe('M3-02 POST /pseudonym/{pseudonym}/revoke and POST /subject/revoke', ()
     expect(logLines.join(' ')).not.toContain(CUSTOMER);
   });
 
+  it('M4-08 ADR-0014 the Gateway with its own token revokes a CUSTOMER (200); an ACCOUNT, and any other service, is 403 POLICY_NOT_ALLOWED', async () => {
+    await issueP1();
+    const body = { subject_type: 'CUSTOMER', subject_id: CUSTOMER };
+    const other = await post('/subject/revoke', service('transaction'), body);
+    expect(other.status).toBe(403);
+    expect(other.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    const account = await post('/subject/revoke', service('api-gateway'), {
+      subject_type: 'ACCOUNT',
+      subject_id: '1234567801',
+    });
+    expect(account.status).toBe(403);
+    expect(account.body).toMatchObject({ error: { reason: 'POLICY_NOT_ALLOWED' } });
+    const ok = await post('/subject/revoke', service('api-gateway'), body);
+    expect(ok.status).toBe(200);
+    expect(ok.body).toEqual({ revoked_count: 1 });
+  });
+
   it('M3-02 AZ-17 N3 N4 an unknown field is 422 and nothing changes', async () => {
     await issueP1();
     const before = await count('audit_log');

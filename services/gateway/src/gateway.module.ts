@@ -2,6 +2,7 @@ import 'reflect-metadata';
 import { All, Controller, Inject, Module, Req, Res } from '@nestjs/common';
 import {
   createHttpClient,
+  createLogger,
   createTokenCache,
   idpJwksSource,
   JwksKeys,
@@ -16,6 +17,7 @@ import { loadGatewayConfig } from './config';
 import { ErrorMasker } from './error-masker';
 import { Gateway } from './gateway';
 import { RateLimiter } from './rate-limiter';
+import { RegistrationFlow } from './registration';
 import { RouteTable, type Route, type Upstream } from './routes';
 import { HttpPrivacyPort } from './tokenizer/http-privacy-port';
 import { Tokenizer } from './tokenizer/tokenizer';
@@ -23,10 +25,13 @@ import { TransactionIdGenerator } from './tokenizer/transaction-id';
 
 const GATEWAY = Symbol('GATEWAY');
 const CLIENT_ID = 'api-gateway';
+/** The audience of the dev IdP's admin API (tools/dev-idp): only the Gateway may ask for it (AZ-38, AZ-39). */
+const DEV_IDP = 'dev-idp';
 const UPSTREAMS: readonly Upstream[] = [
   'privacy-service',
   'transaction-service',
   'reconciliation-service',
+  'notification-service',
 ];
 
 const tokenAnswer = z.object({
@@ -59,6 +64,7 @@ class GatewayController {
           query: req.query,
           body: req.body as unknown,
           requestId,
+          remoteAddress: req.ip ?? '',
         },
         context,
       );
@@ -87,7 +93,11 @@ class GatewayModule {}
  * real one. Configuration problems are ConfigErrors, so the process stops before it listens.
  */
 export function gatewayModules(
-  overrides: { fetch?: typeof fetch; routes?: readonly Route[] } = {},
+  overrides: {
+    fetch?: typeof fetch;
+    routes?: readonly Route[];
+    logDestination?: { write(line: string): void };
+  } = {},
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
     const config = loadGatewayConfig(env);
@@ -97,13 +107,14 @@ export function gatewayModules(
         'privacy-service': config.PRIVACY_SERVICE_URL,
         'transaction-service': config.TRANSACTION_SERVICE_URL,
         'reconciliation-service': config.RECONCILIATION_SERVICE_URL,
+        'notification-service': config.NOTIFICATION_SERVICE_URL,
       },
       timeoutMs: config.HTTP_TIMEOUT_MS,
       maxRetries: config.HTTP_MAX_RETRY,
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
     });
 
-    const tokenFor = (upstream: Upstream): TokenCache =>
+    const tokenFor = (upstream: Upstream | typeof DEV_IDP): TokenCache =>
       createTokenCache({
         clock,
         fetchToken: async () => {
@@ -135,6 +146,11 @@ export function gatewayModules(
     const masker = new ErrorMasker();
     const ids = new TransactionIdGenerator(clock);
 
+    const privacy = new HttpPrivacyPort({
+      http,
+      masker,
+      serviceToken: serviceTokens['privacy-service'],
+    });
     const gateway = new Gateway({
       clock,
       issuer: config.IDP_ISSUER,
@@ -153,12 +169,16 @@ export function gatewayModules(
       http,
       masker,
       tokenizer: new Tokenizer({
-        privacy: new HttpPrivacyPort({
-          http,
-          masker,
-          serviceToken: serviceTokens['privacy-service'],
-        }),
+        privacy,
         newTransactionId: () => ids.generate(),
+      }),
+      registration: new RegistrationFlow({
+        http,
+        privacy,
+        masker,
+        idpAdminToken: tokenFor(DEV_IDP),
+        notificationToken: serviceTokens['notification-service'],
+        logger: createLogger({ service: 'gateway', destination: overrides.logDestination }),
       }),
       serviceTokens,
     });

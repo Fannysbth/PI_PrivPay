@@ -2,6 +2,7 @@ import { DomainError } from '@privpay/common';
 import type { PrivacyPort } from './privacy-port';
 import {
   IDEMPOTENCY_KEY,
+  notificationBody,
   TRANSACTION_ID,
   settlementBody,
   transactionBody,
@@ -22,7 +23,13 @@ export type TokenizeInput =
       readonly idempotencyKey: string;
       readonly body: unknown;
     }
-  | { readonly route: 'settlement'; readonly body: unknown };
+  | { readonly route: 'settlement'; readonly body: unknown }
+  | {
+      readonly route: 'notification';
+      /** From the verified customer token, never from the body (invariant 7). */
+      readonly claims: { readonly customerId: string };
+      readonly body: unknown;
+    };
 
 /** What Transaction receives (gateway spec 4 step 4): tokens and business fields only. */
 export interface TransactionOutbound {
@@ -50,7 +57,15 @@ export type TokenizeOutput =
       readonly outbound: TransactionOutbound;
       readonly transactionId: string;
     }
-  | { readonly route: 'settlement'; readonly outbound: SettlementOutbound };
+  | { readonly route: 'settlement'; readonly outbound: SettlementOutbound }
+  | { readonly route: 'notification'; readonly outbound: NotificationOutbound };
+
+/** What Notification receives for a customer who changes the phone: the domain token and the phone (spec notification 3.1). */
+export interface NotificationOutbound {
+  readonly notification_domain_id: string;
+  readonly phone: string;
+  readonly channel: 'SMS';
+}
 
 const invalid = (category: string): DomainError => new DomainError('VALIDATION_ERROR', category);
 
@@ -67,7 +82,9 @@ export class Tokenizer {
   constructor(private readonly deps: TokenizerDeps) {}
 
   async tokenize(input: TokenizeInput): Promise<TokenizeOutput> {
-    return input.route === 'transaction' ? this.transaction(input) : this.settlement(input.body);
+    if (input.route === 'transaction') return this.transaction(input);
+    if (input.route === 'notification') return this.notification(input);
+    return this.settlement(input.body);
   }
 
   private async transaction(
@@ -108,6 +125,28 @@ export class Tokenizer {
         merchant_id,
         amount,
         geohash,
+      },
+    };
+  }
+
+  /** AZ-02: the customer id is the token's, P5 is asked of Privacy, and the phone goes on with it. */
+  private async notification(
+    input: Extract<TokenizeInput, { route: 'notification' }>,
+  ): Promise<TokenizeOutput> {
+    const parsed = notificationBody.safeParse(input.body);
+    if (!parsed.success) throw invalid('body');
+    const domain = await this.deps.privacy.pseudonymize({
+      subjectType: 'CUSTOMER',
+      subjectId: input.claims.customerId,
+      targetService: 'NOTIFICATION',
+      purpose: 'NOTIFICATION_REGISTRATION',
+    });
+    return {
+      route: 'notification',
+      outbound: {
+        notification_domain_id: domain,
+        phone: parsed.data.phone,
+        channel: parsed.data.channel,
       },
     };
   }

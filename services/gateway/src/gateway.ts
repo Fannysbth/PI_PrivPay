@@ -13,6 +13,7 @@ import {
 } from '@privpay/common';
 import type { ErrorMasker } from './error-masker';
 import type { RateLimiter } from './rate-limiter';
+import type { RegistrationFlow } from './registration';
 import type { Route, RouteMatch, RouteTable, Upstream } from './routes';
 import type { Tokenizer } from './tokenizer/tokenizer';
 
@@ -24,7 +25,11 @@ export interface GatewayRequest {
   readonly query: Readonly<Record<string, unknown>>;
   readonly body: unknown;
   readonly requestId: string;
+  /** Where the connection came from: the key of the limit of `POST /register` (K-14). */
+  readonly remoteAddress: string;
 }
+
+const SIXTEEN_KIB = 16 * 1024;
 
 export interface GatewayResponse {
   readonly status: number;
@@ -40,6 +45,7 @@ export interface GatewayDependencies {
   readonly http: HttpClient;
   readonly masker: ErrorMasker;
   readonly tokenizer: Tokenizer;
+  readonly registration: RegistrationFlow;
   /** The gateway's own service token, one cache per upstream (the token's `aud` is that upstream). */
   readonly serviceTokens: Readonly<Record<Upstream, TokenCache>>;
 }
@@ -62,6 +68,15 @@ export class Gateway {
     context: { routeTemplate?: string } = {},
   ): Promise<GatewayResponse> {
     const { table, limiter, keys, clock } = this.deps;
+
+    // The one route without a token (gateway spec 6, K-14): counted by where it came from, and checked in full inside.
+    if (request.method === 'POST' && request.path === '/register') {
+      context.routeTemplate = '/register';
+      const decision = limiter.allow(`register:${request.remoteAddress}`);
+      if (!decision.allowed) throw new RateLimitedError(decision.retryAfterSeconds);
+      this.assertDeclaredSize(request.headers['content-length'], SIXTEEN_KIB);
+      return this.deps.registration.register(request.body ?? {}, request.requestId);
+    }
 
     // Looked up first only to label the request in the (internal) metrics; nothing is decided from it yet.
     const match = table.match(request.method, request.path);
@@ -122,6 +137,8 @@ export class Gateway {
     if (response.status < 200 || response.status > 299) {
       throw this.deps.masker.fromDownstream(response.status, response.body);
     }
+    // The phone of a customer is changed by AZ-02: the domain token Notification answers with is not the customer's to see.
+    if (route.tokenize === 'notification') return { status: 200, body: { status: 'REGISTERED' } };
     return { status: response.status, body: response.body };
   }
 
@@ -150,6 +167,14 @@ export class Gateway {
     if (route.tokenize === 'settlement') {
       return this.deps.tokenizer.tokenize({ route: 'settlement', body: validated });
     }
+    if (route.tokenize === 'notification') {
+      // The customer is the one in the verified token (invariant 7); the body has the phone and nothing about who.
+      return this.deps.tokenizer.tokenize({
+        route: 'notification',
+        claims: { customerId: caller.customerId ?? '' },
+        body: validated,
+      });
+    }
     const key = request.headers['idempotency-key'];
     // A repeated header arrives as an array or a comma-joined text; neither is a UUID.
     if (typeof key !== 'string') throw new DomainError('VALIDATION_ERROR', 'idempotency_key');
@@ -165,8 +190,12 @@ export class Gateway {
   /** The size the client declared, checked against the route's limit before the body is looked at. */
   private assertSize(route: Route, declared: string | string[] | undefined): void {
     if (route.method === 'GET') return;
+    this.assertDeclaredSize(declared, route.maxBodyBytes);
+  }
+
+  private assertDeclaredSize(declared: string | string[] | undefined, limit: number): void {
     const length = typeof declared === 'string' ? Number.parseInt(declared, 10) : 0;
-    if (Number.isFinite(length) && length > route.maxBodyBytes) {
+    if (Number.isFinite(length) && length > limit) {
       throw new DomainError('VALIDATION_ERROR', 'body_size');
     }
   }

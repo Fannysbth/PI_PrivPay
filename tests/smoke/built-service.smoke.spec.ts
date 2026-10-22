@@ -129,6 +129,7 @@ const extraEnv = (id: string): Record<string, string> =>
         PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
         TRANSACTION_SERVICE_URL: 'http://127.0.0.1:9',
         RECONCILIATION_SERVICE_URL: 'http://127.0.0.1:9',
+        NOTIFICATION_SERVICE_URL: 'http://127.0.0.1:9',
         API_GATEWAY_CLIENT_SECRET_FILE: join(gatewaySecrets, 'api_gateway_client_secret'),
       }
     : id === 'privacy-service'

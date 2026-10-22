@@ -56,6 +56,9 @@ describe('M2-11 gateway contract vectors', () => {
           ? Promise.reject(new DomainError('INTERNAL_ERROR', 'vector_without_answer'))
           : Promise.resolve(pseudonym);
       },
+      // The vectors are of the two tokenizing routes; the registration is tested with the real IdP and Privacy.
+      storeIdentity: () => Promise.resolve(),
+      revokeCustomer: () => Promise.resolve(),
     };
     const tokenizer = new Tokenizer({
       privacy,

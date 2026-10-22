@@ -15,4 +15,17 @@ export interface PseudonymizeRequest {
  */
 export interface PrivacyPort {
   pseudonymize(request: PseudonymizeRequest): Promise<string>;
+  /** A5 (gateway spec 6): the one place the registration's NIK, name, phone and account go. Idempotent (privacy 4.9). */
+  storeIdentity(identity: IdentityToStore): Promise<void>;
+  /** The compensation of a registration (ADR-0005, ADR-0014): empties the vault and revokes the tokens of a customer. */
+  revokeCustomer(customerId: string): Promise<void>;
+}
+
+/** What `POST /identity` takes (privacy spec 4.9). The email of the form is not here: the vault has no column for it. */
+export interface IdentityToStore {
+  readonly customerId: string;
+  readonly nik: string;
+  readonly nama: string;
+  readonly hp: string;
+  readonly rekening: string;
 }

@@ -20,6 +20,7 @@ export const HOSTS = {
   'privacy-service': 'privacy.test',
   'transaction-service': 'transaction.test',
   'reconciliation-service': 'reconciliation.test',
+  'notification-service': 'notification.test',
 } as const;
 
 export interface Recorded {
@@ -258,6 +259,7 @@ export async function startGateway(
       PRIVACY_SERVICE_URL: `http://${HOSTS['privacy-service']}`,
       TRANSACTION_SERVICE_URL: `http://${HOSTS['transaction-service']}`,
       RECONCILIATION_SERVICE_URL: `http://${HOSTS['reconciliation-service']}`,
+      NOTIFICATION_SERVICE_URL: `http://${HOSTS['notification-service']}`,
       API_GATEWAY_CLIENT_SECRET_FILE: secretFile,
       ...env,
     },

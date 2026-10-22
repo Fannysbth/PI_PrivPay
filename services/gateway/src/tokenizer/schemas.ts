@@ -52,3 +52,9 @@ export const settlementBody = z.strictObject({
     .max(MAX_SETTLEMENT_ITEMS),
 });
 export type SettlementBody = z.output<typeof settlementBody>;
+
+/** AZ-02: the phone a customer wants Notification to use, and nothing else (the customer is the token's). */
+export const notificationBody = z.strictObject({
+  phone: z.string().regex(/^08[0-9]{8,12}$/),
+  channel: z.literal('SMS'),
+});
