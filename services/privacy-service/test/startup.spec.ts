@@ -38,6 +38,8 @@ const env = (over: Record<string, string> = {}): Record<string, string> => ({
   TTL_DAILY_RECONCILIATION: '86400',
   TTL_INTERNAL_AUDIT: '600',
   DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
+  RETENTION_DAYS: '90',
+  RETENTION_JOB_RUN_UTC: '01:00',
   PSEUDONYM_KEY_VERSION: '1',
   PSEUDONYM_HMAC_SECRET_FILE: join(dir, 'hmac'),
   BLIND_INDEX_SECRET_FILE: join(dir, 'index'),

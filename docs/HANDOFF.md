@@ -26,10 +26,6 @@ Catatan putaran 2: lari integrasi pertama gagal satu tes (`db.integration`, "rec
 
 N-38 (email divalidasi lalu dibuang: brankas tidak punya kolom email, jadi "email hanya di brankas" tidak terpenuhi harfiah; email tidak ada di mana pun), N-39 (kompensasi mengosongkan brankas walau A5 melaporkan gagal), ADR-0014 sudah Accepted atas pilihanmu.
 
-### Hasil pencarian penjadwalan (K-19, K-23, RetentionJob)
-
-Tidak ada tiket, spek, ADR, atau butir milestone (M5, M6, M7) yang mencakup penghubungan `RetentionJob` (M2-09, K-26), `PendingSweeper.sweep/resync` (M4-03, K-19), dan `DailyRun` (M4-06, K-23) ke siklus hidup proses. Kriteria M4-06 menyebut "scheduler `RECON_DAILY_RUN_UTC`" tetapi hanya kelas dan jadwalnya yang dibuat dan diuji. Dicatat sebagai "belum dijadwalkan" di `docs/security/review-M3.md` (S-36) dan komentar kode. Butuh tiket baru atau keputusanmu.
-
 ### Temuan `/code-review` yang ditolak
 
 Telepon yatim di Notification bila jawaban A4 hilang (batas ADR-0005: Notification tak punya hapus kontak; token domainnya dicabut); pengguna IdP yatim bila jawaban A2 hilang (batas yang dicatat); batas panjang `sub` untuk semua jenis token (diminta); ADR-0014 berlaku untuk semua `CUSTOMER` (risiko diterima di ADR); `req.ip` tanpa `trust proxy` (belum ada proksi; harus ditinjau saat Kong/Docker); `customerId ?? ''` (tak terjangkau, `mayCall` memeriksa klaim lebih dulu); enumerasi nama pengguna lewat 422 (tak terhindarkan, dibatasi laju); `Content-Length` tak ada pada badan chunked (setiap field dibatasi skema); kompensasi karena NIK ganda mengosongkan brankas pelanggan lain (tidak: purge berkunci `customer_lookup` dari id pelanggan baru).
@@ -40,7 +36,7 @@ TK-01, TK-06, TK-09, TK-13, TK-14, TK-15: lapis layanan dan relay jawaban kawat 
 
 ### Belum teruji
 
-Penjadwalan job ke siklus hidup proses; adapter baseline (M5); Newman (M6-01); fail-closed dengan Docker; `trust proxy` di belakang Kong; kinerja D2 untuk ribuan transaksi.
+Adapter baseline (M5); Newman (M6-01); fail-closed dengan Docker; `trust proxy` di belakang Kong; kinerja D2 untuk ribuan transaksi.
 
 ### Untuk penutup M4
 
@@ -82,11 +78,11 @@ N-32 (batch pengganti `MISMATCHED` sampai run), N-33 (D2: `TOKEN_NOT_FOUND`/`REV
 
 ### Temuan `/code-review` yang ditolak
 
-`resync` PATCH status basi (Privacy menolak balik ke non-final, tanda dijaga status, baris dibaca ulang dengan status baru); penjadwal `resync`/`sweep`/`DailyRun` belum dihubungkan (sengaja, seperti `RetentionJob`); D2 berurutan (volume prototipe); atomisitas `audit-request` dengan Privacy (lintas layanan, Privacy sudah mencatat aktor); kursor bersama `held`/`completed` (hanya posisi, tanpa dampak keamanan); urutan tie-break referensi bank (deterministik); parameter query ganda (sudah 422); back-fill migrasi 0003 (hanya basis data pengembangan).
+`resync` PATCH status basi (Privacy menolak balik ke non-final, tanda dijaga status, baris dibaca ulang dengan status baru); D2 berurutan (volume prototipe); atomisitas `audit-request` dengan Privacy (lintas layanan, Privacy sudah mencatat aktor); kursor bersama `held`/`completed` (hanya posisi, tanpa dampak keamanan); urutan tie-break referensi bank (deterministik); parameter query ganda (sudah 422); back-fill migrasi 0003 (hanya basis data pengembangan).
 
 ### Belum teruji
 
-Penjadwalan `PendingSweeper.sweep/resync` dan `DailyRun` ke siklus hidup proses (K-19, K-23); adapter baseline (M5); Newman lewat Gateway (M6-01); alur `/register` dan E2E TX-10001..10003 (M4-08, M4-09); fail-closed dengan Docker; kinerja D2 untuk ribuan transaksi per hari.
+Adapter baseline (M5); Newman lewat Gateway (M6-01); alur `/register` dan E2E TX-10001..10003 (M4-08, M4-09); fail-closed dengan Docker; kinerja D2 untuk ribuan transaksi per hari.
 
 ### Untuk Gerbang 4
 
@@ -125,11 +121,11 @@ Catatan putaran 1: lari integrasi pertama gagal satu tes, `M0-04 a runner waits 
 
 ### Temuan `/code-review` yang ditolak
 
-`PendingSweeper` belum dijadwalkan (sengaja, seperti `RetentionJob`; tiket menyuruh dicatat); re-issue dua token berurutan (Privacy mengembalikan token baru yang sama pada panggilan kedua, jadi gagal sebagian aman diulang); penantian pemenang tetap `HTTP_TIMEOUT_MS` (ADR-0009 / K-25, 409 aman diulang); env baru wajib (CLAUDE.md: gagal cepat); `MutableSubject` (gaya, berurutan, tidak ada balapan).
+re-issue dua token berurutan (Privacy mengembalikan token baru yang sama pada panggilan kedua, jadi gagal sebagian aman diulang); penantian pemenang tetap `HTTP_TIMEOUT_MS` (ADR-0009 / K-25, 409 aman diulang); env baru wajib (CLAUDE.md: gagal cepat); `MutableSubject` (gaya, berurutan, tidak ada balapan).
 
 ### Belum teruji
 
-Penjadwalan `PendingSweeper` ke siklus hidup proses (`TX_SWEEP_INTERVAL_SECONDS`, K-19, belum ada); adapter baseline `SubjectReferencePort` (M5); rute Gateway ke `held` dan `review` (AZ-04, AZ-05 di sisi Gateway; hanya sisi layanan AZ-27 dan AZ-28 yang diuji); Privacy, Fraud, Notification asli di belakang Transaction end-to-end (M4-09); endpoint 3.4 untuk Reconciliation (M4-06); fail-closed dengan Docker.
+adapter baseline `SubjectReferencePort` (M5); rute Gateway ke `held` dan `review` (AZ-04, AZ-05 di sisi Gateway; hanya sisi layanan AZ-27 dan AZ-28 yang diuji); Privacy, Fraud, Notification asli di belakang Transaction end-to-end (M4-09); endpoint 3.4 untuk Reconciliation (M4-06); fail-closed dengan Docker.
 
 ### Untuk Gerbang 3 (M4-06, M4-07)
 
@@ -277,7 +273,7 @@ Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit m
 ### Keterbatasan yang diketahui (dari `/security-review`)
 
 - (a) Token yang terbit bersamaan dengan `revoke_subject` bisa lolos dari pencabutan. Gateway boleh menerbitkan token baru untuk subjek yang sama kapan saja, jadi pencabutan memang bukan blokir penerbitan.
-- (b) Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject` (spec 4.6: hanya baris `active`); diserahkan ke retensi, dan `RetentionJob` belum dijadwalkan.
+- (b) Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject` (spec 4.6: hanya baris `active`); diserahkan ke retensi (berjalan terjadwal sejak M4-10).
 
 ### Keputusan di tiket (tidak ada ADR yang bertabrakan)
 
@@ -289,7 +285,6 @@ Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit m
 ## Belum teruji / belum ada
 
 - Fail-closed dengan Privacy mati di compose (butuh Docker, M7): tidak dinyatakan lulus. Diuji di tingkat Gateway dengan Privacy asli dihentikan.
-- `RetentionJob` belum dijadwalkan ke siklus hidup proses.
 - Rute `/register` dan `/notification/register` serta `RegistrationFlow` (M4-08). Plugin Lua belum diuji terhadap vektor kontrak (DK-02).
 - Body bukan JSON tanpa token mendapat 422 sebelum 401 (parser JSON bersama). Dicatat, belum diubah.
 - `pnpm test:security` dan `pnpm newman` belum ada (M3-06, M6-01); Docker belum ada.
@@ -297,7 +292,7 @@ Tes M2-09 `step 1 does not wait for a row in use` lulus di kedua putaran. Unit m
 ## Keterbatasan yang sudah dicatat
 
 - Token yang terbit bersamaan dengan `revoke_subject` bisa lolos pencabutan (Gateway boleh menerbitkan token baru untuk subjek yang sama).
-- Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject`; diserahkan ke retensi, dan `RetentionJob` belum dijadwalkan.
+- Baris `expired` yang masih menyimpan identitas tidak dicabut atau dikosongkan `revoke_subject`; diserahkan ke retensi (berjalan terjadwal sejak M4-10).
 
 ## Langkah berikutnya
 

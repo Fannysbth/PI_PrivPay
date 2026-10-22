@@ -20,8 +20,10 @@ import {
   DomainError,
   idpJwksSource,
   JwksKeys,
+  schedulerProviders,
   SERVICE_DBS,
   type HttpClient,
+  type Timers,
   type TokenCache,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
@@ -36,14 +38,13 @@ import {
   type TransactionClient,
 } from './reconciliation';
 import { HttpPrivacyClient, HttpTransactionClient } from './reconciliation/clients';
-import { DailyRun } from './reconciliation/schedule';
+import { previousDate } from './reconciliation/schedule';
 import { ReconciliationHttp } from './reconciliation-http';
 
 /** The service account of Reconciliation at the IdP (tools/dev-idp registry): Privacy and Transaction only. */
 const CLIENT_ID = 'reconciliation';
 
 const RECONCILIATION_HTTP = Symbol('RECONCILIATION_HTTP');
-const DAILY_RUN = Symbol('DAILY_RUN');
 const OWNED_POOLS = Symbol('OWNED_POOLS');
 
 const tokenAnswer = z.object({
@@ -109,6 +110,8 @@ export interface ReconciliationOverrides {
   readonly transactions?: TransactionClient;
   readonly privacy?: PrivacyClient;
   readonly logDestination?: { write(line: string): void };
+  /** The timer of the jobs, replaced by a test that fires it by hand. */
+  readonly timers?: Timers;
 }
 
 /**
@@ -196,16 +199,26 @@ export function reconciliationModules(
       }),
       reconciliation: service,
     });
-    // K-23: built and validated at start; running it on a timer waits for the process lifecycle, like RetentionJob.
-    const daily = new DailyRun({ service, clock, runUtc: config.RECON_DAILY_RUN_UTC, logger });
     return [
       {
         module: ReconciliationModule,
         controllers: [ReconciliationController],
         providers: [
           { provide: RECONCILIATION_HTTP, useValue: reconciliation },
-          { provide: DAILY_RUN, useValue: daily },
           { provide: OWNED_POOLS, useValue: owned },
+          ...schedulerProviders(env, {
+            clock,
+            logger,
+            timers: overrides.timers,
+            jobs: [
+              {
+                name: 'daily-reconciliation',
+                schedule: { kind: 'daily', runUtc: config.RECON_DAILY_RUN_UTC },
+                // K-23: yesterday's date, through the same `run` as the manual one; a failure is the scheduler's to log.
+                run: () => service.run(previousDate(clock.now())),
+              },
+            ],
+          }),
           PoolLifecycle,
         ],
       },

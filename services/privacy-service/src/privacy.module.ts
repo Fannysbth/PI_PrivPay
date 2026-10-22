@@ -17,11 +17,14 @@ import {
 } from '@nestjs/common';
 import {
   createHttpClient,
+  createLogger,
   createPool,
   idpJwksSource,
   JwksKeys,
+  schedulerProviders,
   SERVICE_DBS,
   type HttpClient,
+  type Timers,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
@@ -33,6 +36,7 @@ import { DePseudonymizeService, DisclosureService } from './disclosure';
 import { IdentityVault } from './identity';
 import { PolicyEngine } from './policy';
 import { PrivacyHttp } from './privacy-http';
+import { RetentionJob } from './retention';
 import { RevocationService } from './revocation';
 import { TokenService, TransactionStatusService } from './token';
 
@@ -157,6 +161,9 @@ export interface PrivacyOverrides {
   readonly fetch?: typeof fetch;
   readonly pools?: { readonly app: Pool; readonly auditor?: Pool };
   readonly keys?: PrivacyKeys;
+  /** The timer of the jobs, replaced by a test that fires it by hand. */
+  readonly timers?: Timers;
+  readonly logDestination?: { write(line: string): void };
 }
 
 /**
@@ -254,6 +261,12 @@ export function privacyModules(
         clock,
       }),
     });
+    const retention = new RetentionJob({
+      pool: app,
+      clock,
+      graceSeconds: config.GRACE_PERIOD_SECONDS,
+      retentionDays: config.RETENTION_DAYS,
+    });
     return [
       {
         module: PrivacyModule,
@@ -261,6 +274,22 @@ export function privacyModules(
         providers: [
           { provide: PRIVACY_HTTP, useValue: privacy },
           { provide: OWNED_POOLS, useValue: owned },
+          // K-26: the retention job, daily, once the service listens (M4-10).
+          ...schedulerProviders(env, {
+            clock,
+            logger: createLogger({
+              service: 'privacy-service',
+              destination: overrides.logDestination,
+            }),
+            timers: overrides.timers,
+            jobs: [
+              {
+                name: 'retention',
+                schedule: { kind: 'daily', runUtc: config.RETENTION_JOB_RUN_UTC },
+                run: () => retention.run(),
+              },
+            ],
+          }),
           PoolLifecycle,
         ],
       },

@@ -23,6 +23,7 @@ import { SystemClock, type Clock } from '../clock';
 import { loadConfig } from '../config';
 import { RealDelay, type Delay } from '../delay';
 import { createLogger, type Logger } from '../logger';
+import { SCHEDULER, type BackgroundWork } from '../scheduler';
 import { respond } from './http-errors';
 import { HttpMetrics, routeLabel } from './metrics';
 import { serviceConfigSchema, type ServiceId } from './service-config';
@@ -118,6 +119,15 @@ class ServiceExceptionFilter implements ExceptionFilter {
 
   catch(exception: unknown, host: ArgumentsHost): void {
     respond(exception, host.switchToHttp().getResponse<Response>(), this.external);
+  }
+}
+
+/** The jobs a service provided under `SCHEDULER`, or nothing when it has none. */
+function jobsOf(app: INestApplication): BackgroundWork | undefined {
+  try {
+    return app.get<BackgroundWork>(SCHEDULER, { strict: false });
+  } catch {
+    return undefined;
   }
 }
 
@@ -219,6 +229,9 @@ export async function createServiceApp(
   });
 
   const server: Server = app.getHttpServer();
+  // M4-10: the jobs of the service, if it has any. Started once the server listens, stopped (running jobs waited for)
+  // before the resources they use are closed.
+  const background = jobsOf(app);
   let shutdown: Promise<void> | undefined;
   let listening: Promise<{ host: string; port: number }> | undefined;
 
@@ -248,6 +261,11 @@ export async function createServiceApp(
         await drained;
       }
     }
+    try {
+      await background?.stop();
+    } catch (error) {
+      failures.push(error);
+    }
     for (const resource of closeables) {
       try {
         await resource.close();
@@ -273,6 +291,8 @@ export async function createServiceApp(
     listen() {
       listening ??= (async () => {
         await app.listen(config.PORT, config.BIND_HOST);
+        // Only now does the service answer, so only now do the jobs start.
+        background?.start();
         const address = server.address() as AddressInfo;
         return { host: address.address, port: address.port };
       })();

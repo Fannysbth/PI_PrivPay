@@ -52,7 +52,7 @@ Kolom "Status (penutup M3)" diisi pada penutup milestone M3 (2026-10-21): ✔ ha
 | S-33 | Perbandingan rahasia konstan-waktu | tinjauan | M2 | ✔ lulus, [bukti](review-M3.md#s-33) |
 | S-34 | `audit_log` append-only: UPDATE/DELETE oleh `privacy_app` gagal; auditor hanya SELECT | TK-10, koneksi per peran | M3 | ✔ lulus, [bukti](review-M3.md#s-34) |
 | S-35 | `auditor_role` tidak punya akses ke `identity_vault` | tes SQL dengan peran itu | M3 | ✔ lulus, [bukti](review-M3.md#s-35) |
-| S-36 | Retensi: tidak ada baris tidak berlaku > 90 hari dengan `subject_id_enc` | TF-14, query pemeriksaan | M2 | ◐ sebagian, [bukti](review-M3.md#s-36) |
+| S-36 | Retensi: tidak ada baris tidak berlaku > 90 hari dengan `subject_id_enc` | TF-14, query pemeriksaan | M2 | ✔ lulus (M4-10), [bukti](review-M3.md#s-36) |
 | S-37 | `revoke_subject` mengosongkan brankas, mencatat `PURGE_IDENTITY` | TK-17 | M3 | ✔ lulus, [bukti](review-M3.md#s-37) |
 | S-38 | Tidak ada kolom `subject_id` di `audit_log`; tidak ada kolom identitas di DB hilir (mode proposed) | inspeksi skema, E(s) | M4 | ◐ sebagian, [bukti](review-M3.md#s-38) |
 

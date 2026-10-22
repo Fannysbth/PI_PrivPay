@@ -2,7 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FakeClock, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
+import { FakeClock, loadConfig, migrate, pgConfigSchema, type Timers } from '@privpay/common';
 import { createServiceApp, type ServiceApp } from '@privpay/common/nest';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
 import request from 'supertest';
@@ -74,6 +74,15 @@ export interface StackOptions {
   /** TTL of a payment token and the grace after it, in seconds. Shorter than the 300 s of a JWT, a token can end mid-flow. */
   readonly paymentTtl?: string;
   readonly grace?: string;
+  /**
+   * Turns the jobs of a service on, with a timer of the test's own (M4-10). A service that is not named has its jobs off,
+   * as in every other test.
+   */
+  readonly timers?: {
+    readonly privacy?: Timers;
+    readonly transaction?: Timers;
+    readonly reconciliation?: Timers;
+  };
 }
 
 export async function startStack(suffix: string, options: StackOptions = {}): Promise<Stack> {
@@ -188,6 +197,8 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       service: 'privacy-service',
       modules: privacyModules({
         fetch: network,
+        logDestination: sink('privacy.test'),
+        timers: options.timers?.privacy,
         pools: {
           app: dbs.privacy.app,
           ...(dbs.privacy.auditor === undefined ? {} : { auditor: dbs.privacy.auditor }),
@@ -206,6 +217,9 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       TTL_DAILY_RECONCILIATION: '86400',
       TTL_INTERNAL_AUDIT: '600',
       DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
+      RETENTION_DAYS: '90',
+      RETENTION_JOB_RUN_UTC: '01:00',
+      ...(options.timers?.privacy === undefined ? {} : { SCHEDULER_ENABLED: 'true' }),
       PSEUDONYM_KEY_VERSION: '1',
       PSEUDONYM_HMAC_SECRET_FILE: join(dir, 'hmac'),
       BLIND_INDEX_SECRET_FILE: join(dir, 'index'),
@@ -248,7 +262,12 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
   running['transaction.test'] = await createServiceApp(
     {
       service: 'transaction-service',
-      modules: transactionModules({ fetch: network, pools: { app: dbs.transaction.app } }),
+      modules: transactionModules({
+        fetch: network,
+        logDestination: sink('transaction.test'),
+        pools: { app: dbs.transaction.app },
+        timers: options.timers?.transaction,
+      }),
     },
     {
       ...base,
@@ -256,6 +275,8 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       ...idpEnv,
       FRAUD_AMOUNT_THRESHOLD: '1000000',
       TX_PENDING_TIMEOUT_SECONDS: '300',
+      TX_SWEEP_INTERVAL_SECONDS: '30',
+      ...(options.timers?.transaction === undefined ? {} : { SCHEDULER_ENABLED: 'true' }),
       PRIVACY_SERVICE_URL: 'http://privacy.test',
       FRAUD_SERVICE_URL: 'http://fraud.test',
       NOTIFICATION_SERVICE_URL: 'http://notification.test',
@@ -266,13 +287,19 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
   running['reconciliation.test'] = await createServiceApp(
     {
       service: 'reconciliation-service',
-      modules: reconciliationModules({ fetch: network, pools: { app: dbs.reconciliation.app } }),
+      modules: reconciliationModules({
+        fetch: network,
+        logDestination: sink('reconciliation.test'),
+        pools: { app: dbs.reconciliation.app },
+        timers: options.timers?.reconciliation,
+      }),
     },
     {
       ...base,
       ...pgEnv,
       ...idpEnv,
       RECON_DAILY_RUN_UTC: '00:10',
+      ...(options.timers?.reconciliation === undefined ? {} : { SCHEDULER_ENABLED: 'true' }),
       PRIVACY_SERVICE_URL: 'http://privacy.test',
       TRANSACTION_SERVICE_URL: 'http://transaction.test',
       RECONCILIATION_CLIENT_SECRET_FILE: secret('reconciliation'),

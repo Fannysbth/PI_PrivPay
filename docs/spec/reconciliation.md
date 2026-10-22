@@ -31,7 +31,7 @@ Pemanggil: penjadwal internal atau `API_GATEWAY` dengan `X-Actor-Token` berperan
 4. Status batch **[K-22]**: `unmatched = (#item − matched) + (#transaksi − matched)`; `MATCHED` bila `unmatched = 0`; `MISMATCHED` bila `matched = 0` dan ada item atau transaksi; selain itu `PARTIAL`.
 5. Respons 200 `{batch_id, tx_count, matched, unmatched, status}` (contoh PRD: `B-20261005`, 2, 2, 0, `MATCHED`). Menjalankan ulang tanggal yang sama menimpa batch itu (idempoten); tidak ada laporan untuk tanggal itu: batch dengan `item_count = 0` dihitung sesuai aturan di atas.
 
-Penjadwal harian: `RECON_DAILY_RUN_UTC` (bawaan `00:10`, **[K-23]**), memakai `Clock`; menjalankan tanggal sebelumnya.
+Penjadwal harian: `RECON_DAILY_RUN_UTC` (wajib di env, contoh `00:10`, **[K-23]**), memakai `Clock`; menjalankan tanggal sebelumnya **[M4-10]** lewat `Scheduler` bersama (satu job `daily-reconciliation`, mulai setelah layanan listen, tidak tumpang tindih, galat dicatat tanpa menjatuhkan proses, satu instans diasumsikan).
 
 ### 3.3 `POST /reconciliation/audit-request` (audit rutin, E1/E2, D-01)
 

@@ -24,9 +24,11 @@ import {
   JwksKeys,
   readSecret,
   RealDelay,
+  schedulerProviders,
   SERVICE_DBS,
   type Delay,
   type HttpClient,
+  type Timers,
   type TokenCache,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
@@ -129,6 +131,8 @@ export interface TransactionOverrides {
     readonly privacy: PrivacyStatusClient;
   };
   readonly logDestination?: { write(line: string): void };
+  /** The timer of the jobs, replaced by a test that fires it by hand. */
+  readonly timers?: Timers;
 }
 
 /**
@@ -185,7 +189,7 @@ export function transactionModules(
       review: new TransactionReview({ repository, clock, ...neighbours, logger }),
       reads: new TransactionReads({ repository }),
     });
-    // M4-03: built and validated at start; running it on a timer waits for the process lifecycle, like RetentionJob.
+    // M4-03, M4-10: the cleaner of PENDING rows and of the status Privacy has not heard, every TX_SWEEP_INTERVAL_SECONDS.
     const sweeper = new PendingSweeper({
       repository,
       clock,
@@ -201,6 +205,23 @@ export function transactionModules(
           { provide: TRANSACTION_HTTP, useValue: transactions },
           { provide: PENDING_SWEEPER, useValue: sweeper },
           { provide: OWNED_POOLS, useValue: owned },
+          ...schedulerProviders(env, {
+            clock,
+            logger,
+            timers: overrides.timers,
+            jobs: [
+              {
+                name: 'pending-sweep',
+                schedule: { kind: 'every', seconds: config.TX_SWEEP_INTERVAL_SECONDS },
+                run: () => sweeper.sweep(),
+              },
+              {
+                name: 'privacy-resync',
+                schedule: { kind: 'every', seconds: config.TX_SWEEP_INTERVAL_SECONDS },
+                run: () => sweeper.resync(),
+              },
+            ],
+          }),
           PoolLifecycle,
         ],
       },

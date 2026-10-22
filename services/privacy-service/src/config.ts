@@ -3,6 +3,8 @@ import {
   idpConfigShape,
   loadConfig,
   pgConfigSchema,
+  runTimeUtc,
+  schedulerConfigShape,
   type EnvSource,
 } from '@privpay/common';
 import { z } from 'zod';
@@ -18,6 +20,7 @@ export const privacyConfigSchema = z.object({
   ...pgConfigSchema.shape,
   ...httpConfigSchema.shape,
   ...idpConfigShape,
+  ...schedulerConfigShape,
   GRACE_PERIOD_SECONDS: z.coerce.number().int().min(0),
   PSEUDONYM_KEY_VERSION: z.coerce.number().int().min(1).max(65_535),
   TTL_PAYMENT_PROCESSING: seconds,
@@ -28,6 +31,10 @@ export const privacyConfigSchema = z.object({
   TTL_INTERNAL_AUDIT: seconds,
   // PRD 17: how long an approved disclosure can be used (600 s); no default, like the TTLs.
   DISCLOSURE_APPROVAL_TTL_SECONDS: seconds,
+  // PRD 17, K-26: how long an expired token keeps its identity (90 days for this research) and when the job that empties
+  // it runs each day; no default, like the TTLs.
+  RETENTION_DAYS: z.coerce.number().int().min(1),
+  RETENTION_JOB_RUN_UTC: runTimeUtc,
 });
 export type PrivacyConfig = z.output<typeof privacyConfigSchema>;
 

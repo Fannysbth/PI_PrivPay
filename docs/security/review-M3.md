@@ -51,7 +51,7 @@ Cara: `/security-review` oleh agen terpisah yang hanya membaca, ambang keyakinan
 | <a id="s-33"></a>S-33 | ✔ lulus | `safeEqual` (`timingSafeEqual`) dan aturan lint `tests/repo/lint-rules.spec.ts`; tiga kunci dibandingkan dengan `timingSafeEqual`. |
 | <a id="s-34"></a>S-34 | ✔ lulus | `audit.integration.spec.ts` dan `schema.integration.spec.ts`: UPDATE/DELETE audit_log oleh `privpay_app` gagal `42501`; `privpay_auditor` hanya SELECT. |
 | <a id="s-35"></a>S-35 | ✔ lulus | `schema.integration.spec.ts` S-35: `privpay_auditor` ditolak membaca tabel selain audit_log. |
-| <a id="s-36"></a>S-36 | ◐ sebagian | TF-14 di `retention.integration.spec.ts` (tujuh baris overdue lalu nol); `RetentionJob` belum dijadwalkan ke siklus hidup proses. |
+| <a id="s-36"></a>S-36 | ✔ lulus (M4-10) | TF-14 di `retention.integration.spec.ts` (tujuh baris overdue lalu nol) dan `services/gateway/test/e2e/scheduler.integration.spec.ts`: timer harian Privacy menandai token `expired` keesokan harinya dan, 91 hari kemudian, mengosongkan `subject_id_enc` (query pemeriksaan: nol baris); satu proses nyata menjalankan job dengan timer asli. |
 | <a id="s-37"></a>S-37 | ✔ lulus | TK-17 di `revocation.integration.spec.ts`: brankas dikosongkan, `PURGE_IDENTITY` tercatat. |
 | <a id="s-38"></a>S-38 | ◐ sebagian | `audit_log` tanpa kolom identitas (skema, `chk_attribute_names`); DB hilir belum ada (M4). |
 | <a id="s-40"></a>S-40 | ✔ lulus | tiap endpoint Privacy punya tes field tak dikenal 422 (`http.integration.spec.ts`); Gateway di review-M1. |
