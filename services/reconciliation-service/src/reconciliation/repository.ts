@@ -30,11 +30,6 @@ export const RECON_SQL = {
      VALUES ($1, $2, 0, 0, 'MISMATCHED', $3) ON CONFLICT (batch_id) DO NOTHING`,
   // The row lock is what lets a report and a run (and two reports) take turns on one date.
   lockBatch: 'SELECT batch_id FROM settlement_batches WHERE batch_id = $1 FOR UPDATE',
-  items: `SELECT id, account_pseudonym, amount, bank_reference FROM settlement_items
-     WHERE batch_id = $1 ORDER BY bank_reference`,
-  insertItems: `INSERT INTO settlement_items (batch_id, account_pseudonym, amount, bank_reference)
-     SELECT $1, t.account, t.amount, t.reference
-     FROM unnest($2::text[], $3::bigint[], $4::text[]) AS t(account, amount, reference)`,
   markMatched: 'UPDATE settlement_items SET matched = (id = ANY($2::uuid[])) WHERE batch_id = $1',
   // Spec reconciliation 3.3: one row per request, a coded reason and the actor, never a free text. The application role
   // can insert and nothing else, so the id is made here and no RETURNING is needed.
@@ -47,16 +42,26 @@ export const RECON_SQL = {
      WHERE batch_id = $1`,
 } as const;
 
+/**
+ * ADR-0006: the two statements that name the account column of an item, the only SQL that differs between the modes.
+ * The folder of each mode (`proposed/`, `baseline/`) supplies them; the repository below is one code for both. The
+ * account comes back as `account_ref`: a token in proposed, the account number itself in baseline.
+ */
+export interface SubjectSql {
+  readonly items: string;
+  readonly insertItems: string;
+}
+
 interface ItemRow {
   id: string;
-  account_pseudonym: string;
+  account_ref: string;
   amount: string;
   bank_reference: string;
 }
 
 const toItem = (row: ItemRow): ReconItem => ({
   id: row.id,
-  accountPseudonym: row.account_pseudonym,
+  accountPseudonym: row.account_ref,
   // NUMERIC(18,2) comes back as text; the amounts of this platform are whole rupiah (qa C-12).
   amount: Number(row.amount),
   bankReference: row.bank_reference,
@@ -65,9 +70,16 @@ const toItem = (row: ItemRow): ReconItem => ({
 const signature = (item: { accountPseudonym: string; amount: number; bankReference: string }) =>
   `${item.bankReference}|${item.accountPseudonym}|${String(item.amount)}`;
 
-/** The proposed adapter of the repository seam: the key is the account token. The baseline one, by account, is M5-01. */
+/**
+ * The repository of the seam (ADR-0006). It knows no mode: an item names its account by token in proposed and by the
+ * account number in baseline, and the SQL that names the column is handed in by the adapter of the mode. The field
+ * `accountPseudonym` of the domain holds whichever the mode stores.
+ */
 export class ReconciliationRepository {
-  constructor(private readonly pool: Pick<Pool, 'connect' | 'query'>) {}
+  constructor(
+    private readonly pool: Pick<Pool, 'connect' | 'query'>,
+    private readonly subject: SubjectSql,
+  ) {}
 
   private async inTransaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
     const client = await this.pool.connect();
@@ -92,7 +104,7 @@ export class ReconciliationRepository {
   }
 
   private async itemsOf(client: PoolClient, batchId: string): Promise<ReconItem[]> {
-    const found = await client.query<ItemRow>(RECON_SQL.items, [batchId]);
+    const found = await client.query<ItemRow>(this.subject.items, [batchId]);
     return found.rows.map(toItem);
   }
 
@@ -110,7 +122,7 @@ export class ReconciliationRepository {
       const batchId = await this.lockedBatch(client, date, now);
       const stored = await this.itemsOf(client, batchId);
       if (stored.length === 0) {
-        await client.query(RECON_SQL.insertItems, [
+        await client.query(this.subject.insertItems, [
           batchId,
           items.map((item) => item.accountPseudonym),
           items.map((item) => item.amount),

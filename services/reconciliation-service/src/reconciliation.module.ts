@@ -1,3 +1,4 @@
+import { proposedReconciliationRepository } from './proposed';
 import 'reflect-metadata';
 import {
   Body,
@@ -32,7 +33,6 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import { loadReconciliationConfig, readClientSecret } from './config';
 import {
-  ReconciliationRepository,
   ReconciliationService,
   type PrivacyClient,
   type TransactionClient,
@@ -178,7 +178,7 @@ export function reconciliationModules(
     });
 
     const service = new ReconciliationService({
-      repository: new ReconciliationRepository(app),
+      repository: proposedReconciliationRepository(app),
       transactions:
         overrides.transactions ??
         new HttpTransactionClient({ http, serviceToken: tokenFor('transaction-service') }),
