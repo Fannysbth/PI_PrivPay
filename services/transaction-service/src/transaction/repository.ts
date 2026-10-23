@@ -78,15 +78,6 @@ export interface Reviewed {
 /** Every value is a bind parameter (CLAUDE.md). */
 export const TRANSACTION_SQL = {
   merchant: 'SELECT 1 FROM merchants WHERE merchant_id = $1',
-  // ADR-0009: no conflict target. A clash on the idempotency key and a clash on the transaction id both end as "no row
-  // inserted"; the caller then reads by key and treats a row it cannot find as a conflict, never as a server error.
-  insertPending: `INSERT INTO transactions
-       (transaction_id, idempotency_key, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash,
-        status, created_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'PENDING', $8)
-     ON CONFLICT DO NOTHING RETURNING transaction_id`,
-  findByKey: `SELECT transaction_id, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash, status
-     FROM transactions WHERE idempotency_key = $1`,
   // The move is guarded by the status the caller saw ($2): a row that someone else moved meanwhile is not rewritten,
   // so a terminal row never changes (spec transaction 4). A value that is NULL here keeps what the row has.
   transition: `UPDATE transactions SET status = $3, risk_score = COALESCE($4, risk_score),
@@ -109,8 +100,6 @@ export const TRANSACTION_SQL = {
        AND COALESCE(reviewed_at, created_at) < $1
      ORDER BY created_at ASC, transaction_id ASC LIMIT $2`,
   // Spec transaction 3.3: the row is locked first, so two reviews take turns and the second sees the first one's status.
-  lockForReview: `SELECT status, customer_pseudonym, account_pseudonym, amount
-     FROM transactions WHERE transaction_id = $1 FOR UPDATE`,
   // Spec transaction 5 step 6: only a row that is still PENDING and older than the cutoff.
   sweepPending: `UPDATE transactions SET status = 'FAILED'
      WHERE status = 'PENDING' AND created_at < $1 RETURNING transaction_id`,
@@ -122,9 +111,6 @@ export const TRANSACTION_SQL = {
      WHERE status = 'HELD'
        AND ($1::text IS NULL OR (created_at, transaction_id) > ($1::timestamptz, $2::text))
      ORDER BY created_at ASC, transaction_id ASC LIMIT $3`,
-  // Re-issue in the middle of a transaction (spec transaction 5, step 5): while it is still open, PENDING or HELD.
-  updateTokens: `UPDATE transactions SET customer_pseudonym = $2, account_pseudonym = $3
-     WHERE transaction_id = $1 AND status IN ('PENDING', 'HELD')`,
   // Spec transaction 3.4: the day is the UTC date of completed_at, [$1, $2). The text keeps microseconds for the cursor.
   listCompleted: `SELECT transaction_id, amount,
        to_char(completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS completed_text
@@ -135,23 +121,44 @@ export const TRANSACTION_SQL = {
   // Spec transaction 3.4: what an audit may read of one transaction. No pseudonym and no merchant.
   detail: `SELECT transaction_id, amount, status, created_at, completed_at
      FROM transactions WHERE transaction_id = $1`,
-  findById: `SELECT transaction_id, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash, status
-     FROM transactions WHERE transaction_id = $1`,
 } as const;
+
+/**
+ * ADR-0006: the five statements that name the columns of the subject, the only SQL that differs between the modes. The
+ * folder of each mode (`proposed/`, `baseline/`) supplies them; everything else in this repository is one code for
+ * both. The subject comes back as `customer_ref` and `account_ref`: a token in proposed, the identity itself in baseline.
+ */
+export interface SubjectSql {
+  // ADR-0009: no conflict target. A clash on the idempotency key and a clash on the transaction id both end as "no row
+  // inserted"; the caller then reads by key and treats a row it cannot find as a conflict, never as a server error.
+  readonly insertPending: string;
+  readonly findByKey: string;
+  readonly lockForReview: string;
+  // Re-issue in the middle of a transaction (spec transaction 5, step 5): while it is still open, PENDING or HELD.
+  readonly updateTokens: string;
+  readonly findById: string;
+}
 
 interface Row {
   transaction_id: string;
-  customer_pseudonym: string;
-  account_pseudonym: string;
+  customer_ref: string;
+  account_ref: string;
   merchant_id: string;
   amount: string;
   geohash: string | null;
   status: TransactionStatus;
 }
 
-/** The proposed repository (ADR-0006): the store of tokens. The baseline one, with identities, is M5-01. */
+/**
+ * The repository of the domain (ADR-0006). It knows no mode: the SQL that names the subject columns is handed in by
+ * the adapter of the mode (`proposed/` stores tokens, `baseline/` stores the identity). The names `customerToken` and
+ * `accountToken` stay in the domain; in baseline they hold `customer_id` and `account_number`.
+ */
 export class TransactionRepository {
-  constructor(private readonly pool: Pick<Pool, 'query' | 'connect'>) {}
+  constructor(
+    private readonly pool: Pick<Pool, 'query' | 'connect'>,
+    private readonly subject: SubjectSql,
+  ) {}
 
   async merchantExists(merchantId: string): Promise<boolean> {
     const found = await this.pool.query(TRANSACTION_SQL.merchant, [merchantId]);
@@ -160,7 +167,7 @@ export class TransactionRepository {
 
   /** True when this call created the row, false when another request holds the key (or the id). */
   async insertPending(row: NewTransaction): Promise<boolean> {
-    const inserted = await this.pool.query(TRANSACTION_SQL.insertPending, [
+    const inserted = await this.pool.query(this.subject.insertPending, [
       row.transactionId,
       row.idempotencyKey,
       row.customerToken,
@@ -174,7 +181,7 @@ export class TransactionRepository {
   }
 
   async findByKey(idempotencyKey: string): Promise<StoredTransaction | undefined> {
-    const found = await this.pool.query<Row>(TRANSACTION_SQL.findByKey, [idempotencyKey]);
+    const found = await this.pool.query<Row>(this.subject.findByKey, [idempotencyKey]);
     const row = found.rows[0];
     return row === undefined ? undefined : toStored(row);
   }
@@ -208,7 +215,7 @@ export class TransactionRepository {
     transactionId: string,
     tokens: { readonly customerToken: string; readonly accountToken: string },
   ): Promise<void> {
-    await this.pool.query(TRANSACTION_SQL.updateTokens, [
+    await this.pool.query(this.subject.updateTokens, [
       transactionId,
       tokens.customerToken,
       tokens.accountToken,
@@ -259,10 +266,10 @@ export class TransactionRepository {
       await client.query('BEGIN');
       const locked = await client.query<{
         status: TransactionStatus;
-        customer_pseudonym: string;
-        account_pseudonym: string;
+        customer_ref: string;
+        account_ref: string;
         amount: string;
-      }>(TRANSACTION_SQL.lockForReview, [transactionId]);
+      }>(this.subject.lockForReview, [transactionId]);
       const row = locked.rows[0];
       if (row?.status !== 'HELD') {
         await client.query('ROLLBACK');
@@ -284,8 +291,8 @@ export class TransactionRepository {
       await client.query('COMMIT');
       return {
         transactionId,
-        customerToken: row.customer_pseudonym,
-        accountToken: row.account_pseudonym,
+        customerToken: row.customer_ref,
+        accountToken: row.account_ref,
         amount: Number(row.amount),
       };
     } catch (error) {
@@ -378,7 +385,7 @@ export class TransactionRepository {
   }
 
   async findById(transactionId: string): Promise<StoredTransaction | undefined> {
-    const found = await this.pool.query<Row>(TRANSACTION_SQL.findById, [transactionId]);
+    const found = await this.pool.query<Row>(this.subject.findById, [transactionId]);
     const row = found.rows[0];
     return row === undefined ? undefined : toStored(row);
   }
@@ -387,8 +394,8 @@ export class TransactionRepository {
 function toStored(row: Row): StoredTransaction {
   return {
     transactionId: row.transaction_id,
-    customerToken: row.customer_pseudonym,
-    accountToken: row.account_pseudonym,
+    customerToken: row.customer_ref,
+    accountToken: row.account_ref,
     merchantId: row.merchant_id,
     // NUMERIC(18,2) comes back as text; the amounts of this platform are whole rupiah (qa C-12).
     amount: Number(row.amount),

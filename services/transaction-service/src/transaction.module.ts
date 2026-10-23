@@ -36,16 +36,11 @@ import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { loadTransactionConfig } from './config';
 import { z } from 'zod';
-import {
-  HttpFraudClient,
-  HttpNotificationClient,
-  HttpPrivacyClient,
-  ProposedSubjectReferences,
-} from './transaction/clients';
+import { HttpFraudClient, HttpNotificationClient, HttpPrivacyClient } from './transaction/clients';
+import { ProposedSubjectReferences, proposedTransactionRepository } from './proposed';
 import {
   PendingSweeper,
   TransactionProcessor,
-  TransactionRepository,
   TransactionReads,
   TransactionReview,
   type FraudClient,
@@ -166,7 +161,7 @@ export function transactionModules(
       service: 'transaction-service',
       destination: overrides.logDestination,
     });
-    const repository = new TransactionRepository(app);
+    const repository = proposedTransactionRepository(app);
     const neighbours = overrides.neighbours ?? httpNeighbours(http, env, clock);
     const transactions = new TransactionHttp({
       clock,

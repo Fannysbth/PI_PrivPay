@@ -1,10 +1,10 @@
+import { proposedTransactionRepository } from '../src/proposed';
 import { join } from 'node:path';
 import { FakeClock, FakeDelay, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
 import {
   PendingSweeper,
   TransactionProcessor,
-  TransactionRepository,
   TransactionReview,
   type TransactionRequest,
 } from '../src/transaction';
@@ -40,7 +40,7 @@ beforeEach(async () => {
   notifications = new FakeNotifications();
   privacy = new FakePrivacy();
   log = recordingLogger();
-  const repository = new TransactionRepository(db.app);
+  const repository = proposedTransactionRepository(db.app);
   processor = new TransactionProcessor({
     repository,
     clock,
@@ -229,7 +229,7 @@ describe('M4-03 FR-35 a review whose PATCH fails', () => {
     // The row has moved on (reviewed) while an earlier PATCH for HELD was still being marked.
     privacy.fail = true;
     await review.review({ transactionId: id, decision: 'REJECT', reviewedBy: ANALYST });
-    const repository = new TransactionRepository(db.app);
+    const repository = proposedTransactionRepository(db.app);
     await repository.markPrivacySynced(id, 'HELD', clock.now());
     expect((await rowOf(id))?.privacy_synced_at).toBeNull();
   });
@@ -264,7 +264,7 @@ describe('N-40 a row Privacy refuses for good does not hold back the rows after 
   // Batch of two, so three refused rows older than a healthy one would fill the window of the first runs.
   const smallBatch = () =>
     new PendingSweeper({
-      repository: new TransactionRepository(db.app),
+      repository: proposedTransactionRepository(db.app),
       clock,
       privacy,
       timeoutSeconds: TIMEOUT_SECONDS,
@@ -365,7 +365,7 @@ describe('N-40 a row Privacy refuses for good does not hold back the rows after 
       decision: 'REJECT',
       reviewedBy: ANALYST,
     });
-    const repository = new TransactionRepository(db.app);
+    const repository = proposedTransactionRepository(db.app);
     expect(await repository.markPrivacyRejected(r.transactionId, 'HELD', clock.now())).toBe(false);
     expect((await rowOf(r.transactionId))?.privacy_rejected_at).toBeNull();
   });

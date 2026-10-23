@@ -21,6 +21,7 @@ export { assertTransition, canTransition } from './status-machine';
 export {
   TRANSACTION_SQL,
   TransactionRepository,
+  type SubjectSql,
   type FraudDecision,
   type NewTransaction,
   type Outcome,

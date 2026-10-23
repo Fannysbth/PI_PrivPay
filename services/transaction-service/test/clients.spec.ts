@@ -3,9 +3,9 @@ import {
   HttpFraudClient,
   HttpNotificationClient,
   HttpPrivacyClient,
-  ProposedSubjectReferences,
 } from '../src/transaction/clients';
 import { PrivacyRejectedError, TokenExpiredError } from '../src/transaction';
+import { ProposedSubjectReferences } from '../src/proposed';
 
 // Seam: the HTTP adapters towards Privacy, Fraud and Notification, through the shared client with a stub for fetch.
 // NFR-12: only an idempotent call may be sent twice. The stub counts what actually reaches the neighbour.

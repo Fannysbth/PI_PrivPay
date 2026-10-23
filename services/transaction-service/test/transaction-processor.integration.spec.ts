@@ -1,3 +1,4 @@
+import { proposedTransactionRepository } from '../src/proposed';
 import { join } from 'node:path';
 import {
   DomainError,
@@ -9,11 +10,7 @@ import {
   type Delay,
 } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import {
-  TransactionProcessor,
-  TransactionRepository,
-  type TransactionRequest,
-} from '../src/transaction';
+import { TransactionProcessor, type TransactionRequest } from '../src/transaction';
 import {
   FakeFraud,
   FakeNotifications,
@@ -38,7 +35,7 @@ let processor: TransactionProcessor;
 
 const build = (using: Delay): TransactionProcessor =>
   new TransactionProcessor({
-    repository: new TransactionRepository(db.app),
+    repository: proposedTransactionRepository(db.app),
     clock,
     delay: using,
     fraudAmountThreshold: THRESHOLD,
@@ -200,7 +197,7 @@ describe('M4-01 NFR-23 S-02 T-13 the same key at the same time', () => {
         const results = await Promise.allSettled(
           Array.from({ length: parallel }, () =>
             new TransactionProcessor({
-              repository: new TransactionRepository(db.app),
+              repository: proposedTransactionRepository(db.app),
               clock,
               delay: new FakeDelay(),
               fraudAmountThreshold: THRESHOLD,
@@ -232,7 +229,7 @@ describe('M4-01 NFR-23 S-02 T-13 the same key at the same time', () => {
       const results = await Promise.allSettled(
         [35000, 36000, 37000].map((amount) =>
           new TransactionProcessor({
-            repository: new TransactionRepository(db.app),
+            repository: proposedTransactionRepository(db.app),
             clock,
             delay: new FakeDelay(),
             fraudAmountThreshold: THRESHOLD,

@@ -1,6 +1,7 @@
 import { join } from 'node:path';
 import { DomainError, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
+import { proposedTransactionRepository } from '../src/proposed';
 import { canTransition, TransactionRepository, type TransactionStatus } from '../src/transaction';
 
 // Seam: the state machine of spec transaction 4 as the repository enforces it, on the real database with the real
@@ -24,7 +25,7 @@ let repository: TransactionRepository;
 beforeEach(async () => {
   db = await createTestDb(config, { service: 'transaction', suffix: 'm402sm' });
   await migrate(db.owner, { root: migrations, mode: 'proposed' });
-  repository = new TransactionRepository(db.app);
+  repository = proposedTransactionRepository(db.app);
 });
 afterEach(async () => {
   await db.close();

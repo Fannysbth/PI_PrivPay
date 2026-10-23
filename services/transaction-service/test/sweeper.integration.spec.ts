@@ -1,12 +1,8 @@
+import { proposedTransactionRepository } from '../src/proposed';
 import { join } from 'node:path';
 import { FakeClock, FakeDelay, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import {
-  PendingSweeper,
-  TransactionProcessor,
-  TransactionRepository,
-  type TransactionRequest,
-} from '../src/transaction';
+import { PendingSweeper, TransactionProcessor, type TransactionRequest } from '../src/transaction';
 import { FakeFraud, FakeNotifications, FakePrivacy, FakeSubjects, recordingLogger } from './fakes';
 
 // Seam: PendingSweeper.sweep (spec transaction 5 step 6, FR-39, TF-17) with the clock injected, on the real transaction
@@ -28,7 +24,7 @@ beforeEach(async () => {
   privacy = new FakePrivacy();
   log = recordingLogger();
   sweeper = new PendingSweeper({
-    repository: new TransactionRepository(db.app),
+    repository: proposedTransactionRepository(db.app),
     clock,
     privacy,
     timeoutSeconds: TIMEOUT_SECONDS,
@@ -138,7 +134,7 @@ describe('M4-03 FR-39 TF-17 the PENDING sweeper', () => {
       await sweeper.sweep();
     };
     const processor = new TransactionProcessor({
-      repository: new TransactionRepository(db.app),
+      repository: proposedTransactionRepository(db.app),
       clock,
       delay: new FakeDelay(),
       fraudAmountThreshold: 1_000_000,
