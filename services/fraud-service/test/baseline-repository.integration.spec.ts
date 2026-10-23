@@ -61,7 +61,7 @@ describe('M5-01 FR-23 the baseline fraud schema keys the history by customer_id'
       { 'fraud_assessments.pseudonym': 'fraud_assessments.customer_id' },
       { proposed: 'privpay_fraud_app', baseline: 'privpay_fraud_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], grants: [] });
+    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
     const rules = (db: TestDb) => db.owner.query('SELECT * FROM risk_rules ORDER BY rule');
     expect((await rules(db)).rows).toEqual((await rules(other)).rows);
   });

@@ -52,7 +52,7 @@ describe('M5-01 FR-23 the baseline reconciliation schema holds the account numbe
       { 'settlement_items.account_pseudonym': 'settlement_items.account_number' },
       { proposed: 'privpay_reconciliation_app', baseline: 'privpay_reconciliation_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], grants: [] });
+    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
   });
 
   it('M5-01 FR-32 the table still refuses a value that is not an account number', async () => {

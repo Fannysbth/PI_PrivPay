@@ -1,4 +1,3 @@
-import { proposedReconciliationRepository } from './proposed';
 import 'reflect-metadata';
 import {
   Body,
@@ -37,6 +36,7 @@ import {
   type PrivacyClient,
   type TransactionClient,
 } from './reconciliation';
+import { proposedReconciliationRepository } from './proposed';
 import { HttpPrivacyClient, HttpTransactionClient } from './reconciliation/clients';
 import { previousDate } from './reconciliation/schedule';
 import { ReconciliationHttp } from './reconciliation-http';

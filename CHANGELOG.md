@@ -8,7 +8,7 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 - M5-01 (Transaction, Fraud, Notification, Reconciliation): migrasi `baseline/` per layanan, satu repositori per layanan untuk kedua mode (folder `proposed/` dan `baseline/` hanya menyuplai SQL penamaan kolom subjek), `BaselineSubjectReferences` (Transaction), `assertBaselineMode` di `packages/common` (adaptor baseline menolak dibangun selain pada `PRIVACY_MODE=baseline`), pembantu paritas skema `tests/baseline/schema-parity.ts`, tes arsitektur `tests/repo/mode-folders.spec.ts`, dan kontrol positif pemindai di `pnpm pii-scan` (di baseline data asli ditemukan). Tes lama hanya berganti cara membuat repositori. N-42, N-43, N-44 di OPEN_QUESTIONS.
 
-- N-40 (E-33): kolom `transactions.privacy_rejected_at` (migrasi proposed 0004) menandai baris yang ditolak Privacy secara permanen; `resync` melewatinya, baris gagal sementara tetap diulang, status baru menghapus tanda, notifikasi tidak dikirim ulang. Satu tes skema diubah (daftar kolom bertambah satu). Empat mutasi pada logika penanda terbunuh.
+- N-40 (E-33): kolom `transactions.privacy_rejected_at` (migrasi proposed 0004) menandai baris yang ditolak Privacy secara permanen (hanya 409 `TX_TERMINAL`); `resync` melewatinya, baris gagal sementara tetap diulang, status baru menghapus tanda, notifikasi tidak dikirim ulang. Satu tes skema diubah (daftar kolom bertambah satu). Empat mutasi pada logika penanda terbunuh.
 
 ### M4-10 (penutup M4)
 

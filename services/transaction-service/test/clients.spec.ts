@@ -170,7 +170,7 @@ describe('M4-02 FR-10 the proposed adapter of the port', () => {
 });
 
 describe('N-40 which answers of Privacy to a status PATCH are final', () => {
-  it.each([400, 404, 409, 422])(
+  it.each([409])(
     'N-40 a %i from Privacy is a rejection of this row, in one call',
     async (status) => {
       const { deps, count } = setup(() => Promise.resolve(json(status, { error: {} })));
@@ -182,7 +182,7 @@ describe('N-40 which answers of Privacy to a status PATCH are final', () => {
   );
 
   // Not about the row: the same answer would come for every row, so the rows must not be marked as refused.
-  it.each([401, 403, 408, 429, 500, 503])(
+  it.each([400, 401, 403, 404, 408, 422, 429, 500, 503])(
     'N-40 a %i from Privacy is not final, the row is tried again later',
     async (status) => {
       const { deps } = setup(() => Promise.resolve(json(status, { error: {} })));

@@ -60,7 +60,12 @@ export class Followups {
         this.deps.logger.warn('status_patch_rejected', { transaction_id: transactionId });
         await this.deps.repository
           .markPrivacyRejected(transactionId, status, this.deps.clock.now())
-          .catch(() => undefined);
+          .catch((markError: unknown) => {
+            this.deps.logger.warn('status_mark_failed', {
+              transaction_id: transactionId,
+              reason: reasonOf(markError),
+            });
+          });
         return;
       }
       this.deps.logger.warn('status_patch_failed', {

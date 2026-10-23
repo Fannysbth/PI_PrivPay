@@ -1,6 +1,7 @@
 -- notification-db, mode baseline (M5-01, FR-23, spec data 9, N-42): the schema of proposed with the pseudonym columns
 -- replaced by the customer_id. It holds real identities by design, so it is only ever run when PRIVACY_MODE=baseline.
--- `phone` is personal data in both modes (D-08).
+-- `phone` is the only personal value outside Privacy and the IdP in proposed (D-08, E(s) of Notification is 1/6); in
+-- baseline the customer_id is one too. There is no column for the text of a message: it holds an amount.
 -- of Notification is 1/6). There is no column for the text of a message: it holds an amount and could become a profile.
 
 CREATE TABLE contact_registry (

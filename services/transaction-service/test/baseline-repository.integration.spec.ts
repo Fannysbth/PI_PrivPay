@@ -63,7 +63,7 @@ describe('M5-01 FR-23 the baseline schema keeps the identity where proposed keep
       },
       { proposed: 'privpay_transaction_app', baseline: 'privpay_transaction_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], grants: [] });
+    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
   });
 
   it('M5-01 NFR-09 the runtime role can read and write but not delete, as in proposed', async () => {

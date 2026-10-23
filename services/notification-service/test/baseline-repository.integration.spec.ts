@@ -51,7 +51,7 @@ describe('M5-01 FR-23 the baseline notification schema keys the contact by custo
       },
       { proposed: 'privpay_notification_app', baseline: 'privpay_notification_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], grants: [] });
+    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
   });
 
   it('M5-01 NFR-09 a contact is never deleted and the log cannot be read back by the application', async () => {

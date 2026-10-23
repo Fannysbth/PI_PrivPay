@@ -23,8 +23,12 @@ export interface ClientDeps {
   readonly serviceToken: Pick<TokenCache, 'get'>;
 }
 
-/** N-40: the answers that are about the row itself; the rest (auth, rate, outage) would come for every row. */
-const FINAL_PATCH_ANSWERS: ReadonlySet<number> = new Set([400, 404, 409, 422]);
+/**
+ * N-40: the one answer that is about the row itself. Privacy (spec 4.7) refuses a status for good only with 409
+ * TX_TERMINAL; 400 and 422 are faults of the caller and would come for every row, 404 does not exist (upsert), and
+ * the rest (auth, rate, outage) is not about the row either. Marking those rows would hide a fixable fault for good.
+ */
+const FINAL_PATCH_ANSWERS: ReadonlySet<number> = new Set([409]);
 
 const unavailable = (cause: string): DomainError => new DomainError('SERVICE_UNAVAILABLE', cause);
 
