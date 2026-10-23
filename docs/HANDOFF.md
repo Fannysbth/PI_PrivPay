@@ -1,3 +1,58 @@
+# HANDOFF (2026-10-23): kesetiaan baseline, bagian jelas SELESAI (G1) di cabang, BELUM di-merge (satu tes integrasi merah di lingkungan, juga di main); keputusan A/B menunggu
+
+## PENGUKURAN BARU BOLEH DIMULAI SETELAH KEPUTUSAN A/B DAN PERSETUJUANMU
+
+**Jangan menjalankan pengukuran apa pun (k6, E(s), uji penautan, angka latensi atau throughput, perbandingan baseline vs proposed untuk laporan) sebelum Fanny memutuskan A atau B (di bawah) dan menyetujui.** Harapan E(s) baseline di Tabel IV hanya teramati penuh di Transaction (4/6 bila klien mengirim NIK dan nama); Fraud, Reconciliation, dan Notification masih 1/6, 1/6, 2/6. Angka dari lingkungan lokal tidak masuk laporan (CLAUDE.md).
+
+## Status sesi kesetiaan baseline
+
+Cabang `feat/m5-kesetiaan-baseline` (tidak dihapus, tidak di-push), dari `main` pada `6c5e73e`:
+
+| Hash | Isi |
+| --- | --- |
+| `dc1fbab` | analisis kesenjangan `docs/security/kesenjangan-baseline.md` (tanpa kode) |
+| `f4584f2` | G1 (N-48): Gateway baseline meneruskan `nik` dan `nama` ke Transaction; Transaction baseline menerimanya tanpa menyimpan; suite kesetaraan memindai payload |
+| `bdbb771` | 3a: Fraud tanpa audience di dev-idp |
+| `f5f285f` | 3b: `SELF_APPROVAL` lewat HTTP oleh aturan empat mata (N-49) |
+| `34bca9d` | 3c: `dev:keys`, `dev:up`, `dev:down`; `PG_DATABASE_SUFFIX` (N-50) |
+| `657ecbd` | 3d: dokumen usang, istilah gerbang, `W-nn` |
+| `b033ff5` | N-51: kajian token baru setelah revoke (tidak diimplementasikan) |
+| `ffe82dd` `36d716a` | `/simplify` dan perbaikan `/code-review` |
+
+`/security-review` seluruh cabang: tanpa temuan keyakinan 8 ke atas.
+
+### Gerbang (satu putaran penuh pada `36d716a`, satu proses pada satu waktu): TIDAK HIJAU PENUH
+
+| Langkah | Hasil |
+| --- | --- |
+| eslint + prettier, typecheck | hijau |
+| unit (2 worker) | 72 suite, 1365 tes, hijau |
+| integrasi | **61 suite lulus, 1 gagal** (1139 dari 1140 tes); lihat di bawah |
+| smoke | 36 tes, hijau |
+| audit --prod | tidak ada kerentanan |
+| gitleaks riwayat penuh | 168 commit, bersih (tanpa allowlist baru) |
+| pii-scan | 35 + 117 tes, hijau |
+
+Riwayat jujur integrasi. Putaran 1 mati setengah jalan (subshell latar belakang ikut berhenti; tanpa ringkasan). Putaran 2: satu tes gagal, `privacy-service/test/token-forms` "an expired token is EXPIRED" (batas 30 detik; suite 485 detik karena mesin tertekan, kemungkinan tumpang tindih dengan sisa proses putaran 1); sendirian lulus 44/44. Putaran 3 (bersih, tanpa proses lain, 3810 detik): satu tes gagal, `packages/common/test/test-db-cleanup.integration.spec.ts` "a database held by a session it may not end": basis data yang seharusnya tertahan (`privpay_privacy_test_m006d`) ikut terhapus, jadi `privpay_test_admin` kini dapat mengakhiri sesi `privpay_app`, padahal tes mengharapkan SQLSTATE 42501. Gagal deterministik sendirian (dua kali) dan **juga di `main`** (diperiksa dengan pindah cabang pada pohon bersih), padahal lulus di gerbang sebelumnya. Katalog (hanya baca): `privpay_test_admin` bukan superuser, anggota lima peran `*_owner`; `db.integration` (hak peran) lulus 26/26. Penyebab di sisi PostgreSQL lokal belum ditemukan (tidak ada akses superuser). Bukan akibat cabang ini; tes tidak diubah. Karena itu **tidak di-merge ke `main`**; menunggu keputusanmu (selidiki PostgreSQL lokal / `bootstrap.ps1`, atau terima sebagai masalah lingkungan yang sudah ada).
+
+Memori bebas sebelum gerbang: ±5 GB dari 14 GB.
+
+### Keputusan yang butuh persetujuan Fanny
+
+- **A atau B** (`kesenjangan-baseline.md` bagian 4): A = baseline hanya mengganti pengenal (Tabel IV diubah menjadi 2/6, 1/6, 1/6, 2/6); B = passthrough penuh (G3 sampai G6; menyimpan salinan butuh migrasi baseline, jadi berhenti dan tanya). Email diteruskan atau tidak (G2).
+- **N-48** perluasan skema masuk `POST /transaction` hanya di baseline; **N-49** pengguna dev-idp dua peran tidak ditambahkan (ADR-0007 butir 8); **N-50** env `PG_DATABASE_SUFFIX` dan database `privpay_<layanan>_test_devbl` untuk baseline; **N-51** arah token setelah revoke (nisan, atau terima sebagai keterbatasan).
+- Poin 5 `docs/RETRO_M4.md` dan `docs/RETRO_M5.md` ("Yang kuhentikan") masih menunggu isianmu.
+
+### Cara menyalakan sistem
+
+`corepack pnpm build`, `scripts/db/bootstrap.ps1` (sekali), `corepack pnpm db:migrate`, `corepack pnpm --filter @privpay/dev-idp run make-secrets`, `corepack pnpm dev:keys`, lalu `corepack pnpm dev:up [--mode baseline]`; `dev:down` menghentikan. Lihat `scripts/dev/README.md`. Database `devbl` tampil sebagai sisa tes di `db:test-databases`.
+
+### Belum teruji
+
+E(s) resmi dan uji penautan (M6); Fraud, Reconciliation, Notification baseline terhadap Tabel IV; log baseline hanya satu skenario dan tanpa mutasi khusus log; Docker, Kong, Keycloak, Newman, k6; fail-closed dengan Docker (M7).
+
+---
+
 # HANDOFF (2026-10-23): M5 sesi 2 SELESAI (gerbang hijau satu putaran), siap di-merge ke `main` lokal; berikutnya M6 hanya setelah persetujuanmu
 
 ## PENGUKURAN BARU BOLEH DIMULAI SETELAH M5 SELESAI DAN TERBUKTI
