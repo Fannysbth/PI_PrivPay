@@ -1,5 +1,6 @@
 import { DomainError } from '@privpay/common';
 import {
+  PrivacyRejectedError,
   TokenExpiredError,
   type FraudClient,
   type FraudVerdict,
@@ -93,12 +94,15 @@ export class FakeNotifications implements NotificationClient {
 
 export class FakePrivacy implements PrivacyStatusClient {
   fail = false;
+  /** Transactions Privacy refuses for good (N-40): a 4xx about that row, not about Privacy being away. */
+  readonly refused = new Set<string>();
   readonly patches: { transactionId: string; status: PrivacyTransactionStatus }[] = [];
   trace: string[] | undefined;
 
   patchStatus(transactionId: string, status: PrivacyTransactionStatus): Promise<void> {
     this.trace?.push('patch');
     this.patches.push({ transactionId, status });
+    if (this.refused.has(transactionId)) return Promise.reject(new PrivacyRejectedError());
     return this.fail ? Promise.reject(new DomainError('SERVICE_UNAVAILABLE')) : Promise.resolve();
   }
 }

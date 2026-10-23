@@ -6,6 +6,7 @@ export {
 } from './processor';
 export {
   privacyStatusOf,
+  PrivacyRejectedError,
   TokenExpiredError,
   type FraudClient,
   type FraudVerdict,

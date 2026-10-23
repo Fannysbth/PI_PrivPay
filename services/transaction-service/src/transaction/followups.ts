@@ -1,5 +1,6 @@
 import { DomainError, type Clock, type Logger, type Reason } from '@privpay/common';
 import {
+  PrivacyRejectedError,
   privacyStatusOf,
   TokenExpiredError,
   type NotificationClient,
@@ -27,7 +28,10 @@ const TEMPLATES = {
 } as const satisfies Record<Settled, NotificationTemplate>;
 
 export interface FollowupsDeps {
-  readonly repository: Pick<TransactionRepository, 'updateTokens' | 'markPrivacySynced'>;
+  readonly repository: Pick<
+    TransactionRepository,
+    'updateTokens' | 'markPrivacySynced' | 'markPrivacyRejected'
+  >;
   readonly clock: Clock;
   readonly subjects: SubjectReferencePort;
   readonly notifications: NotificationClient;
@@ -51,6 +55,14 @@ export class Followups {
     try {
       await this.deps.privacy.patchStatus(transactionId, privacyStatusOf(status));
     } catch (error) {
+      if (error instanceof PrivacyRejectedError) {
+        // N-40: refused for good, so the cleaner is not left to find out one run at a time.
+        this.deps.logger.warn('status_patch_rejected', { transaction_id: transactionId });
+        await this.deps.repository
+          .markPrivacyRejected(transactionId, status, this.deps.clock.now())
+          .catch(() => undefined);
+        return;
+      }
       this.deps.logger.warn('status_patch_failed', {
         transaction_id: transactionId,
         reason: reasonOf(error),

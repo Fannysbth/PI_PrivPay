@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M5 Sesi 1
+
+- N-40 (E-33): kolom `transactions.privacy_rejected_at` (migrasi proposed 0004) menandai baris yang ditolak Privacy secara permanen; `resync` melewatinya, baris gagal sementara tetap diulang, status baru menghapus tanda, notifikasi tidak dikirim ulang. Satu tes skema diubah (daftar kolom bertambah satu). Empat mutasi pada logika penanda terbunuh.
+
 ### M4-10 (penutup M4)
 
 - M4-10 penjadwalan job berkala: satu `Scheduler` di `packages/common` (`every` detik dan `daily` HH:MM UTC, clock dan timer disuntik, tanpa tumpang tindih, kemunculan terlewat tidak dikejar, galat dicatat sebagai nama job dan `reason`, timer `unref`), dipasang oleh `createServiceApp` (mulai sesudah `listen`, berhenti sebelum kolam ditutup, job yang berjalan ditunggu). Terhubung: retensi Privacy (K-26), `sweep` dan `resync` Transaction (K-19), rekonsiliasi harian (K-23). Env wajib baru: `RETENTION_DAYS` dan `RETENTION_JOB_RUN_UTC` (Privacy), `TX_SWEEP_INTERVAL_SECONDS` (Transaction); `SCHEDULER_ENABLED` opsional, mati bawaan di `NODE_ENV=test`. `DailyRun` dihapus (galat kini milik penjadwal), `nextRunAt` satu implementasi. Tes: 33 penjadwal (jadwal, tumpang tindih, shutdown, galat, handle), 5 siklus hidup, 8 E2E dengan layanan asli (retensi mengosongkan identitas setelah 90 hari, `resync` memulihkan status Privacy, rekonsiliasi kemarin), 8 konfigurasi; 14 mutan terbunuh (guard tumpang tindih, shutdown menunggu, timer dibatalkan, start setelah listen, `unref`, pemasangan tiap job); satu proses nyata dengan timer asli (dua job tiap detik, galat tanpa data pribadi, `/health` 200). S-36 lulus. Dependensi: tidak ada.

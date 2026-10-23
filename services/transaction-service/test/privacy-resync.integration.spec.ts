@@ -259,3 +259,125 @@ describe('M4-10 K-19 the cleaner does both in one pass, in order', () => {
     expect(privacy.patches).toEqual([]);
   });
 });
+
+describe('N-40 a row Privacy refuses for good does not hold back the rows after it', () => {
+  // Batch of two, so three refused rows older than a healthy one would fill the window of the first runs.
+  const smallBatch = () =>
+    new PendingSweeper({
+      repository: new TransactionRepository(db.app),
+      clock,
+      privacy,
+      timeoutSeconds: TIMEOUT_SECONDS,
+      resyncBatch: 2,
+      logger: log.logger,
+    });
+
+  async function settledUnheard(count: number): Promise<string[]> {
+    privacy.fail = true;
+    const ids: string[] = [];
+    for (let i = 0; i < count; i += 1) {
+      const r = request();
+      await processor.process(r);
+      ids.push(r.transactionId);
+      clock.advance(1);
+    }
+    privacy.fail = false;
+    privacy.patches.length = 0;
+    return ids;
+  }
+
+  it('N-40 refused rows are marked, and the healthy row behind them is heard within two runs', async () => {
+    const [a, b, c, healthy] = await settledUnheard(4);
+    for (const id of [a, b, c]) privacy.refused.add(id as string);
+    notifications.sent.length = 0;
+    clock.advance(TIMEOUT_SECONDS + 1);
+    const sweeper = smallBatch();
+
+    expect(await sweeper.resync()).toBe(0);
+    expect(await sweeper.resync()).toBe(1);
+
+    expect((await rowOf(healthy as string))?.privacy_synced_at).not.toBeNull();
+    for (const id of [a, b, c]) {
+      expect(await rowOf(id as string)).toMatchObject({ privacy_synced_at: null });
+      expect((await rowOf(id as string))?.privacy_rejected_at).toEqual(expect.any(Date));
+    }
+    expect(notifications.sent).toEqual([]);
+  });
+
+  it('N-40 a refused row is not asked again, and its refusal is logged by id alone', async () => {
+    const [refused] = await settledUnheard(1);
+    privacy.refused.add(refused as string);
+    clock.advance(TIMEOUT_SECONDS + 1);
+    const sweeper = smallBatch();
+    await sweeper.resync();
+    expect(patchesOf(refused as string)).toHaveLength(1);
+    await sweeper.resync();
+    await sweeper.resync();
+    expect(patchesOf(refused as string)).toHaveLength(1);
+    expect(log.entries.filter((e) => e.event === 'status_patch_rejected')).toEqual([
+      expect.objectContaining({ fields: { transaction_id: refused } }),
+    ]);
+  });
+
+  it('N-40 a row that failed for a while is not marked, and is tried again on every run', async () => {
+    const [away] = await settledUnheard(1);
+    privacy.fail = true;
+    clock.advance(TIMEOUT_SECONDS + 1);
+    const sweeper = smallBatch();
+    expect(await sweeper.resync()).toBe(0);
+    expect(await sweeper.resync()).toBe(0);
+    expect(patchesOf(away as string)).toHaveLength(2);
+    expect((await rowOf(away as string))?.privacy_rejected_at).toBeNull();
+    privacy.fail = false;
+    expect(await sweeper.resync()).toBe(1);
+  });
+
+  it('N-40 a new status clears the refusal, since Privacy may accept the one that follows', async () => {
+    fraud.decision = 'HOLD_FOR_VERIFICATION';
+    privacy.fail = true;
+    const r = request({ amount: THRESHOLD });
+    await processor.process(r);
+    privacy.fail = false;
+    privacy.refused.add(r.transactionId);
+    clock.advance(TIMEOUT_SECONDS + 1);
+    await smallBatch().resync();
+    expect((await rowOf(r.transactionId))?.privacy_rejected_at).not.toBeNull();
+
+    privacy.refused.delete(r.transactionId);
+    await review.review({
+      transactionId: r.transactionId,
+      decision: 'APPROVE',
+      reviewedBy: ANALYST,
+    });
+    expect(await rowOf(r.transactionId)).toMatchObject({
+      status: 'COMPLETED',
+      privacy_rejected_at: null,
+    });
+  });
+
+  it('N-40 a refusal of the earlier status is not recorded against the one that came after it', async () => {
+    fraud.decision = 'HOLD_FOR_VERIFICATION';
+    const r = request({ amount: THRESHOLD });
+    await processor.process(r);
+    privacy.fail = true;
+    await review.review({
+      transactionId: r.transactionId,
+      decision: 'REJECT',
+      reviewedBy: ANALYST,
+    });
+    const repository = new TransactionRepository(db.app);
+    expect(await repository.markPrivacyRejected(r.transactionId, 'HELD', clock.now())).toBe(false);
+    expect((await rowOf(r.transactionId))?.privacy_rejected_at).toBeNull();
+  });
+
+  it('N-40 the request itself that meets a refusal says so by id, not as an internal error', async () => {
+    privacy.refused.add('TX-7001');
+    const r = request({ transactionId: 'TX-7001' });
+    await processor.process(r);
+    expect(log.entries.filter((e) => e.event === 'status_patch_failed')).toEqual([]);
+    expect(log.entries.filter((e) => e.event === 'status_patch_rejected')).toEqual([
+      expect.objectContaining({ fields: { transaction_id: 'TX-7001' } }),
+    ]);
+    expect((await rowOf('TX-7001'))?.privacy_rejected_at).not.toBeNull();
+  });
+});

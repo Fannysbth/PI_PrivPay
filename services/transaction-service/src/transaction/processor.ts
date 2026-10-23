@@ -40,6 +40,7 @@ export interface TransactionProcessorDeps {
     | 'finish'
     | 'updateTokens'
     | 'markPrivacySynced'
+    | 'markPrivacyRejected'
   >;
   readonly clock: Clock;
   readonly delay: Delay;

@@ -16,6 +16,17 @@ export class TokenExpiredError extends Error {
 }
 
 /**
+ * Privacy refused the status of this transaction for good (N-40): a 4xx about the row, so asking again gives the same
+ * answer. An answer that is not about the row (401, 403, 408, 429, 5xx) is a failed step instead.
+ */
+export class PrivacyRejectedError extends Error {
+  constructor() {
+    super('privacy_rejected');
+    this.name = 'PrivacyRejectedError';
+  }
+}
+
+/**
  * ADR-0006: the only place where the two modes differ. The proposed adapter exchanges tokens through Privacy (X1, X2)
  * and issues them again (spec transaction 5, step 5); the baseline one hands the identity back as it is. A method
  * throws `TokenExpiredError` when the token expired, and anything else it throws is a failed step.

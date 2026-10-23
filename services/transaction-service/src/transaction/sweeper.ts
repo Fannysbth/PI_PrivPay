@@ -1,6 +1,6 @@
 import type { Clock, Logger } from '@privpay/common';
 import { reasonOf } from './followups';
-import { privacyStatusOf, type PrivacyStatusClient } from './ports';
+import { PrivacyRejectedError, privacyStatusOf, type PrivacyStatusClient } from './ports';
 import type { TransactionRepository, TransactionStatus } from './repository';
 
 /** How many unheard rows one run repeats; a longer backlog drains over several runs. */
@@ -9,13 +9,15 @@ const RESYNC_BATCH = 100;
 export interface PendingSweeperDeps {
   readonly repository: Pick<
     TransactionRepository,
-    'sweepPending' | 'unsyncedBefore' | 'markPrivacySynced'
+    'sweepPending' | 'unsyncedBefore' | 'markPrivacySynced' | 'markPrivacyRejected'
   >;
   readonly clock: Clock;
   readonly privacy: PrivacyStatusClient;
   /** TX_PENDING_TIMEOUT_SECONDS (PRD 17). */
   readonly timeoutSeconds: number;
   readonly logger: Pick<Logger, 'warn'>;
+  /** Rows one resync run takes (default 100); a test makes it small to show the queue moving past refused rows. */
+  readonly resyncBatch?: number;
 }
 
 /**
@@ -53,7 +55,10 @@ export class PendingSweeper {
    */
   async resync(): Promise<number> {
     const cutoff = new Date(this.deps.clock.now().getTime() - this.deps.timeoutSeconds * 1000);
-    const rows = await this.deps.repository.unsyncedBefore(cutoff, RESYNC_BATCH);
+    const rows = await this.deps.repository.unsyncedBefore(
+      cutoff,
+      this.deps.resyncBatch ?? RESYNC_BATCH,
+    );
     let heard = 0;
     for (const row of rows) {
       if (await this.tell(row.transactionId, row.status)) heard += 1;
@@ -69,6 +74,10 @@ export class PendingSweeper {
     try {
       await this.deps.privacy.patchStatus(transactionId, privacyStatusOf(status));
     } catch (error) {
+      if (error instanceof PrivacyRejectedError) {
+        await this.markRejected(transactionId, status);
+        return false;
+      }
       this.deps.logger.warn('status_patch_failed', {
         transaction_id: transactionId,
         reason: reasonOf(error),
@@ -85,5 +94,21 @@ export class PendingSweeper {
       return false;
     }
     return true;
+  }
+
+  /** N-40: stop asking about a row Privacy refuses for good, so it does not hold back the rows after it. */
+  private async markRejected(
+    transactionId: string,
+    status: Exclude<TransactionStatus, 'PENDING'>,
+  ): Promise<void> {
+    this.deps.logger.warn('status_patch_rejected', { transaction_id: transactionId });
+    try {
+      await this.deps.repository.markPrivacyRejected(transactionId, status, this.deps.clock.now());
+    } catch (error) {
+      this.deps.logger.warn('status_mark_failed', {
+        transaction_id: transactionId,
+        reason: reasonOf(error),
+      });
+    }
   }
 }

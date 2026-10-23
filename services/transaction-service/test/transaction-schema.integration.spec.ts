@@ -56,7 +56,7 @@ const insert = (over: Record<string, unknown> = {}) => {
 };
 
 describe('M4-01 FR-16 S-38 the schema holds tokens and attributes, never an identity', () => {
-  it('M4-01 FR-16 S-38 transactions has exactly the columns of PRD 11 plus privacy_synced_at (a time, gate 2 decision 1): no identity, no fraud_token, no notif_token', async () => {
+  it('M4-01 FR-16 S-38 transactions has exactly the columns of PRD 11 plus privacy_synced_at and privacy_rejected_at (times only, gate 2 decision 1, N-40): no identity, no fraud_token, no notif_token', async () => {
     expect(await columns('transactions')).toEqual([
       'transaction_id',
       'idempotency_key',
@@ -73,6 +73,7 @@ describe('M4-01 FR-16 S-38 the schema holds tokens and attributes, never an iden
       'created_at',
       'completed_at',
       'privacy_synced_at',
+      'privacy_rejected_at',
     ]);
   });
 

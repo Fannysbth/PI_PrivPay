@@ -92,16 +92,21 @@ export const TRANSACTION_SQL = {
   transition: `UPDATE transactions SET status = $3, risk_score = COALESCE($4, risk_score),
        fraud_decision = COALESCE($5, fraud_decision), completed_at = COALESCE($6, completed_at),
        reviewed_by = COALESCE($7, reviewed_by), reviewed_at = COALESCE($8, reviewed_at),
-       privacy_synced_at = NULL
+       privacy_synced_at = NULL, privacy_rejected_at = NULL
      WHERE transaction_id = $1 AND status = $2`,
   // A new status is not heard until Privacy says so. Guarded by the status that was told, so a PATCH for an earlier
   // status (HELD) cannot mark the one that came after it (COMPLETED).
   markSynced: `UPDATE transactions SET privacy_synced_at = $3
      WHERE transaction_id = $1 AND status = $2`,
+  // N-40: Privacy refused this status for good. Same guard as markSynced, so a refusal of an earlier status is not
+  // written against the one that came after it.
+  markRejected: `UPDATE transactions SET privacy_rejected_at = $3
+     WHERE transaction_id = $1 AND status = $2`,
   // Rows Privacy has not heard, once a request in flight can no longer be working on them: a winner for at most the
   // pending timeout after creation, a review after its own time. Oldest first, so a long backlog drains in order.
   unsynced: `SELECT transaction_id, status FROM transactions
-     WHERE privacy_synced_at IS NULL AND status <> 'PENDING' AND COALESCE(reviewed_at, created_at) < $1
+     WHERE privacy_synced_at IS NULL AND privacy_rejected_at IS NULL AND status <> 'PENDING'
+       AND COALESCE(reviewed_at, created_at) < $1
      ORDER BY created_at ASC, transaction_id ASC LIMIT $2`,
   // Spec transaction 3.3: the row is locked first, so two reviews take turns and the second sees the first one's status.
   lockForReview: `SELECT status, customer_pseudonym, account_pseudonym, amount
@@ -298,6 +303,16 @@ export class TransactionRepository {
     at: Date,
   ): Promise<boolean> {
     const marked = await this.pool.query(TRANSACTION_SQL.markSynced, [transactionId, status, at]);
+    return marked.rowCount === 1;
+  }
+
+  /** N-40: records that Privacy refused `status` for good; false when the row has moved on meanwhile. */
+  async markPrivacyRejected(
+    transactionId: string,
+    status: Exclude<TransactionStatus, 'PENDING'>,
+    at: Date,
+  ): Promise<boolean> {
+    const marked = await this.pool.query(TRANSACTION_SQL.markRejected, [transactionId, status, at]);
     return marked.rowCount === 1;
   }
 

@@ -1,6 +1,7 @@
 import { DomainError, type HttpClient, type TokenCache } from '@privpay/common';
 import { z } from 'zod';
 import {
+  PrivacyRejectedError,
   TokenExpiredError,
   type FraudClient,
   type NotificationClient,
@@ -23,6 +24,9 @@ export interface ClientDeps {
   /** Transaction's own service token for the service it calls (`aud` privacy-service, fraud-service, ...). */
   readonly serviceToken: Pick<TokenCache, 'get'>;
 }
+
+/** N-40: the answers that are about the row itself; the rest (auth, rate, outage) would come for every row. */
+const FINAL_PATCH_ANSWERS: ReadonlySet<number> = new Set([400, 404, 409, 422]);
 
 const unavailable = (cause: string): DomainError => new DomainError('SERVICE_UNAVAILABLE', cause);
 
@@ -84,6 +88,7 @@ export class HttpPrivacyClient implements PrivacyStatusClient {
       idempotent: true,
       authorization: `Bearer ${await this.deps.serviceToken.get()}`,
     });
+    if (FINAL_PATCH_ANSWERS.has(response.status)) throw new PrivacyRejectedError();
     if (response.status !== 200) throw unavailable('privacy_patch');
   }
 }
