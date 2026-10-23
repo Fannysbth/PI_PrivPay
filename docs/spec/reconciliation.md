@@ -13,7 +13,7 @@ Mencocokkan settlement harian dengan transaksi memakai token rekening, menerima 
 | `Reconciler` (murni) | `match(transactions, items)` mengembalikan `{pairs, unmatchedItems, unmatchedTransactions, status}` | algoritma pencocokan tanpa I/O |
 | `ReconciliationService` | `run(date)`, `receiveReport(report)`, `auditRequest(req, actor)`, `disclose(req, actor)` | orkestrasi D1..D4 dan E |
 | `ReconciliationRepository` | seam repositori per mode | proposed `account_pseudonym`, baseline `account_number` |
-| `TransactionClient`, `PrivacyClient` | `completedOn(date)`, `byId(id)`; `accountToken(transactionId)`, `auditToken(transactionId, actorToken)`, `open(auditToken, disclosureId, actorToken)` | adapter palsu untuk tes |
+| `TransactionClient`, `PrivacyClient` | `completedOn(date)`, `byId(id)`; `accountSubjectRef(transactionId)`, `auditToken(transactionId, actorToken)`, `open(auditToken, disclosureId, actorToken)` | adapter palsu untuk tes |
 
 ## 3. Kontrak
 

@@ -4,7 +4,7 @@ export type BatchStatus = 'MATCHED' | 'PARTIAL' | 'MISMATCHED';
 export interface ReconTransaction {
   readonly transactionId: string;
   readonly amount: number;
-  readonly accountToken: string | null;
+  readonly accountSubjectRef: string | null;
 }
 
 /** One line of the bank's report as stored: a token, an amount and the bank's own reference. Never an account number. */
@@ -55,9 +55,9 @@ export function match(
     byText(a.transactionId, b.transactionId),
   )) {
     const partner =
-      transaction.accountToken === null
+      transaction.accountSubjectRef === null
         ? undefined
-        : waiting.get(`${transaction.accountToken}|${String(transaction.amount)}`)?.shift();
+        : waiting.get(`${transaction.accountSubjectRef}|${String(transaction.amount)}`)?.shift();
     if (partner === undefined) unmatchedTransactions.push(transaction.transactionId);
     else pairs.push({ transactionId: transaction.transactionId, itemId: partner.id });
   }

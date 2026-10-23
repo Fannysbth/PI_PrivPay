@@ -9,11 +9,11 @@ const A3 = 'PSEU-5A83F0B7';
 const tx = (
   transactionId: string,
   amount: number,
-  accountToken: string | null,
+  accountSubjectRef: string | null,
 ): ReconTransaction => ({
   transactionId,
   amount,
-  accountToken,
+  accountSubjectRef,
 });
 const item = (
   id: string,

@@ -116,8 +116,8 @@ export class TransactionHttp {
     return this.deps.processor.process({
       transactionId: input.transaction_id,
       idempotencyKey: input.idempotency_key,
-      customerToken: input.customer_token,
-      accountToken: input.account_token,
+      customerSubjectRef: input.customer_token,
+      accountSubjectRef: input.account_token,
       merchantId: input.merchant_id,
       amount: input.amount,
       geohash: input.geohash,

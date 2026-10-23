@@ -130,8 +130,8 @@ describe('M4-02 FR-10 the proposed adapter of the port', () => {
     const subjects = new ProposedSubjectReferences(new HttpPrivacyClient(expired.deps));
     const row = {
       transactionId: 'TX-2001',
-      customerToken: 'PSEU-00000001',
-      accountToken: 'PSEU-00000002',
+      customerSubjectRef: 'PSEU-00000001',
+      accountSubjectRef: 'PSEU-00000002',
     };
     await expect(subjects.forFraud(row)).rejects.toBeInstanceOf(TokenExpiredError);
     expect(expired.count()).toBe(1);
@@ -157,8 +157,8 @@ describe('M4-02 FR-10 the proposed adapter of the port', () => {
     );
     await subjects.forFraud({
       transactionId: 'TX-2001',
-      customerToken: 'PSEU-00000001',
-      accountToken: 'PSEU-00000002',
+      customerSubjectRef: 'PSEU-00000001',
+      accountSubjectRef: 'PSEU-00000002',
     });
     expect(body).toEqual({
       source_pseudonym: 'PSEU-00000001',

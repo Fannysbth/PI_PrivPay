@@ -127,7 +127,7 @@ function refusalOf(response: { readonly status: number; readonly body: unknown }
 export class HttpPrivacyClient implements PrivacyClient {
   constructor(private readonly deps: ClientDeps) {}
 
-  async accountToken(transactionId: string): Promise<string | null> {
+  async accountSubjectRef(transactionId: string): Promise<string | null> {
     const response = await this.deps.http.request({
       service: 'privacy-service',
       method: 'POST',

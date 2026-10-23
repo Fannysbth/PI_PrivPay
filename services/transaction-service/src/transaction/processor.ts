@@ -17,8 +17,8 @@ import type {
 export interface TransactionRequest {
   readonly transactionId: string;
   readonly idempotencyKey: string;
-  readonly customerToken: string;
-  readonly accountToken: string;
+  readonly customerSubjectRef: string;
+  readonly accountSubjectRef: string;
   readonly merchantId: string;
   readonly amount: number;
   readonly geohash: string;
@@ -89,8 +89,8 @@ export class TransactionProcessor {
     const created = await this.deps.repository.insertPending({
       transactionId: request.transactionId,
       idempotencyKey: request.idempotencyKey,
-      customerToken: request.customerToken,
-      accountToken: request.accountToken,
+      customerSubjectRef: request.customerSubjectRef,
+      accountSubjectRef: request.accountSubjectRef,
       merchantId: request.merchantId,
       amount: request.amount,
       geohash: request.geohash,
@@ -104,8 +104,8 @@ export class TransactionProcessor {
   private async orchestrate(request: TransactionRequest): Promise<ProcessResult> {
     const subject: MutableSubject = {
       transactionId: request.transactionId,
-      customerToken: request.customerToken,
-      accountToken: request.accountToken,
+      customerSubjectRef: request.customerSubjectRef,
+      accountSubjectRef: request.accountSubjectRef,
     };
     const decision = await this.decide(request, subject);
     const completedAt = decision.status === 'COMPLETED' ? this.deps.clock.now() : null;
@@ -188,8 +188,8 @@ function answer(httpStatus: 200 | 201, transactionId: string, status: Settled): 
 /** ADR-0009: the five fields of the request against the stored row; nothing secret is compared or stored. */
 function sameContent(stored: StoredTransaction, request: TransactionRequest): boolean {
   return (
-    stored.customerToken === request.customerToken &&
-    stored.accountToken === request.accountToken &&
+    stored.customerSubjectRef === request.customerSubjectRef &&
+    stored.accountSubjectRef === request.accountSubjectRef &&
     stored.merchantId === request.merchantId &&
     stored.amount === request.amount &&
     stored.geohash === request.geohash

@@ -10,7 +10,7 @@ export class ProposedSubjectReferences implements SubjectReferencePort {
 
   forFraud(row: SubjectRow): Promise<string> {
     return this.privacy.exchange({
-      sourcePseudonym: row.customerToken,
+      sourcePseudonym: row.customerSubjectRef,
       targetService: 'FRAUD',
       purpose: 'FRAUD_DETECTION',
       transactionId: row.transactionId,
@@ -19,7 +19,7 @@ export class ProposedSubjectReferences implements SubjectReferencePort {
 
   forNotification(row: SubjectRow): Promise<string> {
     return this.privacy.exchange({
-      sourcePseudonym: row.customerToken,
+      sourcePseudonym: row.customerSubjectRef,
       targetService: 'NOTIFICATION',
       purpose: 'NOTIFICATION',
       transactionId: row.transactionId,
@@ -27,8 +27,11 @@ export class ProposedSubjectReferences implements SubjectReferencePort {
   }
 
   async reissue(row: SubjectRow) {
-    const customerToken = await this.privacy.reIssue(row.customerToken, row.transactionId);
-    const accountToken = await this.privacy.reIssue(row.accountToken, row.transactionId);
-    return { customerToken, accountToken };
+    const customerSubjectRef = await this.privacy.reIssue(
+      row.customerSubjectRef,
+      row.transactionId,
+    );
+    const accountSubjectRef = await this.privacy.reIssue(row.accountSubjectRef, row.transactionId);
+    return { customerSubjectRef, accountSubjectRef };
   }
 }

@@ -39,7 +39,7 @@ export interface PrivacyClient {
    * D2: the account token (P6) of a transaction. `null` when Privacy has none for it (`TOKEN_NOT_FOUND` after retention,
    * or `REVOKED`): that transaction is counted unmatched. Throws when Privacy cannot answer.
    */
-  accountToken(transactionId: string): Promise<string | null>;
+  accountSubjectRef(transactionId: string): Promise<string | null>;
   /**
    * E2: the audit token (P7) of the customer of a transaction, issued for this person. Privacy checks the role from the
    * actor token and refuses with its own reason; that reason is thrown as it is. Throws when Privacy cannot answer.

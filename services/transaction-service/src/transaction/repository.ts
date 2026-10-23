@@ -9,8 +9,8 @@ export type FraudDecision = 'ALLOW' | 'HOLD_FOR_VERIFICATION' | 'BLOCK' | 'FRAUD
 export interface NewTransaction {
   readonly transactionId: string;
   readonly idempotencyKey: string;
-  readonly customerToken: string;
-  readonly accountToken: string;
+  readonly customerSubjectRef: string;
+  readonly accountSubjectRef: string;
   readonly merchantId: string;
   readonly amount: number;
   readonly geohash: string;
@@ -19,8 +19,8 @@ export interface NewTransaction {
 
 export interface StoredTransaction {
   readonly transactionId: string;
-  readonly customerToken: string;
-  readonly accountToken: string;
+  readonly customerSubjectRef: string;
+  readonly accountSubjectRef: string;
   readonly merchantId: string;
   readonly amount: number;
   readonly geohash: string | null;
@@ -70,8 +70,8 @@ export interface HeldCursor {
 /** What a review needs to act on after it has decided: the tokens to reach the customer, and the amount to tell. */
 export interface Reviewed {
   readonly transactionId: string;
-  readonly customerToken: string;
-  readonly accountToken: string;
+  readonly customerSubjectRef: string;
+  readonly accountSubjectRef: string;
   readonly amount: number;
 }
 
@@ -151,8 +151,8 @@ interface Row {
 
 /**
  * The repository of the domain (ADR-0006). It knows no mode: the SQL that names the subject columns is handed in by
- * the adapter of the mode (`proposed/` stores tokens, `baseline/` stores the identity). The names `customerToken` and
- * `accountToken` stay in the domain; in baseline they hold `customer_id` and `account_number`.
+ * the adapter of the mode (`proposed/` stores tokens, `baseline/` stores the identity). The names `customerSubjectRef` and
+ * `accountSubjectRef` stay in the domain; in baseline they hold `customer_id` and `account_number`.
  */
 export class TransactionRepository {
   constructor(
@@ -170,8 +170,8 @@ export class TransactionRepository {
     const inserted = await this.pool.query(this.subject.insertPending, [
       row.transactionId,
       row.idempotencyKey,
-      row.customerToken,
-      row.accountToken,
+      row.customerSubjectRef,
+      row.accountSubjectRef,
       row.merchantId,
       row.amount,
       row.geohash,
@@ -213,12 +213,12 @@ export class TransactionRepository {
 
   async updateTokens(
     transactionId: string,
-    tokens: { readonly customerToken: string; readonly accountToken: string },
+    tokens: { readonly customerSubjectRef: string; readonly accountSubjectRef: string },
   ): Promise<void> {
     await this.pool.query(this.subject.updateTokens, [
       transactionId,
-      tokens.customerToken,
-      tokens.accountToken,
+      tokens.customerSubjectRef,
+      tokens.accountSubjectRef,
     ]);
   }
 
@@ -291,8 +291,8 @@ export class TransactionRepository {
       await client.query('COMMIT');
       return {
         transactionId,
-        customerToken: row.customer_ref,
-        accountToken: row.account_ref,
+        customerSubjectRef: row.customer_ref,
+        accountSubjectRef: row.account_ref,
         amount: Number(row.amount),
       };
     } catch (error) {
@@ -394,8 +394,8 @@ export class TransactionRepository {
 function toStored(row: Row): StoredTransaction {
   return {
     transactionId: row.transaction_id,
-    customerToken: row.customer_ref,
-    accountToken: row.account_ref,
+    customerSubjectRef: row.customer_ref,
+    accountSubjectRef: row.account_ref,
     merchantId: row.merchant_id,
     // NUMERIC(18,2) comes back as text; the amounts of this platform are whole rupiah (qa C-12).
     amount: Number(row.amount),

@@ -73,8 +73,8 @@ export class TransactionReview {
     // be issued again while Privacy still sees it as IN_PROGRESS (spec privacy 4.4, TX_TERMINAL).
     const subject: MutableSubject = {
       transactionId: decided.transactionId,
-      customerToken: decided.customerToken,
-      accountToken: decided.accountToken,
+      customerSubjectRef: decided.customerSubjectRef,
+      accountSubjectRef: decided.accountSubjectRef,
     };
     await this.followups.notify(subject, decided.amount, status);
     await this.followups.patchPrivacy(decided.transactionId, status);

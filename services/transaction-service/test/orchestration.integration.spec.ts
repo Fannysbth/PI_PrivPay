@@ -53,8 +53,8 @@ const request = (over: Partial<TransactionRequest> = {}): TransactionRequest => 
   return {
     transactionId: `TX-${String(2_000 + sequence)}`,
     idempotencyKey: KEY,
-    customerToken: 'PSEU-00000001',
-    accountToken: 'PSEU-00000002',
+    customerSubjectRef: 'PSEU-00000001',
+    accountSubjectRef: 'PSEU-00000002',
     merchantId: 'MRC-001',
     amount: 35000,
     geohash: 'qqgu4',
@@ -261,7 +261,7 @@ describe('M4-02 TF-04 a token that expired in the middle of the work', () => {
     const r = request({ amount: THRESHOLD });
     expect((await processor.process(r)).status).toBe('COMPLETED');
     expect(subjects.reissued).toHaveLength(1);
-    expect(subjects.fraudRows.map((x) => x.customerToken)).toEqual([
+    expect(subjects.fraudRows.map((x) => x.customerSubjectRef)).toEqual([
       'PSEU-00000001',
       'PSEU-0000AAA1',
     ]);
@@ -270,7 +270,7 @@ describe('M4-02 TF-04 a token that expired in the middle of the work', () => {
       account_pseudonym: 'PSEU-0000AAA2',
     });
     // The notification step then uses the new tokens without needing another re-issue.
-    expect(subjects.notificationRows.map((x) => x.customerToken)).toEqual(['PSEU-0000AAA1']);
+    expect(subjects.notificationRows.map((x) => x.customerSubjectRef)).toEqual(['PSEU-0000AAA1']);
     expect(subjects.reissued).toHaveLength(1);
   });
 

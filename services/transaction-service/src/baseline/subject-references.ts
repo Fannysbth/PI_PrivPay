@@ -7,16 +7,19 @@ import type { SubjectReferencePort, SubjectRow } from '../transaction/ports';
  */
 export class BaselineSubjectReferences implements SubjectReferencePort {
   forFraud(row: SubjectRow): Promise<string> {
-    return Promise.resolve(row.customerToken);
+    return Promise.resolve(row.customerSubjectRef);
   }
 
   forNotification(row: SubjectRow): Promise<string> {
-    return Promise.resolve(row.customerToken);
+    return Promise.resolve(row.customerSubjectRef);
   }
 
   reissue(
     row: SubjectRow,
-  ): Promise<{ readonly customerToken: string; readonly accountToken: string }> {
-    return Promise.resolve({ customerToken: row.customerToken, accountToken: row.accountToken });
+  ): Promise<{ readonly customerSubjectRef: string; readonly accountSubjectRef: string }> {
+    return Promise.resolve({
+      customerSubjectRef: row.customerSubjectRef,
+      accountSubjectRef: row.accountSubjectRef,
+    });
   }
 }

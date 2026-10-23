@@ -63,8 +63,10 @@ export class ReconciliationService {
     const completed = await this.deps.transactions.completedOn(date);
     const transactions: ReconTransaction[] = [];
     for (const transaction of completed) {
-      const accountToken = await this.deps.privacy.accountToken(transaction.transactionId);
-      if (accountToken === null) {
+      const accountSubjectRef = await this.deps.privacy.accountSubjectRef(
+        transaction.transactionId,
+      );
+      if (accountSubjectRef === null) {
         this.deps.logger.warn('account_token_missing', {
           transaction_id: transaction.transactionId,
         });
@@ -72,7 +74,7 @@ export class ReconciliationService {
       transactions.push({
         transactionId: transaction.transactionId,
         amount: transaction.amount,
-        accountToken,
+        accountSubjectRef,
       });
     }
 

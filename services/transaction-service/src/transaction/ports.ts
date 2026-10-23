@@ -3,8 +3,8 @@ import type { TransactionStatus } from './repository';
 /** What the neighbours need to know about a row to name the person: tokens only, never an identity. */
 export interface SubjectRow {
   readonly transactionId: string;
-  readonly customerToken: string;
-  readonly accountToken: string;
+  readonly customerSubjectRef: string;
+  readonly accountSubjectRef: string;
 }
 
 /** The exchange found the token past its life (PRD 7.2 EXPIRED); the one case that is worth a re-issue (TF-04). */
@@ -36,7 +36,7 @@ export interface SubjectReferencePort {
   forNotification(row: SubjectRow): Promise<string>;
   reissue(
     row: SubjectRow,
-  ): Promise<{ readonly customerToken: string; readonly accountToken: string }>;
+  ): Promise<{ readonly customerSubjectRef: string; readonly accountSubjectRef: string }>;
 }
 
 export type FraudVerdict = 'ALLOW' | 'HOLD_FOR_VERIFICATION' | 'BLOCK';
