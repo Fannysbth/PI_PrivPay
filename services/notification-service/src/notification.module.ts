@@ -13,14 +13,12 @@ import {
 } from '@nestjs/common';
 import {
   createHttpClient,
-  createPool,
+  createServicePool,
   createTokenCache,
   DomainError,
   idpJwksSource,
   JwksKeys,
   privacyBaseUrl,
-  SERVICE_DBS,
-  serviceDatabase,
   subjectRefShape,
   type HttpClient,
   type TokenCache,
@@ -105,14 +103,10 @@ export function notificationModules(
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
     const config = loadNotificationConfig(env);
-    const db = SERVICE_DBS.notification;
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, {
-        role: db.app,
-        database: serviceDatabase('notification', config.PG_DATABASE_SUFFIX),
-      });
+      app = createServicePool(config, 'notification');
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({

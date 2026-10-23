@@ -17,7 +17,7 @@ import {
 import {
   createHttpClient,
   createLogger,
-  createPool,
+  createServicePool,
   createTokenCache,
   DomainError,
   idpJwksSource,
@@ -26,8 +26,6 @@ import {
   readSecret,
   RealDelay,
   schedulerProviders,
-  SERVICE_DBS,
-  serviceDatabase,
   subjectRefShape,
   type Delay,
   type HttpClient,
@@ -148,14 +146,10 @@ export function transactionModules(
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
     const config = loadTransactionConfig(env);
-    const db = SERVICE_DBS.transaction;
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, {
-        role: db.app,
-        database: serviceDatabase('transaction', config.PG_DATABASE_SUFFIX),
-      });
+      app = createServicePool(config, 'transaction');
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({

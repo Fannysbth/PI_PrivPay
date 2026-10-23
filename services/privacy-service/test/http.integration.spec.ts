@@ -42,21 +42,7 @@ const claimsFor = (extra: Record<string, unknown>): Record<string, unknown> => {
 };
 const service = (client: string, aud = ['privacy-service'], key = pair.privateKey): string =>
   signJwt(claimsFor({ sub: client, azp: client, aud }), { privateKey: key, kid: KID });
-const person = (role: string): string =>
-  signJwt(
-    claimsFor({
-      sub: `usr-${role}`,
-      azp: 'admin-console',
-      aud: ['api-gateway', 'privacy-service', 'reconciliation-service'],
-      roles: [role],
-    }),
-    { privateKey: pair.privateKey, kid: KID },
-  );
-/**
- * One human who signs in twice, once per role: each token still carries exactly one role (ADR-0007 item 8), but both
- * name the same `sub`. It stands for a real IdP that lets one person hold two roles, which dev-idp must not.
- */
-const personAs = (role: string, sub: string): string =>
+const person = (role: string, sub = `usr-${role}`): string =>
   signJwt(
     claimsFor({
       sub,
@@ -672,8 +658,8 @@ describe('M3-04 POST /disclosure-requests and its approve and reject', () => {
   });
 
   it('M3-04 AZ-11 TK-24 the same person who asked as auditor and approves as admin is SELF_APPROVAL, not FORBIDDEN_ROLE: the role passes, the four-eyes rule refuses', async () => {
-    const asker = personAs('auditor', 'usr-both');
-    const approver = personAs('admin', 'usr-both');
+    const asker = person('auditor', 'usr-both');
+    const approver = person('admin', 'usr-both');
     await issueP1();
     const token = (
       (

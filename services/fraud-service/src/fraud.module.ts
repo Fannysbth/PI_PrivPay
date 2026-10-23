@@ -12,11 +12,9 @@ import {
 } from '@nestjs/common';
 import {
   createHttpClient,
-  createPool,
+  createServicePool,
   idpJwksSource,
   JwksKeys,
-  SERVICE_DBS,
-  serviceDatabase,
   subjectRefShape,
   type HttpClient,
 } from '@privpay/common';
@@ -70,14 +68,10 @@ export function fraudModules(
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
     const config = loadFraudConfig(env);
-    const db = SERVICE_DBS.fraud;
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, {
-        role: db.app,
-        database: serviceDatabase('fraud', config.PG_DATABASE_SUFFIX),
-      });
+      app = createServicePool(config, 'fraud');
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({

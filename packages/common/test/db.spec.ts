@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { ConfigError, loadConfig } from '../src/config';
 import {
   createPool,
+  createServicePool,
   pgConfigSchema,
   readRolePassword,
   SERVICE_DBS,
@@ -173,5 +174,55 @@ describe('N-50 a service can be pointed at a disposable database of the same sha
       'devbl',
     );
     expect(pgConfigSchema.safeParse({ ...base, PG_DATABASE_SUFFIX: 'Dev_Bl' }).success).toBe(false);
+  });
+});
+
+describe('N-50 createServicePool is the one way a service reaches its database', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'privpay-service-pool-'));
+  for (const role of ['privpay_transaction_app', 'privpay_app', 'privpay_auditor']) {
+    writeFileSync(join(dir, `${role}_password`), 'fake-password-0123456789\n');
+  }
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const base = { PG_HOST: 'localhost', PG_PORT: 5432, PG_SECRETS_DIR: dir };
+
+  it('N-50 without a suffix: the runtime role on the real database of the service', async () => {
+    const pool = createServicePool(base, 'transaction');
+    try {
+      expect(pool.options).toMatchObject({
+        user: 'privpay_transaction_app',
+        database: 'privpay_transaction',
+      });
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('N-50 with a suffix: the same role on the database of that suffix, for every service, Privacy and its auditor included', async () => {
+    const config = { ...base, PG_DATABASE_SUFFIX: 'devbl' };
+    const app = createServicePool(config, 'transaction');
+    const privacy = createServicePool(config, 'privacy');
+    const auditor = createServicePool(config, 'privacy', 'auditor');
+    try {
+      expect(app.options).toMatchObject({
+        user: 'privpay_transaction_app',
+        database: 'privpay_transaction_test_devbl',
+      });
+      expect(privacy.options).toMatchObject({
+        user: 'privpay_app',
+        database: 'privpay_privacy_test_devbl',
+      });
+      expect(auditor.options).toMatchObject({
+        user: 'privpay_auditor',
+        database: 'privpay_privacy_test_devbl',
+      });
+    } finally {
+      await Promise.all([app.end(), privacy.end(), auditor.end()]);
+    }
+  });
+
+  it('N-50 a service without an audit role has none to open', () => {
+    expect(() => createServicePool(base, 'transaction', 'auditor')).toThrow(RangeError);
   });
 });

@@ -4,25 +4,34 @@
 // (or `pnpm dev:down`) stops them. Ports and environment come from ./services.cjs. It never reads a secret: it checks
 // that the files exist and hands their paths on. Baseline runs on its own disposable databases (N-50).
 const { spawn } = require('node:child_process');
-const { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeFileSync } = require('node:fs');
+const {
+  closeSync,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  writeFileSync,
+} = require('node:fs');
 const path = require('node:path');
 const {
   BASELINE_DB_SERVICES,
   BASELINE_DB_SUFFIX,
   CLIENT_SECRET_FILES,
+  DEFAULT_LOG_DIR,
   MODES,
   PRIVACY_KEY_FILES,
   buildPlan,
 } = require('./services.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
-const HEALTH_WAIT_SECONDS = 60;
+const HEALTH_WAIT_MS = 60_000;
+const HEALTH_POLL_MS = 500;
 
 function parseArgs(argv) {
   const options = {
     mode: 'proposed',
     secretsDir: process.env.DEV_SECRETS_DIR || 'secrets',
-    logDir: path.join('.dev-run', 'logs'),
+    logDir: DEFAULT_LOG_DIR,
   };
   for (let index = 0; index < argv.length; index += 2) {
     const flag = argv[index];
@@ -39,10 +48,9 @@ function parseArgs(argv) {
 
 /** Names of the files that must exist before anything starts; nothing is read. */
 function missingFiles(plan, secretsDir, mode) {
-  const wanted = [
-    ...CLIENT_SECRET_FILES,
-    ...(mode === 'proposed' ? PRIVACY_KEY_FILES : []),
-  ].map((name) => path.join(secretsDir, name));
+  const wanted = [...CLIENT_SECRET_FILES, ...(mode === 'proposed' ? PRIVACY_KEY_FILES : [])].map(
+    (name) => path.join(secretsDir, name),
+  );
   const entries = plan.map((proc) => path.join(ROOT, proc.entry));
   return [...wanted, ...entries].filter((file) => !existsSync(file));
 }
@@ -52,17 +60,11 @@ async function prepareBaselineDatabases(out) {
   const common = require(path.join(ROOT, 'packages/common/dist/index.js'));
   const testing = require(path.join(ROOT, 'packages/common/dist/testing/index.js'));
   const pg = common.loadConfig(common.pgConfigSchema, process.env);
-  const folders = {
-    transaction: 'transaction-service',
-    fraud: 'fraud-service',
-    notification: 'notification-service',
-    reconciliation: 'reconciliation-service',
-  };
   for (const service of BASELINE_DB_SERVICES) {
     const db = await testing.createTestDb(pg, { service, suffix: BASELINE_DB_SUFFIX });
     try {
       await common.migrate(db.owner, {
-        root: path.join(ROOT, 'services', folders[service], 'migrations'),
+        root: path.join(ROOT, 'services', `${service}-service`, 'migrations'),
         mode: 'baseline',
       });
       out(`${service}: ${db.database} ready`);
@@ -72,17 +74,18 @@ async function prepareBaselineDatabases(out) {
   }
 }
 
-async function waitHealthy(port) {
-  for (let attempt = 0; attempt < HEALTH_WAIT_SECONDS; attempt += 1) {
+/** The answer of /health, or undefined when the deadline passes or the process has already exited. */
+async function waitHealthy(started, deadline) {
+  while (Date.now() < deadline && !started.exited) {
     try {
-      const answer = await fetch(`http://127.0.0.1:${String(port)}/health`, {
+      const answer = await fetch(`http://127.0.0.1:${String(started.port)}/health`, {
         signal: AbortSignal.timeout(2000),
       });
       if (answer.ok) return await answer.json();
     } catch {
       // not up yet
     }
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await new Promise((resolve) => setTimeout(resolve, HEALTH_POLL_MS));
   }
   return undefined;
 }
@@ -117,20 +120,8 @@ async function main() {
   }
   if (options.mode === 'baseline') await prepareBaselineDatabases(out);
 
-  const children = [];
   let running = plan.length;
-  const stopAll = () => {
-    for (const child of children) child.kill();
-  };
-  process.on('SIGINT', () => {
-    stopAll();
-    process.exit(0);
-  });
-  process.on('SIGTERM', () => {
-    stopAll();
-    process.exit(0);
-  });
-  for (const proc of plan) {
+  const started = plan.map((proc) => {
     const log = openSync(path.join(logDir, `${proc.name}.log`), 'a');
     const child = spawn(process.execPath, [path.join(ROOT, proc.entry)], {
       cwd: ROOT,
@@ -139,25 +130,41 @@ async function main() {
       windowsHide: true,
     });
     closeSync(log);
+    const record = { name: proc.name, port: proc.port, child, exited: false };
     child.on('exit', (code) => {
+      record.exited = true;
       out(`${proc.name} exited (${String(code)})`);
       running -= 1;
       if (running === 0) process.exit(0);
     });
-    children.push(Object.assign(child, { planName: proc.name, planPort: proc.port }));
-  }
+    return record;
+  });
+  // Written before anything is awaited, so a crash from here on cannot leave processes nobody knows about.
   writeFileSync(
     pidFile,
-    `${JSON.stringify({ mode: options.mode, started: children.map((c) => ({ name: c.planName, port: c.planPort, pid: c.pid })) }, null, 2)}\n`,
+    `${JSON.stringify({ mode: options.mode, started: started.map((s) => ({ name: s.name, port: s.port, pid: s.child.pid })) }, null, 2)}\n`,
   );
+  const stopAll = () => {
+    for (const record of started) record.child.kill();
+  };
+  for (const signal of ['SIGINT', 'SIGTERM']) {
+    process.on(signal, () => {
+      stopAll();
+      process.exit(0);
+    });
+  }
+
+  // All of them are waited for at once under one deadline: the wait is the slowest process, not the sum.
+  const deadline = Date.now() + HEALTH_WAIT_MS;
+  const answers = await Promise.all(started.map((record) => waitHealthy(record, deadline)));
   let healthy = true;
-  for (const child of children) {
-    const answer = await waitHealthy(child.planPort);
+  started.forEach((record, index) => {
+    const answer = answers[index];
     healthy &&= answer !== undefined;
     out(
-      `${child.planName.padEnd(14)} port ${String(child.planPort)}  ${answer === undefined ? 'NO ANSWER' : `${String(answer.status)} mode=${String(answer.mode)}`}`,
+      `${record.name.padEnd(14)} port ${String(record.port)}  ${answer === undefined ? 'NO ANSWER' : `${String(answer.status)} mode=${String(answer.mode)}`}`,
     );
-  }
+  });
   if (!healthy) {
     stopAll();
     throw new Error(`a process did not answer /health; see ${logDir}`);

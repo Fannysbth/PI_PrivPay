@@ -84,6 +84,24 @@ export interface PoolOptions {
   readonly onError?: (error: Error) => void;
 }
 
+/**
+ * The pool of a service: its runtime role (or, for Privacy, its audit role) on its database, which is the one named by
+ * PG_DATABASE_SUFFIX when that is set (N-50). Every service module opens its pool through here, so none can forget the
+ * suffix. `pnpm db:migrate` is the exception on purpose: it fills the fixed development databases.
+ */
+export function createServicePool(
+  config: PgConfig,
+  service: ServiceName,
+  kind: 'app' | 'auditor' = 'app',
+): Pool {
+  const role = SERVICE_DBS[service][kind];
+  if (role === undefined) throw new RangeError('this service has no such role');
+  return createPool(config, {
+    role,
+    database: serviceDatabase(service, config.PG_DATABASE_SUFFIX),
+  });
+}
+
 /** Reads `<secretsDir>/<role>_password`, the file created for the role by scripts/db/bootstrap.ps1. */
 export function readRolePassword(secretsDir: string, role: string): string {
   assertPrivpayName(role);

@@ -18,6 +18,9 @@ const PORTS = Object.freeze({
 
 const MODES = Object.freeze(['proposed', 'baseline']);
 
+/** Where `dev:up` keeps its logs and `pids.json`, and where `dev:down` looks (git-ignored). */
+const DEFAULT_LOG_DIR = path.join('.dev-run', 'logs');
+
 /** Baseline runs on databases of its own, `privpay_<service>_test_<suffix>`, so it never meets the proposed schema. */
 const BASELINE_DB_SUFFIX = 'devbl';
 
@@ -177,6 +180,7 @@ module.exports = {
   MODES,
   BASELINE_DB_SUFFIX,
   BASELINE_DB_SERVICES,
+  DEFAULT_LOG_DIR,
   PRIVACY_KEY_FILES,
   CLIENT_SECRET_FILES,
   buildPlan,

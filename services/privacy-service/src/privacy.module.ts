@@ -18,11 +18,10 @@ import {
 import {
   createHttpClient,
   createLogger,
-  createPool,
+  createServicePool,
   idpJwksSource,
   JwksKeys,
   schedulerProviders,
-  SERVICE_DBS,
   type HttpClient,
   type Timers,
 } from '@privpay/common';
@@ -176,20 +175,16 @@ export function privacyModules(
   return ({ env, clock }) => {
     const config = loadPrivacyConfig(env);
     const keys = overrides.keys ?? loadKeys(env);
-    const db = SERVICE_DBS.privacy;
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, { role: db.app, database: db.database });
+      app = createServicePool(config, 'privacy');
       owned.push(app);
     }
     // Reading the audit log goes through its own role, never the app pool (spec privacy 3).
     let auditor = overrides.pools?.auditor;
     if (auditor === undefined) {
-      auditor = createPool(config, {
-        role: db.auditor ?? 'privpay_auditor',
-        database: db.database,
-      });
+      auditor = createServicePool(config, 'privacy', 'auditor');
       owned.push(auditor);
     }
     const http: HttpClient = createHttpClient({
