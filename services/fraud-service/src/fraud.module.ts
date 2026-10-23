@@ -16,6 +16,7 @@ import {
   idpJwksSource,
   JwksKeys,
   SERVICE_DBS,
+  subjectRefShape,
   type HttpClient,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
@@ -23,6 +24,7 @@ import type { Request } from 'express';
 import type { Pool } from 'pg';
 import { loadFraudConfig } from './config';
 import { FraudHttp } from './fraud-http';
+import { baselineAssessmentRepository } from './baseline';
 import { proposedAssessmentRepository } from './proposed';
 import { FraudAssessor, RiskEngine } from './risk';
 
@@ -89,8 +91,13 @@ export function fraudModules(
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
         source: idpJwksSource(http),
       }),
+      customerRef: subjectRefShape(config.PRIVACY_MODE).customer,
       assessor: new FraudAssessor({
-        repository: proposedAssessmentRepository(app),
+        // ADR-0006: the one place the mode picks the repository; the assessor below is the same code in both.
+        repository:
+          config.PRIVACY_MODE === 'baseline'
+            ? baselineAssessmentRepository(config.PRIVACY_MODE, app)
+            : proposedAssessmentRepository(app),
         engine: new RiskEngine(),
         config: {
           amountThreshold: config.FRAUD_AMOUNT_THRESHOLD,

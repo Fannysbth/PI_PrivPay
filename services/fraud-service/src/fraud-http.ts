@@ -15,22 +15,25 @@ const SERVICE = 'fraud-service';
 /** Spec fraud 3: only Transaction asks for an assessment (AZ-31). */
 const CALLER = 'TRANSACTION';
 
-const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 const GEOHASH = /^[0-9b-hjkmnp-z]{1,12}$/;
 
-// The service takes a token and numbers; a field of any other name, an identity among them, is refused (S-40).
-const assess = z.strictObject({
-  pseudonym: z.string().regex(PSEUDONYM),
-  amount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  tx_hour: z.number().int().min(0).max(23),
-  geohash: z.string().regex(GEOHASH),
-});
+// The service takes a reference to the customer and numbers; a field of any other name, an identity among them, is
+// refused (S-40). The reference is a token in proposed and the customer id in baseline (N-44), so the form is the mode's.
+const assessBody = (customer: RegExp) =>
+  z.strictObject({
+    pseudonym: z.string().regex(customer),
+    amount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    tx_hour: z.number().int().min(0).max(23),
+    geohash: z.string().regex(GEOHASH),
+  });
 
 export interface FraudHttpDeps {
   readonly clock: Clock;
   readonly issuer: string;
   readonly keys: JwksKeys;
   readonly assessor: Pick<FraudAssessor, 'assess'>;
+  /** The form of the reference to the customer in this mode (N-44). */
+  readonly customerRef: RegExp;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -41,7 +44,11 @@ const single = (value: string | string[] | undefined): string | undefined =>
  * `requesting_service` comes from the verified token only (invariant 7); no body can name it.
  */
 export class FraudHttp {
-  constructor(private readonly deps: FraudHttpDeps) {}
+  private readonly assessSchema: ReturnType<typeof assessBody>;
+
+  constructor(private readonly deps: FraudHttpDeps) {
+    this.assessSchema = assessBody(deps.customerRef);
+  }
 
   private async caller(headers: AuthHeaders): Promise<Authenticated> {
     // The keys are loaded for the key id a token claims before its signature is checked; an unknown id gains nothing.
@@ -61,7 +68,7 @@ export class FraudHttp {
   async assess(headers: AuthHeaders, body: unknown) {
     const who = await this.caller(headers);
     if (who.requestingService !== CALLER) throw new DomainError('POLICY_NOT_ALLOWED');
-    const parsed = assess.safeParse(body);
+    const parsed = this.assessSchema.safeParse(body);
     if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
     const input = parsed.data;
     const result = await this.deps.assessor.assess({

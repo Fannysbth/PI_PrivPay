@@ -2,6 +2,7 @@ import {
   httpConfigSchema,
   idpConfigShape,
   loadConfig,
+  modeConfigShape,
   pgConfigSchema,
   type EnvSource,
 } from '@privpay/common';
@@ -16,6 +17,7 @@ const hour = z.coerce.number().int().min(0).max(23);
  */
 export const fraudConfigSchema = z
   .object({
+    ...modeConfigShape,
     ...pgConfigSchema.shape,
     ...httpConfigSchema.shape,
     ...idpConfigShape,
