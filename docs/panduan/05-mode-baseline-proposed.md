@@ -50,20 +50,20 @@ Autentikasi dan otorisasi (JWT, pola dua token, peran), batas laju, validasi ske
 | Jumlah kolom identitas di basis data hilir | 0 (proposed) | `customer_id`, `account_number`, dst. |
 | Proses yang berjalan | 9 | 8 (tanpa Privacy) |
 
-## Satu hal yang berbeda dari rencana: harapan E(s) baseline
+## Kesetiaan baseline terhadap harapan E(s)
 
-Spek mengharapkan, untuk baseline, E(s) Transaction, Fraud, Reconciliation = **4/6** dan Notification = **5/6** ([`docs/spec/pengujian-dan-pengukuran.md`](../spec/pengujian-dan-pengukuran.md) bagian 6, mengutip Tabel IV metodologi), dan spek Gateway (`gateway-tokenizer.md` bagian 8) berkata baseline meneruskan `customer_id`, `account_number`, dan (bila ada) `nik`, `nama`, `email` **apa adanya**.
+Dua kelompok sumber tidak sepakat tentang apa yang diterima layanan hilir di baseline. Spek per layanan (`transaction.md`, `fraud.md`, `notification.md`, `reconciliation.md`, `data-dan-migrasi.md` bagian 9, PRD 11) hanya mengganti pengenal: `customer_id` dan `account_number`. Spek Gateway bagian 8 dan Tabel IV metodologi ([`docs/spec/pengujian-dan-pengukuran.md`](../spec/pengujian-dan-pengukuran.md) bagian 6) berkata baseline meneruskan atribut mentah, dengan E(s) Transaction, Fraud, Reconciliation = **4/6** dan Notification = **5/6**. Analisis lengkap dengan kutipan dan path ada di [`docs/security/kesenjangan-baseline.md`](../security/kesenjangan-baseline.md).
 
-Yang diimplementasikan berbeda. `Tokenizer` membangun payload dari **daftar izin** di kedua mode (`TransactionOutbound` hanya `transaction_id`, `idempotency_key`, `customer_token`, `account_token`, `merchant_id`, `amount`, `geohash`), skema Transaction menolak `nik` atau `nama` (`strictObject`), dan tabel baseline hanya punya `customer_id` dan `account_number`. Maka nilai yang akan teramati pada baseline, **turunan saya dari kode dan belum diukur oleh pemindai**:
+Satu selisih sudah dibereskan karena dua sumber sepakat (G1, N-48): di baseline Gateway meneruskan `nik` dan `nama` yang dikirim klien pada `POST /transaction`, dan Transaction baseline menerimanya tanpa menyimpannya. Nilai yang akan teramati pada baseline, **turunan dari kode dan belum diukur oleh E(s) resmi** (M6-02):
 
-| Layanan | Pengenal yang diterima di baseline (dari kode) | E(s) turunan | Harapan spek |
+| Layanan | Pengenal yang diterima di baseline (dari kode) | E(s) turunan | Harapan Tabel IV |
 | --- | --- | --- | --- |
-| Transaction | `customer_id`, rekening | 2/6 | 4/6 |
+| Transaction | `customer_id`, rekening, dan `nik`, `nama` bila klien mengirimnya | 2/6 tanpa NIK dan nama, 4/6 dengan | 4/6 |
 | Fraud | `customer_id` | 1/6 | 4/6 |
 | Reconciliation | rekening | 1/6 | 4/6 |
 | Notification | `customer_id`, HP | 2/6 | 5/6 |
 
-Ini temuan, bukan perbaikan: bila skripsi memakai harapan 4/6 dan 5/6, teramatinya akan berbeda; entah harapannya direvisi, atau baseline harus sengaja meneruskan NIK dan nama (yang mengubah skema, Gateway, dan tes). Keputusan ada pada pemilik skripsi; dicatat juga di [08](08-batasan-dan-pertanyaan-dosen.md).
+Fraud, Reconciliation, dan Notification menunggu keputusan pemilik skripsi: pilih **A** (baseline hanya mengganti pengenal, Tabel IV diubah menjadi 2/6, 1/6, 1/6, 2/6) atau **B** (passthrough penuh; butuh migrasi baseline bila layanan harus menyimpan salinan). Email tidak diteruskan (G2 terbuka). Mohon jangan mengutip 4/6 dan 5/6 sebagai hasil pengukuran.
 
 ## Apa yang diukur (rencana) dan apa yang sudah ada
 

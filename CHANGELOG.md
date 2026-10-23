@@ -14,6 +14,8 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 - 3c: `pnpm dev:keys`, `pnpm dev:up [--mode]`, `pnpm dev:down` (`scripts/dev`; port dan lingkungan di satu berkas `services.cjs`, README di sana). Baseline kini dapat dijalankan sebagai proses nyata lewat env opsional `PG_DATABASE_SUFFIX` (N-50). Tes: rencana divalidasi terhadap loader konfigurasi sembilan proses di kedua mode, aturan N-47, `dev:keys` tidak menimpa; mutasi terbunuh. Dijalankan sungguhan di proposed (9 proses) dan baseline (8 proses): register, bayar kecil, besar `HELD`, daftar ditahan; jawaban identik; log tanpa nilai kanari.
 
+- 3d: dokumen usang diperbarui (`PENJELASAN_MODE_BASELINE.md`, `review-M5.md`, panduan 01/05/07/08); istilah "lima gerbang ditambah STEP 0" disamakan; butir bagian E OPEN_QUESTIONS berawalan `W-` (dulu `S-01`..`S-07`, bentrok dengan checklist) beserta lima rujukannya; asersi baru: baseline tidak menyisakan temuan di log dan jawaban klien (satu skenario).
+
 ### M5 Sesi 2
 
 - N-45: env baru wajib `FRAUD_HISTORY_DAYS` (nilai kerja 30). Riwayat Fraud dibatasi di SQL (`assessed_at >= $2`) pada kedua mode, bukan lewat umur token; tes batas tepat 30 hari dan 30 hari + 1 detik di proposed dan baseline, mutasi (klausa dihapus) terbunuh. Ancaman validitas di OPEN_QUESTIONS N-45.

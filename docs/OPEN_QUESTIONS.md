@@ -47,15 +47,17 @@ Pasal 4 UU PDP, EDPB Guidelines 01/2025 par. 22, Flegel 2005, Petersen PET-CON 2
 
 ## E. Butir wajib untuk spec dan tiket Fase 3 (hasil Fase 2, belum teruji atau menunggu rincian)
 
+ID butir bagian ini berawalan `W-` (wajib). Sebelumnya `S-01` sampai `S-07`, yang bertabrakan dengan butir checklist keamanan `S-nn` di `docs/security/security-checklist.md`; semua rujukan ke butir bagian ini sudah diganti.
+
 | ID | Butir | Sumber | Status |
 | --- | --- | --- | --- |
-| S-01 | Perbandingan nilai rahasia dengan `timingSafeEqual`: tes dan tinjauan kode; belum diuji di prototipe | CLAUDE.md, T-10, ADR-0011 | KRITERIA PENERIMAAN tiket M1-02 (`platform-dan-ci.md` bagian 15) |
-| S-02 | `ON CONFLICT` paralel pada `POST /transaction` (dua permintaan identik bersamaan, penantian pemenang, batas `HTTP_TIMEOUT_MS`) sebagai tes integrasi M4 | ADR-0009, NFR-23 | KRITERIA PENERIMAAN tiket M4-01 (`transaction.md` bagian 8) |
-| S-03 | Batasi `aud` token aktor ke layanan tujuan | ADR-0007, T-15 | DITERIMA (K-03) |
-| S-04 | `X-Actor-Token` ditolak bila `Authorization` sudah token manusia (`ADMIN_CONSOLE`) | ADR-0007 | DISETUJUI, tulis di spec |
-| S-05 | `POST /identity` idempoten; perilaku `revoke_subject` untuk subjek tanpa token dan tanpa brankas | ADR-0005 | RINCIAN SPEC |
-| S-06 | TF-15 [strategi C] tidak cukup sebagai penjaga konkurensi; jalankan berulang di M2 | ADR-0010 | KRITERIA PENERIMAAN tiket M2-05 (TF-15 khusus, `privacy-service.md` bagian 12) |
-| S-07 | Penulisan audit lewat koneksi `privpay_app` tanpa `RETURNING`; pembacaan lewat `privpay_auditor` (dua pool); belum diuji | ADR-0010 | KRITERIA PENERIMAAN tiket M2-04 (`privacy-service.md` bagian 12) |
+| W-01 | Perbandingan nilai rahasia dengan `timingSafeEqual`: tes dan tinjauan kode; belum diuji di prototipe | CLAUDE.md, T-10, ADR-0011 | KRITERIA PENERIMAAN tiket M1-02 (`platform-dan-ci.md` bagian 15) |
+| W-02 | `ON CONFLICT` paralel pada `POST /transaction` (dua permintaan identik bersamaan, penantian pemenang, batas `HTTP_TIMEOUT_MS`) sebagai tes integrasi M4 | ADR-0009, NFR-23 | KRITERIA PENERIMAAN tiket M4-01 (`transaction.md` bagian 8) |
+| W-03 | Batasi `aud` token aktor ke layanan tujuan | ADR-0007, T-15 | DITERIMA (K-03) |
+| W-04 | `X-Actor-Token` ditolak bila `Authorization` sudah token manusia (`ADMIN_CONSOLE`) | ADR-0007 | DISETUJUI, tulis di spec |
+| W-05 | `POST /identity` idempoten; perilaku `revoke_subject` untuk subjek tanpa token dan tanpa brankas | ADR-0005 | RINCIAN SPEC |
+| W-06 | TF-15 [strategi C] tidak cukup sebagai penjaga konkurensi; jalankan berulang di M2 | ADR-0010 | KRITERIA PENERIMAAN tiket M2-05 (TF-15 khusus, `privacy-service.md` bagian 12) |
+| W-07 | Penulisan audit lewat koneksi `privpay_app` tanpa `RETURNING`; pembacaan lewat `privpay_auditor` (dua pool); belum diuji | ADR-0010 | KRITERIA PENERIMAAN tiket M2-04 (`privacy-service.md` bagian 12) |
 
 ## F. Keputusan spec (diterima Fanny dengan nilai bawaan, Gerbang 3)
 
@@ -65,7 +67,7 @@ Nilai bawaan dipakai spec sampai diputuskan. "Dampak" menunjukkan spec yang beru
 | --- | --- | --- | --- |
 | K-01 | reason `DISCLOSURE_NOT_PENDING` 409 untuk approve/reject di luar status PENDING | PV 4.10, PL 4 | DITERIMA (bawaan, Gerbang 3) |
 | K-02 | reason `TRANSACTION_NOT_FOUND` 404 untuk audit-request pada `transaction_id` tak dikenal | RC 3.3, TX 3.4 | DITERIMA (bawaan, Gerbang 3) |
-| K-03 | `aud` token aktor dibatasi ke layanan di jalur peran (auditor, fraud_analyst, admin) | PL 7.6 | DITERIMA (bawaan, Gerbang 3) (S-03) |
+| K-03 | `aud` token aktor dibatasi ke layanan di jalur peran (auditor, fraud_analyst, admin) | PL 7.6 | DITERIMA (bawaan, Gerbang 3) (W-03) |
 | K-04 | `CHECK` nilai pada `transactions.status` dan `fraud_decision` | DM 5 | DITERIMA (bawaan, Gerbang 3) |
 | K-05 | `UNIQUE (batch_id, bank_reference)` pada `settlement_items` | DM 8, RC 3.1 | DITERIMA (bawaan, Gerbang 3) |
 | K-06 | pola nomor rekening `^[0-9]{8,20}$` | PV 4, GW 3 | DITERIMA (bawaan, Gerbang 3) |

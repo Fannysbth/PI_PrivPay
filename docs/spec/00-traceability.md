@@ -33,7 +33,7 @@ Spesifikasi: `platform-dan-ci.md` (PL), `data-dan-migrasi.md` (DM), `privacy-ser
 | M3-02 | Pencabutan token dan subjek | PV |
 | M3-03 | `GET /audit-log*` | PV |
 | M3-04 | Alur permintaan pembukaan identitas | PV |
-| M3-05 | `/de-pseudonymize` (lima gerbang) | PV |
+| M3-05 | `/de-pseudonymize` (lima gerbang ditambah STEP 0) | PV |
 | M3-06 | Suite keamanan sisi Privacy (dua lapis) | PV, PP |
 | M4-01 | Transaction inti + idempotensi (termasuk `ON CONFLICT` paralel) | TX, DM |
 | M4-02 | Orkestrasi Transaction (Fraud, Notification, re-issue, status) | TX |

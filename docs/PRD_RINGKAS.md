@@ -80,7 +80,7 @@ FR-01 sampai FR-44, NFR-01 sampai NFR-25 (PRD 13, 14); tes TF-01..TF-17, TK-01..
 
 ## 11. Milestone (PRD 19)
 
-M0 repo, Compose, kerangka tujuh layanan, skema DB, `/health` hijau. M1 Keycloak, service account, peran, Kong (JWT 401, rate limit 429). M2 Privacy Service inti (`/pseudonymize`, enkripsi field, indeks unik parsial, re-issue, retensi) + plugin tokenizer. M3 Policy Engine, audit_log append-only, `/audit-log`, `/de-pseudonymize` lima gerbang, `/disclosure-requests` (TK-01..TK-10, TK-13..TK-15 + TK terkait disclosure). M4 Transaction, Fraud, Notification, Reconciliation (mode proposed), tiga skenario ujung ke ujung. **M5 gerbang**: mode baseline dengan logika bisnis identik, satu env pengalih. M6 Postman/Newman, pemindai PII. M7 k6 5 pengulangan per mode, tabel paparan. M8 analisis dan penulisan.
+M0 repo, Compose, kerangka tujuh layanan, skema DB, `/health` hijau. M1 Keycloak, service account, peran, Kong (JWT 401, rate limit 429). M2 Privacy Service inti (`/pseudonymize`, enkripsi field, indeks unik parsial, re-issue, retensi) + plugin tokenizer. M3 Policy Engine, audit_log append-only, `/audit-log`, `/de-pseudonymize` lima gerbang ditambah STEP 0, `/disclosure-requests` (TK-01..TK-10, TK-13..TK-15 + TK terkait disclosure). M4 Transaction, Fraud, Notification, Reconciliation (mode proposed), tiga skenario ujung ke ujung. **M5 gerbang**: mode baseline dengan logika bisnis identik, satu env pengalih. M6 Postman/Newman, pemindai PII. M7 k6 5 pengulangan per mode, tabel paparan. M8 analisis dan penulisan.
 
 ## 12. Di luar cakupan (PRD 2)
 

@@ -33,7 +33,7 @@ Disusun dari [`docs/PRD_RINGKAS.md`](../PRD_RINGKAS.md) bagian 13, [`docs/HANDOF
 15. **Kepemilikan `source_account` tidak diperiksa** terhadap token nasabah (di luar cakupan: tidak ada model saldo/ledger).
 16. **Rantai hash audit hanya dirancang** (`prev_hash`/`row_hash` kosong, Q-12): pemilik skema atau superuser dapat mengubah `audit_log` tanpa terdeteksi; hanya peran aplikasi yang dibatasi.
 17. **Rotasi kunci otomatis tidak ada**; hanya `key_version` dan prosedur tertulis.
-18. **Pemeriksaan `SELF_APPROVAL` hampir tak terjangkau lewat HTTP** karena pemohon harus `auditor`, penyetuju harus `admin`, dan satu pengguna dev-idp hanya punya satu peran. Pemeriksaan di kode dan `chk_four_eyes` adalah pertahanan berlapis.
+18. **Pemeriksaan `SELF_APPROVAL` tidak terjangkau lewat pengguna dev-idp** karena pemohon harus `auditor`, penyetuju harus `admin`, dan ADR-0007 butir 8 mewajibkan satu peran per manusia (N-49). Jalurnya dibuktikan lewat HTTP dengan dua token berperan tunggal yang memakai `sub` yang sama (peran lolos, aturan empat mata menolak, satu baris DENIED, permintaan tetap PENDING; `http.integration.spec.ts`), dan `chk_four_eyes` diuji langsung sebagai peran aplikasi (TK-24).
 19. **Windows tidak mengirim SIGTERM ke anak proses**; jalur mati-anggun hanya teruji di Linux/CI (catatan di `tests/smoke/built-service.smoke.spec.ts`). Workflow CI belum pernah dijalankan di GitHub (N-07).
 
 ### Keterbatasan lingkungan dan validitas
@@ -47,11 +47,11 @@ Disusun dari [`docs/PRD_RINGKAS.md`](../PRD_RINGKAS.md) bagian 13, [`docs/HANDOF
 
 ### Temuan baru dari penulisan panduan ini (belum dibahas di dokumen lain)
 
-26. **Harapan E(s) baseline di spek tidak akan teramati.** Spek menaruh 4/6 untuk Transaction, Fraud, Reconciliation dan 5/6 untuk Notification, dan menyatakan Gateway baseline meneruskan NIK, nama, dan email. Kode meneruskan hanya `customer_id` dan rekening (payload dari daftar izin; skema baseline tak punya kolom NIK/nama), jadi turunan dari kode: Transaction 2/6, Fraud 1/6, Reconciliation 1/6, Notification 2/6. Detail di [05](05-mode-baseline-proposed.md). Keputusan ada pada pemilik skripsi.
-27. **Tiga kunci Privacy tidak punya skrip pembuat lokal** (hanya CI dengan `openssl`); dan **layanan tidak membaca `.env`**, jadi `.env.example` hanya daftar rujukan. Tidak ada satu perintah yang menyalakan semua layanan ([01](01-menjalankan-sistem.md)).
+26. **Harapan E(s) baseline di spek belum seluruhnya teramati.** Spek per layanan hanya mengganti pengenal, sedangkan Gateway bagian 8 dan Tabel IV meminta atribut mentah (4/6 dan 5/6). Setelah G1, Transaction baseline menerima NIK dan nama bila klien mengirimnya; Fraud, Reconciliation, dan Notification tetap 1/6, 1/6, 2/6 menunggu keputusan A atau B. Detail di [05](05-mode-baseline-proposed.md) dan [`docs/security/kesenjangan-baseline.md`](../security/kesenjangan-baseline.md).
+27. ~~Tiga kunci Privacy tidak punya skrip pembuat lokal dan tidak ada satu perintah untuk menyalakan semuanya~~: sudah ada `pnpm dev:keys`, `pnpm dev:up`, `pnpm dev:down` ([01](01-menjalankan-sistem.md)). Layanan tetap tidak membaca `.env`.
 28. **Nama field kawat berisi identitas pada baseline** (`customer_token`, `pseudonym`, `notif_token`, `account_pseudonym`): bisa menyesatkan pembaca log atau skema.
-29. **Fraud punya izin meminta token ke `privacy-service`** di registri dev-idp tetapi tidak memakainya.
-30. **`docs/PENJELASAN_MODE_BASELINE.md` sebagian usang** (masih bilang belum dipasang), dan `docs/security/review-M5.md` menyebut yang dipindai di tes kesetaraan "basis data, SMS, jawaban" padahal log ikut dipindai.
+29. ~~Fraud punya izin meminta token ke `privacy-service`~~: izin itu dicabut (`fraud: []` di registri dev-idp), dan tesnya membuktikan Fraud ditolak untuk audience mana pun.
+30. ~~Dokumen usang~~ `docs/PENJELASAN_MODE_BASELINE.md` dan `docs/security/review-M5.md` sudah diperbarui; log baseline kini diasersi bersih untuk satu skenario (bukan bukti umum).
 
 ## Bagian 2. Dua puluh lima pertanyaan yang mungkin diajukan dosen
 
@@ -85,7 +85,7 @@ Empat lapis: (1) rancangan, ports-and-adapters dengan SQL per mode (ADR-0006, [0
 
 ### 8. Apa tepatnya E(s), dan apa batasnya?
 
-`E(s)` = jumlah pengenal langsung yang diterima layanan *s* dibagi 6 (nama, NIK, HP, email, rekening, `customer_id`), diukur dengan nilai kenari di payload, database, dan log. Ia mengukur paparan **struktural**, bukan risiko identifikasi ulang (korelasi atribut tidak ditangani). Nilai harapan proposed: Transaction, Fraud, Reconciliation 0; Notification 1/6. Peringatan penting: harapan baseline di spek (4/6 dan 5/6) tidak akan teramati karena baseline hanya meneruskan `customer_id` dan rekening (temuan 26). Rujukan: [`docs/spec/pengujian-dan-pengukuran.md`](../spec/pengujian-dan-pengukuran.md) bagian 6, [05](05-mode-baseline-proposed.md). **[sebagian]** pemindai teruji, **[BELUM TERUJI]** laporan E(s) (M6-02).
+`E(s)` = jumlah pengenal langsung yang diterima layanan *s* dibagi 6 (nama, NIK, HP, email, rekening, `customer_id`), diukur dengan nilai kenari di payload, database, dan log. Ia mengukur paparan **struktural**, bukan risiko identifikasi ulang (korelasi atribut tidak ditangani). Nilai harapan proposed: Transaction, Fraud, Reconciliation 0; Notification 1/6. Peringatan penting: harapan baseline di spek (4/6 dan 5/6) hanya teramati penuh di Transaction (setelah G1); Fraud, Reconciliation, dan Notification menunggu keputusan A atau B (temuan 26). Rujukan: [`docs/spec/pengujian-dan-pengukuran.md`](../spec/pengujian-dan-pengukuran.md) bagian 6, [05](05-mode-baseline-proposed.md). **[sebagian]** pemindai teruji, **[BELUM TERUJI]** laporan E(s) (M6-02).
 
 ### 9. Bagaimana kinerjanya, berapa overhead pseudonimisasi?
 
@@ -97,11 +97,11 @@ Gagal tertutup (invarian 8, D-09). Gateway: `pseudonymize` gagal menjadi `SERVIC
 
 ### 11. Bagaimana mencegah orang dalam membuka identitas sembarangan?
 
-Pembukaan hanya lewat alur bersyarat: auditor mengajukan dengan dasar dari Tabel 6 dan nomor kasus, admin lain menyetujui, persetujuan sekali pakai dan berlaku 600 detik, hanya atribut `customer_id`/`nik`/`nama` yang disetujui yang keluar, HP dan rekening tidak pernah, dan setiap langkah (termasuk penolakan) tercatat dengan nama atribut, tanpa nilai. Lima gerbang plus pemeriksaan peran. Batasnya: orang yang menguasai database **dan** berkas kunci, atau pemilik skema, berada di luar mekanisme ini. Rujukan: [03](03-alur-end-to-end.md) bagian D, [04](04-keamanan.md). **[teruji]** TK-21 sampai TK-28 di lapis layanan; end-to-end lewat Newman **[BELUM TERUJI]**.
+Pembukaan hanya lewat alur bersyarat: auditor mengajukan dengan dasar dari Tabel 6 dan nomor kasus, admin lain menyetujui, persetujuan sekali pakai dan berlaku 600 detik, hanya atribut `customer_id`/`nik`/`nama` yang disetujui yang keluar, HP dan rekening tidak pernah, dan setiap langkah (termasuk penolakan) tercatat dengan nama atribut, tanpa nilai. Lima gerbang ditambah STEP 0 (pemanggil dan peran). Batasnya: orang yang menguasai database **dan** berkas kunci, atau pemilik skema, berada di luar mekanisme ini. Rujukan: [03](03-alur-end-to-end.md) bagian D, [04](04-keamanan.md). **[teruji]** TK-21 sampai TK-28 di lapis layanan; end-to-end lewat Newman **[BELUM TERUJI]**.
 
 ### 12. Untuk apa `chk_four_eyes` bila peran sudah memisahkan auditor dan admin?
 
-Pertahanan berlapis. Saat ini satu pengguna dev-idp hanya punya satu peran, jadi pemohon (auditor) tak mungkin sekaligus penyetuju (admin) lewat HTTP; pemeriksaan kode `SELF_APPROVAL` dan `CHECK` database baru berperan bila kelak identitas yang sama dapat memegang dua peran (Keycloak) atau bila seseorang menulis langsung ke tabel. TK-24 menguji keduanya langsung. Rujukan: `disclosure-service.ts`, `migrations/proposed/0001_privacy_tables.sql`. **[teruji]** di lapis layanan dan SQL.
+Pertahanan berlapis. Satu pengguna dev-idp hanya punya satu peran (ADR-0007 butir 8), jadi pemohon (auditor) tak mungkin sekaligus penyetuju (admin) lewat pengguna seed; pemeriksaan kode `SELF_APPROVAL` dan `CHECK` database berperan bila identitas yang sama dapat memegang dua peran (Keycloak) atau bila seseorang menulis langsung ke tabel. Keduanya teruji: lewat HTTP dengan dua token berperan tunggal yang memakai `sub` yang sama, dan `chk_four_eyes` langsung sebagai peran aplikasi (TK-24). Rujukan: `disclosure-service.ts`, `migrations/proposed/0001_privacy_tables.sql`. **[teruji]** di lapis layanan dan SQL.
 
 ### 13. Bagaimana audit log dijamin tidak bisa diubah?
 
@@ -117,7 +117,7 @@ Di tingkat hak akses: peran aplikasi hanya `INSERT` (tanpa `UPDATE`, `DELETE`, b
 
 ### 16. Bagaimana kamu memastikan tidak ada data pribadi di log dan audit?
 
-Berlapis: logger hanya menerima field dari daftar dan memvalidasi bentuknya (`logger.ts`); tidak ada kolom untuk identitas di `audit_log` dan format `actor_id`, `pseudonym`, dll. divalidasi regex; ESLint melarang `console.*`; dan pemindai kenari mencari nilai persis di database, log, metrik, audit, dan jawaban setelah skenario penuh. Karena "nol temuan" tak berarti apa-apa bila pemindai buta, ada **kontrol positif** (data sengaja ditaruh dan harus ditemukan). Catatan jujur: pada **baseline** log kemungkinan bersih karena daftar izin yang sama, tetapi tes tidak menuntutnya. **[teruji]** proposed; **[belum diverifikasi]** log baseline.
+Berlapis: logger hanya menerima field dari daftar dan memvalidasi bentuknya (`logger.ts`); tidak ada kolom untuk identitas di `audit_log` dan format `actor_id`, `pseudonym`, dll. divalidasi regex; ESLint melarang `console.*`; dan pemindai kenari mencari nilai persis di database, log, metrik, audit, dan jawaban setelah skenario penuh. Karena "nol temuan" tak berarti apa-apa bila pemindai buta, ada **kontrol positif** (data sengaja ditaruh dan harus ditemukan). Pada **baseline** log juga diasersi bersih untuk satu skenario (suite kesetaraan memindai log semua proses); itu bukan bukti umum. **[teruji]** kedua mode untuk satu skenario.
 
 ### 17. Mengapa membuat Gateway sendiri alih-alih memakai Kong?
 
@@ -149,11 +149,11 @@ Tidak ada rotasi otomatis. Yang ada: setiap ciphertext membawa `key_version` seh
 
 ### 24. Apa ancaman terhadap validitas perbandingan baseline vs proposed?
 
-Yang sudah teridentifikasi: (1) N-45, riwayat Fraud berbeda saat token berganti; (2) N-46, Reconciliation baseline mengambil rekening dari Transaction, proposed dari Privacy; (3) registrasi baseline tidak menyimpan NIK dan nama; (4) fungsi yang hanya ada di proposed dihitung terpisah; (5) lingkungan (satu mesin, PostgreSQL 18, Gateway pengganti, dev-idp); (6) harapan E(s) baseline di spek tidak cocok dengan kode (temuan 26); (7) beban k6 bersifat closed-loop. Rujukan: [05](05-mode-baseline-proposed.md) bagian akhir, `docs/OPEN_QUESTIONS.md` N-45..N-47.
+Yang sudah teridentifikasi: (1) N-45, riwayat Fraud berbeda saat token berganti; (2) N-46, Reconciliation baseline mengambil rekening dari Transaction, proposed dari Privacy; (3) registrasi baseline tidak menyimpan NIK dan nama; (4) fungsi yang hanya ada di proposed dihitung terpisah; (5) lingkungan (satu mesin, PostgreSQL 18, Gateway pengganti, dev-idp); (6) harapan E(s) baseline di spek sebagian belum cocok dengan kode (temuan 26); (7) beban k6 bersifat closed-loop. Rujukan: [05](05-mode-baseline-proposed.md) bagian akhir, `docs/OPEN_QUESTIONS.md` N-45..N-47.
 
 ### 25. Apa bagian paling lemah dari sistem ini, dan apa yang akan kamu ubah?
 
-Jawaban jujur yang berpijak pada daftar di atas: (a) bukti end-to-end dan kinerja belum ada: Docker, gagal-tertutup dengan replika, Newman, k6, E(s), penautan, dan itu pekerjaan M6 dan M7; (b) audit bukan *tamper-evident* (rantai hash belum dikerjakan); (c) pencabutan tidak menghapus HP di Notification; (d) harapan E(s) baseline perlu diselaraskan dengan kode atau sebaliknya; (e) validasi penuh Keycloak/Kong belum ada. Yang tidak boleh diklaim: bahwa sistem anonim, aman terhadap orang dalam yang menguasai kunci dan database, atau sudah terukur kinerjanya.
+Jawaban jujur yang berpijak pada daftar di atas: (a) bukti end-to-end dan kinerja belum ada: Docker, gagal-tertutup dengan replika, Newman, k6, E(s), penautan, dan itu pekerjaan M6 dan M7; (b) audit bukan *tamper-evident* (rantai hash belum dikerjakan); (c) pencabutan tidak menghapus HP di Notification; (d) harapan E(s) baseline perlu diselaraskan dengan kode atau sebaliknya (keputusan A atau B); (e) validasi penuh Keycloak/Kong belum ada. Yang tidak boleh diklaim: bahwa sistem anonim, aman terhadap orang dalam yang menguasai kunci dan database, atau sudah terukur kinerjanya.
 
 ## Bagian 3. Ringkasan status bukti untuk cepat dibuka di sidang
 

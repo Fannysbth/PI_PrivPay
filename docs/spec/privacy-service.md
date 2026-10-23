@@ -15,7 +15,7 @@ Istilah mengikuti skill `codebase-design`. Lapisan HTTP (controller) tipis dan h
 | `PolicyEngine` | **[Δ spec, M2-03]** `evaluate({operation, requestingService, context: {serviceId, purpose, subjectType}, actorRole?})` mengembalikan konteks Tabel 1 atau melempar `POLICY_NOT_ALLOWED`/`FORBIDDEN_ROLE` (`operation` menggantikan `mode`/"cara terbit": `GENERATE_FROM_IDENTITY`, `GENERATE_FROM_TRANSACTION`, `DE_PSEUDONYMIZE`, `RE_ISSUE`); `authorizeCaller(operation, caller)` (RESOLVE_NOTIF_DOMAIN); `exchangeTarget(caller, {serviceId, purpose})` (Tabel 2 sebelum token dibaca) dan `exchangeAllowed(sumber, tujuan, caller)` (setelah kepemilikan terbukti); `contextOf(key)`, `attributesFor(key)` (Tabel 5), `isValidBasis(basis)` (Tabel 6); TTL per purpose disuntik lewat konstruktor | Tabel 1, 2, 3, 5, 6 sebagai konfigurasi bertipe dan beku; murni, tanpa I/O |
 | `Crypto` | `FieldCipher.encrypt/decrypt`, `BlindIndex.lookup`, `TokenMint.mint`, `loadKeys` | bagian 5 |
 | `TokenService` | `generate`, `generateFromTransaction`, `exchange`, `reIssue`, `resolveDomain` (`revokeToken` dan `revokeSubject` ada di `RevocationService`, M3-02) | `buat_token`, status efektif, kunci per-kombinasi, audit dalam transaksi yang sama |
-| `DisclosureService` | `request`, `approve`, `reject`, `open` (de-pseudonymize) | mesin status, lima gerbang, brankas |
+| `DisclosureService` | `request`, `approve`, `reject`, `open` (de-pseudonymize) | mesin status, lima gerbang ditambah STEP 0, brankas |
 | `IdentityVault` | `store`, `open(lookup, attrs)`, `purge(lookup)` | kolom terenkripsi per atribut |
 | `AuditWriter` / `AuditReader` | `record(entry, tx?)`; `query(filter)`, `timeline`, `summary` | dua pool koneksi (bagian 3) |
 | `RetentionJob` | `run(clock)` | bagian 7.11 |

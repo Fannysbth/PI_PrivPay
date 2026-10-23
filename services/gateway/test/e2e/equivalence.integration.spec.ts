@@ -341,4 +341,12 @@ describe('M5-02 FR-23 ADR-0006 the same scenario in proposed and in baseline', (
     );
     expect(trail.baseline.length).toBeGreaterThan(trail.proposed.length);
   });
+
+  it('M5 G7 FR-42 NFR-17 baseline keeps real data in its tables and on the wire, but no log and no answer to the client holds any', () => {
+    // The logger takes fields from a list in both modes, so the data of baseline is where the design puts it and not in
+    // the places that outlive a request. If this fails, a log line carries an identity in baseline.
+    const loose = trail.baseline.filter((place) => /@(log:|answers)/.test(place));
+    expect(loose).toEqual([]);
+    expect(trail.proposed.filter((place) => /@(log:|answers)/.test(place))).toEqual([]);
+  });
 });
