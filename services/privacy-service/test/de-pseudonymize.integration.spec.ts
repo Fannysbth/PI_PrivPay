@@ -166,10 +166,14 @@ async function reasonOf(work: Promise<unknown>): Promise<string> {
   }
   return 'no error';
 }
-/** The refusal is one DENIED row of this reason and the approval is still unused. */
-async function expectDenied(given: Approved, reason: string, work: Promise<unknown>) {
+/**
+ * The refusal is one DENIED row of this reason and the approval is still unused. `work` is a thunk: the count before
+ * must be read before the operation starts, else a fast refusal (FORBIDDEN_ROLE reads no row) can commit its row
+ * between the call and the read and the count is short by one (TK-08 / AZ-22).
+ */
+async function expectDenied(given: Approved, reason: string, work: () => Promise<unknown>) {
   const before = (await auditOf('DE_PSEUDONYMIZE')).length;
-  expect(await reasonOf(work)).toBe(reason);
+  expect(await reasonOf(work())).toBe(reason);
   const after = await auditOf('DE_PSEUDONYMIZE');
   expect(after).toHaveLength(before + 1);
   expect(after[after.length - 1]).toMatchObject({ status: 'DENIED', reason });
@@ -216,7 +220,7 @@ describe('M3-05 FR-09 TK-21 the answer and the audit row', () => {
   it('M3-05 FR-43 no audit row of the whole table carries any value of the identity', async () => {
     const given = await approved(['customer_id', 'nik', 'nama']);
     await open(given);
-    await expectDenied(given, 'DISCLOSURE_NOT_APPROVED', open(given));
+    await expectDenied(given, 'DISCLOSURE_NOT_APPROVED', () => open(given));
     const all = JSON.stringify(await rows('SELECT * FROM audit_log'));
     for (const value of VALUES) expect(all).not.toContain(value);
   });
@@ -235,22 +239,18 @@ describe('M3-05 FR-09 the five gates, in order, stopping at the first failure', 
         attributes: ['nama'],
       })
     ).disclosureId;
-    await expectDenied(
-      { pseudonym, disclosureId: pending },
-      'DISCLOSURE_NOT_APPROVED',
+    await expectDenied({ pseudonym, disclosureId: pending }, 'DISCLOSURE_NOT_APPROVED', () =>
       open({ pseudonym, disclosureId: pending }),
     );
     await disclosure.reject({ ...ADMIN, disclosureId: pending });
-    await expectDenied(
-      { pseudonym, disclosureId: pending },
-      'DISCLOSURE_NOT_APPROVED',
+    await expectDenied({ pseudonym, disclosureId: pending }, 'DISCLOSURE_NOT_APPROVED', () =>
       open({ pseudonym, disclosureId: pending }),
     );
   });
 
   it('M3-05 gate 1 an unknown token is TOKEN_NOT_FOUND', async () => {
     const given = await approved();
-    await expectDenied(given, 'TOKEN_NOT_FOUND', open(given, { pseudonym: 'PSEU-ABCDEF01' }));
+    await expectDenied(given, 'TOKEN_NOT_FOUND', () => open(given, { pseudonym: 'PSEU-ABCDEF01' }));
   });
 
   it('M3-05 gate 2 a token of another service is SERVICE_MISMATCH', async () => {
@@ -258,7 +258,7 @@ describe('M3-05 FR-09 the five gates, in order, stopping at the first failure', 
     const p1 = (
       await rows(`SELECT pseudonym FROM pseudonym_mapping WHERE service_id = 'TRANSACTION'`)
     )[0]?.['pseudonym'] as string;
-    await expectDenied(given, 'SERVICE_MISMATCH', open(given, { pseudonym: p1 }));
+    await expectDenied(given, 'SERVICE_MISMATCH', () => open(given, { pseudonym: p1 }));
   });
 
   it('M3-05 TK-02 gate 3 a DAILY_RECONCILIATION token asked as INTERNAL_AUDIT is PURPOSE_MISMATCH', async () => {
@@ -281,14 +281,12 @@ describe('M3-05 FR-09 the five gates, in order, stopping at the first failure', 
         subjectType: 'ACCOUNT',
       })
     ).pseudonym;
-    await expectDenied(given, 'PURPOSE_MISMATCH', open(given, { pseudonym: p6 }));
+    await expectDenied(given, 'PURPOSE_MISMATCH', () => open(given, { pseudonym: p6 }));
   });
 
   it('M3-05 gate 5 an unknown disclosure_id is DISCLOSURE_NOT_FOUND', async () => {
     const given = await approved();
-    await expectDenied(
-      given,
-      'DISCLOSURE_NOT_FOUND',
+    await expectDenied(given, 'DISCLOSURE_NOT_FOUND', () =>
       open(given, { disclosureId: '11111111-1111-4111-8111-111111111111' }),
     );
   });
@@ -296,17 +294,15 @@ describe('M3-05 FR-09 the five gates, in order, stopping at the first failure', 
   it('M3-05 AZ-22 a service other than RECONCILIATION is POLICY_NOT_ALLOWED', async () => {
     const given = await approved();
     for (const requestingService of ['API_GATEWAY', 'TRANSACTION', 'ADMIN_CONSOLE']) {
-      await expectDenied(given, 'POLICY_NOT_ALLOWED', open(given, { requestingService }));
+      await expectDenied(given, 'POLICY_NOT_ALLOWED', () => open(given, { requestingService }));
     }
     expect(await statusOf(given.disclosureId)).toBe('APPROVED');
   });
 
   it('M3-05 TK-08 AZ-22 an admin, or no person at all, is FORBIDDEN_ROLE and the approval is not spent', async () => {
     const given = await approved();
-    await expectDenied(given, 'FORBIDDEN_ROLE', open(given, { actorRole: 'admin' }));
-    await expectDenied(
-      given,
-      'FORBIDDEN_ROLE',
+    await expectDenied(given, 'FORBIDDEN_ROLE', () => open(given, { actorRole: 'admin' }));
+    await expectDenied(given, 'FORBIDDEN_ROLE', () =>
       open(given, { actorId: undefined, actorRole: undefined }),
     );
     expect(await statusOf(given.disclosureId)).toBe('APPROVED');
@@ -317,7 +313,7 @@ describe('M3-05 K-12 the token must be alive when it is used, not only when it w
   it('M3-05 a token revoked after the approval is REVOKED and the approval is not spent', async () => {
     const given = await approved();
     await revocation.revokeToken({ ...ADMIN, pseudonym: given.pseudonym });
-    await expectDenied(given, 'REVOKED', open(given));
+    await expectDenied(given, 'REVOKED', () => open(given));
     expect(await statusOf(given.disclosureId)).toBe('APPROVED');
   });
 
@@ -328,7 +324,7 @@ describe('M3-05 K-12 the token must be alive when it is used, not only when it w
       new Date(clock.now().getTime() + 60_000),
       given.disclosureId,
     ]);
-    await expectDenied(given, 'EXPIRED', open(given));
+    await expectDenied(given, 'EXPIRED', () => open(given));
   });
 
   it('M3-05 a token whose identity retention emptied is TOKEN_NOT_FOUND', async () => {
@@ -338,7 +334,7 @@ describe('M3-05 K-12 the token must be alive when it is used, not only when it w
         WHERE pseudonym = $2`,
       [clock.now(), given.pseudonym],
     );
-    await expectDenied(given, 'TOKEN_NOT_FOUND', open(given));
+    await expectDenied(given, 'TOKEN_NOT_FOUND', () => open(given));
   });
 
   it('M3-05 K-13 a token whose vault row is gone or emptied is TOKEN_NOT_FOUND', async () => {
@@ -348,14 +344,14 @@ describe('M3-05 K-12 the token must be alive when it is used, not only when it w
          rekening_enc = NULL, customer_lookup = NULL, purged_at = $1`,
       [clock.now()],
     );
-    await expectDenied(given, 'TOKEN_NOT_FOUND', open(given));
+    await expectDenied(given, 'TOKEN_NOT_FOUND', () => open(given));
     expect(await statusOf(given.disclosureId)).toBe('APPROVED');
   });
 
   it('M3-05 a subject revoked between the approval and the use is REVOKED and nothing is opened', async () => {
     const given = await approved();
     await revocation.revokeSubject({ ...ADMIN, subjectType: 'CUSTOMER', subjectId: CUSTOMER });
-    await expectDenied(given, 'REVOKED', open(given));
+    await expectDenied(given, 'REVOKED', () => open(given));
     expect(await statusOf(given.disclosureId)).toBe('APPROVED');
   });
 });
@@ -368,7 +364,7 @@ describe('M3-05 TK-26 an approval is good for 600 seconds and one use', () => {
 
     const late = await approved(['nama'], OTHER_CUSTOMER, 'TX-9002');
     clock.advance(APPROVAL_TTL + 0.001);
-    await expectDenied(late, 'DISCLOSURE_EXPIRED', open(late));
+    await expectDenied(late, 'DISCLOSURE_EXPIRED', () => open(late));
     expect(await statusOf(late.disclosureId)).toBe('APPROVED');
   });
 
@@ -381,7 +377,7 @@ describe('M3-05 TK-26 an approval is good for 600 seconds and one use', () => {
   it('M3-05 TK-26 a second use of the same disclosure_id is DISCLOSURE_NOT_APPROVED and opens nothing', async () => {
     const given = await approved();
     await open(given);
-    await expectDenied(given, 'DISCLOSURE_NOT_APPROVED', open(given));
+    await expectDenied(given, 'DISCLOSURE_NOT_APPROVED', () => open(given));
     expect(await statusOf(given.disclosureId)).toBe('USED');
     expect(await auditOf('DE_PSEUDONYMIZE')).toHaveLength(2);
   });
@@ -467,7 +463,9 @@ describe('M3-05 TK-26 an approval is good for 600 seconds and one use', () => {
 describe('M3-05 FR-09 an approval belongs to its requester and its token', () => {
   it('M3-05 another auditor with the disclosure_id is REQUESTER_MISMATCH and the approval is not spent', async () => {
     const given = await approved();
-    await expectDenied(given, 'REQUESTER_MISMATCH', open(given, { actorId: 'usr-auditor-two' }));
+    await expectDenied(given, 'REQUESTER_MISMATCH', () =>
+      open(given, { actorId: 'usr-auditor-two' }),
+    );
     expect(await statusOf(given.disclosureId)).toBe('APPROVED');
     expect((await open(given)).attributes).toEqual({ nama: IDENTITY.nama });
   });
@@ -475,14 +473,10 @@ describe('M3-05 FR-09 an approval belongs to its requester and its token', () =>
   it('M3-05 the disclosure_id of another token is DISCLOSURE_NOT_FOUND and neither request is spent', async () => {
     const first = await approved(['nama'], CUSTOMER, 'TX-9001');
     const second = await approved(['nama'], OTHER_CUSTOMER, 'TX-9002');
-    await expectDenied(
-      first,
-      'DISCLOSURE_NOT_FOUND',
+    await expectDenied(first, 'DISCLOSURE_NOT_FOUND', () =>
       open(first, { disclosureId: second.disclosureId }),
     );
-    await expectDenied(
-      second,
-      'DISCLOSURE_NOT_FOUND',
+    await expectDenied(second, 'DISCLOSURE_NOT_FOUND', () =>
       open(second, { disclosureId: first.disclosureId }),
     );
     expect(await statusOf(first.disclosureId)).toBe('APPROVED');
