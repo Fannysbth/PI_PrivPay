@@ -67,6 +67,7 @@ Tidak ada nomor rekening di `settlement_items` dan tidak ada hasil pembukaan di 
 | M4-07 | `disclosure`: hanya atribut yang disetujui diteruskan; tidak disimpan di `reconciliation-db`, log, atau metrik (pemindai kenari); penolakan diteruskan | FR-09, FR-43, TK-21, S-27, T-14 |
 | M4-06 | bank simulator: kasus valid, tidak valid, tak berpasangan | TF-13, TF-16 |
 | M5-01 | adapter baseline | FR-23 |
+| M5-02 | `PrivacyClient` baseline: rekening dari `byId` Transaction (N-46); `audit-request` dan `disclosure` dijawab 503 karena tidak ada Privacy (N-47); laporan bank memakai nomor rekening | FR-23 |
 
 ## 7. Di luar cakupan
 
