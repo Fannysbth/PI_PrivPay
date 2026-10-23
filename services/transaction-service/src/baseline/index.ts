@@ -4,7 +4,7 @@ import { TransactionRepository } from '../transaction/repository';
 import { BaselineSubjectReferences } from './subject-references';
 import { SUBJECT_SQL } from './subject-sql';
 
-export { BaselineSubjectReferences };
+export type { BaselineSubjectReferences };
 
 /** ADR-0006: the repository of the baseline mode, which stores the identity. Refused unless the mode is baseline. */
 export function baselineTransactionRepository(
