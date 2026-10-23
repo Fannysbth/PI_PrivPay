@@ -2,6 +2,9 @@ import { decodeCursor, encodeCursor } from './cursor';
 import { DAY_MS, DomainError } from '@privpay/common';
 import type { CompletedItem, TransactionDetail, TransactionRepository } from './repository';
 
+/** What Reconciliation reads of one transaction; in baseline also the account number (N-46). */
+export type TransactionDetailAnswer = TransactionDetail & { readonly account_number?: string };
+
 export interface CompletedPage {
   readonly items: readonly CompletedItem[];
   readonly next_cursor: string | null;
@@ -10,11 +13,14 @@ export interface CompletedPage {
 /**
  * What Reconciliation reads from Transaction (spec transaction 3.4, K-18): amounts and times, never a token and never
  * an identity. A transaction that is HELD or FAILED is not in it, so a day's total is only what was really completed.
+ * The exception is baseline (N-46): there is no Privacy to turn a transaction into an account, so the detail carries the
+ * account number Reconciliation needs to match the bank's report. `discloseAccount` is set by the bootstrap of that mode.
  */
 export class TransactionReads {
   constructor(
     private readonly deps: {
-      readonly repository: Pick<TransactionRepository, 'listCompleted' | 'findDetail'>;
+      readonly repository: Pick<TransactionRepository, 'listCompleted' | 'findDetail' | 'findById'>;
+      readonly discloseAccount: boolean;
     },
   ) {}
 
@@ -40,9 +46,12 @@ export class TransactionReads {
   }
 
   /** K-02: a transaction that is not there is `TRANSACTION_NOT_FOUND`, not an empty answer. */
-  async detail(transactionId: string): Promise<TransactionDetail> {
+  async detail(transactionId: string): Promise<TransactionDetailAnswer> {
     const found = await this.deps.repository.findDetail(transactionId);
     if (found === undefined) throw new DomainError('TRANSACTION_NOT_FOUND');
-    return found;
+    if (!this.deps.discloseAccount) return found;
+    const stored = await this.deps.repository.findById(transactionId);
+    if (stored === undefined) throw new DomainError('TRANSACTION_NOT_FOUND');
+    return { ...found, account_number: stored.accountSubjectRef };
   }
 }

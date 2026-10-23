@@ -28,19 +28,21 @@ const READER = 'RECONCILIATION';
 // its caller's validation. Tokens are the only link to a person and never an account number.
 const TRANSACTION_ID = /^TX-[0-9]{1,29}$/;
 const IDEMPOTENCY_KEY = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 const MERCHANT_ID = /^MRC-[0-9]{3,}$/;
 const GEOHASH = /^[0-9b-hjkmnp-z]{1,12}$/;
 
-const newTransaction = z.strictObject({
-  transaction_id: z.string().regex(TRANSACTION_ID),
-  idempotency_key: z.string().regex(IDEMPOTENCY_KEY),
-  customer_token: z.string().regex(PSEUDONYM),
-  account_token: z.string().regex(PSEUDONYM),
-  merchant_id: z.string().regex(MERCHANT_ID),
-  amount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  geohash: z.string().regex(GEOHASH),
-});
+// The two references are tokens in proposed and the customer id and the account number in baseline (N-44); the field
+// names are the wire contract of the Gateway and stay the same.
+const newTransaction = (refs: { customer: RegExp; account: RegExp }) =>
+  z.strictObject({
+    transaction_id: z.string().regex(TRANSACTION_ID),
+    idempotency_key: z.string().regex(IDEMPOTENCY_KEY),
+    customer_token: z.string().regex(refs.customer),
+    account_token: z.string().regex(refs.account),
+    merchant_id: z.string().regex(MERCHANT_ID),
+    amount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    geohash: z.string().regex(GEOHASH),
+  });
 
 // Spec transaction 3.2: both are optional, and anything else in the query is refused.
 const heldQuery = z.strictObject({
@@ -80,6 +82,8 @@ export interface TransactionHttpDeps {
   readonly processor: Pick<TransactionProcessor, 'process'>;
   readonly review: Pick<TransactionReview, 'listHeld' | 'review'>;
   readonly reads: Pick<TransactionReads, 'completedOn' | 'detail'>;
+  /** The forms of the references to the customer and the account in this mode (N-44). */
+  readonly subjectRefs: { readonly customer: RegExp; readonly account: RegExp };
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -90,7 +94,11 @@ const single = (value: string | string[] | undefined): string | undefined =>
  * `requesting_service` comes from the verified token only (invariant 7); no body can name it.
  */
 export class TransactionHttp {
-  constructor(private readonly deps: TransactionHttpDeps) {}
+  private readonly newTransactionSchema: ReturnType<typeof newTransaction>;
+
+  constructor(private readonly deps: TransactionHttpDeps) {
+    this.newTransactionSchema = newTransaction(deps.subjectRefs);
+  }
 
   private async caller(headers: AuthHeaders): Promise<Authenticated> {
     // The keys are loaded for the key id a token claims before its signature is checked; an unknown id gains nothing.
@@ -110,7 +118,7 @@ export class TransactionHttp {
   async create(headers: AuthHeaders, body: unknown): Promise<ProcessResult> {
     const who = await this.caller(headers);
     if (who.requestingService !== CALLER) throw new DomainError('POLICY_NOT_ALLOWED');
-    const parsed = newTransaction.safeParse(body);
+    const parsed = this.newTransactionSchema.safeParse(body);
     if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
     const input = parsed.data;
     return this.deps.processor.process({
