@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import type { PrivacyMode } from '../../packages/common/src/mode';
 import { SERVICE_IDS } from '../../packages/common/src/nest';
 
 // These run the BUILT output as real processes (N-04: `tsc` builds to dist, `node dist/main.js` runs the service).
@@ -122,11 +123,14 @@ afterAll(() => {
   rmSync(gatewaySecrets, { recursive: true, force: true });
   rmSync(privacySecrets, { recursive: true, force: true });
 });
-const extraEnv = (id: string): Record<string, string> =>
+// ADR-0006: the Privacy address belongs to proposed only; a baseline process refuses to start with it.
+const privacyUrl = (mode: PrivacyMode): Record<string, string> =>
+  mode === 'proposed' ? { PRIVACY_SERVICE_URL: 'http://127.0.0.1:9' } : {};
+const extraEnv = (id: string, mode: PrivacyMode): Record<string, string> =>
   id === 'gateway'
     ? {
         IDP_URL: 'http://127.0.0.1:9',
-        PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+        ...privacyUrl(mode),
         TRANSACTION_SERVICE_URL: 'http://127.0.0.1:9',
         RECONCILIATION_SERVICE_URL: 'http://127.0.0.1:9',
         NOTIFICATION_SERVICE_URL: 'http://127.0.0.1:9',
@@ -161,7 +165,7 @@ const extraEnv = (id: string): Record<string, string> =>
               PG_PORT: '9',
               PG_SECRETS_DIR: privacySecrets,
               IDP_URL: 'http://127.0.0.1:9',
-              PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+              ...privacyUrl(mode),
               SMS_SIMULATOR_URL: 'http://127.0.0.1:9',
               NOTIFICATION_CLIENT_SECRET_FILE: join(privacySecrets, 'notification_client_secret'),
             }
@@ -188,7 +192,7 @@ const extraEnv = (id: string): Record<string, string> =>
                   FRAUD_AMOUNT_THRESHOLD: '1000000',
                   TX_PENDING_TIMEOUT_SECONDS: '300',
                   TX_SWEEP_INTERVAL_SECONDS: '30',
-                  PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+                  ...privacyUrl(mode),
                   FRAUD_SERVICE_URL: 'http://127.0.0.1:9',
                   NOTIFICATION_SERVICE_URL: 'http://127.0.0.1:9',
                   TRANSACTION_CLIENT_SECRET_FILE: join(privacySecrets, 'transaction_client_secret'),
@@ -200,7 +204,7 @@ const extraEnv = (id: string): Record<string, string> =>
                     PG_SECRETS_DIR: privacySecrets,
                     IDP_URL: 'http://127.0.0.1:9',
                     RECON_DAILY_RUN_UTC: '00:10',
-                    PRIVACY_SERVICE_URL: 'http://127.0.0.1:9',
+                    ...privacyUrl(mode),
                     TRANSACTION_SERVICE_URL: 'http://127.0.0.1:9',
                     RECONCILIATION_CLIENT_SECRET_FILE: join(
                       privacySecrets,
@@ -215,32 +219,84 @@ const extraEnv = (id: string): Record<string, string> =>
                     }
                   : {};
 
+// The privacy service is the privacy layer: it runs in proposed only (M5-02). Every other service runs in both modes.
+const modesOf = (id: string): PrivacyMode[] =>
+  id === 'privacy-service' ? ['proposed'] : ['baseline', 'proposed'];
+
 describe.each(SERVICE_IDS)('N-04 the built %s runs as a process', (id) => {
   const entry = join('services', id, 'dist', 'main.js');
 
-  it('N-04 node dist/main.js serves /health on loopback and stops on SIGTERM with exit code 0', async () => {
-    const port = await freePort();
-    const running = start(entry, { PRIVACY_MODE: 'baseline', PORT: String(port), ...extraEnv(id) });
-    try {
-      const health = await waitForHealth(port, running);
-      expect(health).toMatchObject({ status: 'ok', service: id, mode: 'baseline' });
-    } finally {
-      if (process.platform === 'win32') {
-        // Windows delivers no SIGTERM to a child: kill() ends it at once. The graceful path is proven on Linux (CI).
-        running.child.kill();
-        await running.exited;
-      } else {
-        running.child.kill('SIGTERM');
-        expect(await running.exited).toBe(0);
+  it.each(modesOf(id))(
+    'N-04 M5-02 node dist/main.js in %s mode serves /health on loopback and stops on SIGTERM with exit code 0',
+    async (mode) => {
+      const port = await freePort();
+      const running = start(entry, {
+        PRIVACY_MODE: mode,
+        PORT: String(port),
+        ...extraEnv(id, mode),
+      });
+      try {
+        const health = await waitForHealth(port, running);
+        expect(health).toMatchObject({ status: 'ok', service: id, mode });
+      } finally {
+        if (process.platform === 'win32') {
+          // Windows delivers no SIGTERM to a child: kill() ends it at once. The graceful path is proven on Linux (CI).
+          running.child.kill();
+          await running.exited;
+        } else {
+          running.child.kill('SIGTERM');
+          expect(await running.exited).toBe(0);
+        }
       }
-    }
-  });
+    },
+  );
 
   it('N-04 node dist/main.js refuses to start without PRIVACY_MODE and names the variable only', async () => {
     const running = start(entry, { PORT: '0', SOME_FAKE_VALUE: 'fake-value-do-not-print' });
     expect(await running.exited).toBe(1);
     expect(running.output()).toContain('PRIVACY_MODE (missing)');
     expect(running.output()).not.toContain('fake-value-do-not-print');
+  });
+});
+
+// M5-02 ADR-0006: a half-switched configuration stops the process before it listens, and names only the variable.
+describe.each(['gateway', 'transaction-service', 'notification-service', 'reconciliation-service'])(
+  'M5-02 the built %s refuses an inconsistent mode',
+  (id) => {
+    const entry = join('services', id, 'dist', 'main.js');
+
+    it('M5-02 baseline with PRIVACY_SERVICE_URL exits 1 and names only the variable', async () => {
+      const running = start(entry, {
+        PRIVACY_MODE: 'baseline',
+        PORT: '0',
+        ...extraEnv(id, 'proposed'),
+      });
+      expect(await running.exited).toBe(1);
+      expect(running.output()).toContain('PRIVACY_SERVICE_URL (invalid)');
+      expect(running.output()).not.toContain('127.0.0.1:9');
+    });
+
+    it('M5-02 proposed without PRIVACY_SERVICE_URL exits 1 and names only the variable', async () => {
+      const running = start(entry, {
+        PRIVACY_MODE: 'proposed',
+        PORT: '0',
+        ...extraEnv(id, 'baseline'),
+      });
+      expect(await running.exited).toBe(1);
+      expect(running.output()).toContain('PRIVACY_SERVICE_URL (missing)');
+    });
+  },
+);
+
+describe('M5-02 the built privacy-service is the privacy layer', () => {
+  it('M5-02 PRIVACY_MODE=baseline exits 1 and names only the variable', async () => {
+    const running = start(join('services', 'privacy-service', 'dist', 'main.js'), {
+      PRIVACY_MODE: 'baseline',
+      PORT: '0',
+      ...extraEnv('privacy-service', 'proposed'),
+    });
+    expect(await running.exited).toBe(1);
+    expect(running.output()).toContain('PRIVACY_MODE (invalid)');
   });
 });
 
