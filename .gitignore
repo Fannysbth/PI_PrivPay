@@ -29,6 +29,9 @@ coverage/
 .pnpm-store/
 .turbo/
 
+# Logs and process ids of `pnpm dev:up`
+.dev-run/
+
 # Test and measurement artefacts (keep curated results in docs/ or results/ explicitly)
 newman-report*/
 k6-output/

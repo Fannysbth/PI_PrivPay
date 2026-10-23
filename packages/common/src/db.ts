@@ -43,13 +43,29 @@ export const SERVICE_DBS: Readonly<Record<ServiceName, ServiceDb>> = {
   },
 };
 
+/** The tail of a disposable database name: one per test file, or one per `dev:up` run (N-50). */
+export const DATABASE_SUFFIX = /^[a-z0-9]{1,20}$/;
+
 /** Host, port and version are configuration, never literals in code (ADR-0004). */
 export const pgConfigSchema = z.object({
   PG_HOST: z.string().min(1),
   PG_PORT: z.coerce.number().int().min(1).max(65535),
   PG_SECRETS_DIR: z.string().min(1).default('./secrets'),
+  /** N-50: unset in every real run. `dev:up` sets it so a mode can run on databases of its own. */
+  PG_DATABASE_SUFFIX: z.string().regex(DATABASE_SUFFIX).optional(),
 });
 export type PgConfig = z.output<typeof pgConfigSchema>;
+
+/**
+ * The database a service connects to: its own, or (with a suffix) the `privpay_<service>_test_<suffix>` that
+ * `createTestDb` makes. The roles are the service's either way, so no other database becomes reachable (invariant 4).
+ */
+export function serviceDatabase(service: ServiceName, suffix: string | undefined): string {
+  if (suffix === undefined) return SERVICE_DBS[service].database;
+  if (!DATABASE_SUFFIX.test(suffix))
+    throw new RangeError('suffix must be 1 to 20 lowercase letters or digits');
+  return `${SERVICE_DBS[service].database}_test_${suffix}`;
+}
 
 /** Only objects in the PrivPay namespace may be touched: other databases on the server are not ours. */
 const PRIVPAY_NAME = /^privpay_[a-z0-9_]{1,50}$/;

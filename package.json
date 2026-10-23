@@ -17,6 +17,9 @@
     "pii-scan": "jest --config jest.config.cjs tests/pii-scan && node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs services/privacy-service/test/pii-scan services/transaction-service/test/pii-scan services/fraud-service/test/pii-scan services/notification-service/test/flow services/reconciliation-service/test/flow services/transaction-service/test/baseline-repository services/fraud-service/test/baseline-repository services/notification-service/test/baseline-repository services/reconciliation-service/test/baseline-repository services/reconciliation-service/test/chain services/gateway/test/e2e",
     "test:integration": "node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs",
     "test:security": "node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs services/privacy-service/test/security",
+    "dev:keys": "node scripts/dev/keys.cjs",
+    "dev:up": "node --env-file-if-exists=.env.test scripts/dev/up.cjs",
+    "dev:down": "node scripts/dev/down.cjs",
     "db:migrate": "tsc -b tsconfig.build.json && node --env-file-if-exists=.env.test packages/common/dist/bin/db-migrate.js",
     "db:test-databases": "tsc -b tsconfig.build.json && node --env-file-if-exists=.env.test packages/common/dist/testing/bin/test-databases.js"
   },

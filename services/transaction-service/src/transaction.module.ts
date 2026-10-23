@@ -27,6 +27,7 @@ import {
   RealDelay,
   schedulerProviders,
   SERVICE_DBS,
+  serviceDatabase,
   subjectRefShape,
   type Delay,
   type HttpClient,
@@ -151,7 +152,10 @@ export function transactionModules(
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, { role: db.app, database: db.database });
+      app = createPool(config, {
+        role: db.app,
+        database: serviceDatabase('transaction', config.PG_DATABASE_SUFFIX),
+      });
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({

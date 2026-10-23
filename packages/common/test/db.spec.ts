@@ -2,7 +2,13 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError, loadConfig } from '../src/config';
-import { createPool, pgConfigSchema, readRolePassword, SERVICE_DBS } from '../src/db';
+import {
+  createPool,
+  pgConfigSchema,
+  readRolePassword,
+  SERVICE_DBS,
+  serviceDatabase,
+} from '../src/db';
 import { testDatabaseName } from '../src/testing';
 
 const CANARY = 'canary-db-password-5b1f9c3a7d2e4f60';
@@ -146,4 +152,26 @@ describe('M0-05 test databases have predictable, namespaced names', () => {
       expect(() => testDatabaseName('fraud', suffix)).toThrow(RangeError);
     },
   );
+});
+
+describe('N-50 a service can be pointed at a disposable database of the same shape (PG_DATABASE_SUFFIX)', () => {
+  it('N-50 names the real database without a suffix and the test-shaped one with it, as createTestDb does', () => {
+    expect(serviceDatabase('transaction', undefined)).toBe('privpay_transaction');
+    expect(serviceDatabase('transaction', 'devbl')).toBe(testDatabaseName('transaction', 'devbl'));
+  });
+
+  it('N-50 refuses a suffix that could name something else', () => {
+    for (const bad of ['', 'Dev', 'dev_bl', 'a'.repeat(21), "x'; drop", '../x']) {
+      expect(() => serviceDatabase('fraud', bad)).toThrow(RangeError);
+    }
+  });
+
+  it('N-50 the environment may carry the suffix, and only in that form', () => {
+    const base = { PG_HOST: 'localhost', PG_PORT: '5432' };
+    expect(pgConfigSchema.parse(base).PG_DATABASE_SUFFIX).toBeUndefined();
+    expect(pgConfigSchema.parse({ ...base, PG_DATABASE_SUFFIX: 'devbl' }).PG_DATABASE_SUFFIX).toBe(
+      'devbl',
+    );
+    expect(pgConfigSchema.safeParse({ ...base, PG_DATABASE_SUFFIX: 'Dev_Bl' }).success).toBe(false);
+  });
 });

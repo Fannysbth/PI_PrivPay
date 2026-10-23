@@ -30,6 +30,8 @@ pnpm build                        # tsc -b: paket dan layanan ke dist/ (N-04); j
 pnpm test                         # unit
 pnpm test:smoke                   # build, lalu tiap layanan hasil build dijalankan sebagai proses (health, SIGTERM di Linux)
 pnpm --filter @privpay/dev-idp run make-secrets   # sekali: rahasia klien dev-idp di secrets/ (tidak menimpa); lihat tools/dev-idp/README.md
+pnpm dev:keys                     # tiga kunci Privacy ke secrets/ (tidak menimpa, tidak membaca); lihat scripts/dev/README.md
+pnpm dev:up [--mode baseline]     # nyalakan semua proses lokal (proposed bawaan; baseline di database sendiri, N-50); Ctrl+C atau `pnpm dev:down` menghentikan
 pnpm test:integration             # butuh PostgreSQL lokal (`scripts/db/bootstrap.ps1` sekali); DB tes dibuat ulang bersih tiap run (ADR-0004)
 pnpm db:migrate [layanan]         # buat/perbarui tabel database PENGEMBANGAN layanan (privpay_privacy, dst.; nama tetap, tidak pernah database tes) sebagai pemilik skema; maju-saja, tidak pernah menghapus; tidak jalan otomatis. Jalankan tiap kali menggabung ke main setelah gerbang hijau, supaya isi database bisa diperiksa
 pnpm db:test-databases [list|drop]  # daftar database privpay_* (layanan vs sisa tes, sesi terbuka); drop hanya sisa tes dan menuntut ketikan "DROP <jumlah>"

@@ -23,6 +23,7 @@ import {
   privacyBaseUrl,
   schedulerProviders,
   SERVICE_DBS,
+  serviceDatabase,
   subjectRefShape,
   type HttpClient,
   type Timers,
@@ -130,7 +131,10 @@ export function reconciliationModules(
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, { role: db.app, database: db.database });
+      app = createPool(config, {
+        role: db.app,
+        database: serviceDatabase('reconciliation', config.PG_DATABASE_SUFFIX),
+      });
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({
