@@ -1,6 +1,6 @@
 export { match } from './reconciler';
 export type { BatchStatus, MatchResult, ReconItem, ReconTransaction } from './reconciler';
-export { batchIdOf, RECON_SQL, ReconciliationRepository } from './repository';
+export { batchIdOf, RECON_SQL, ReconciliationRepository, type SubjectSql } from './repository';
 export type { AuditReason, BatchOutcome, ReportItem } from './repository';
 export { ReconciliationService } from './service';
 export type { AuditResult, ReconciliationServiceDeps, RunResult } from './service';

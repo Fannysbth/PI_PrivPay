@@ -18,24 +18,36 @@ export interface NewAssessment {
 /** Every value is a bind parameter (CLAUDE.md). */
 export const ASSESSMENT_SQL = {
   // PRD 10: the whole history of the token, newest first. The 30 days come from the age of the token, not from here.
-  history: `SELECT amount, geohash FROM fraud_assessments WHERE pseudonym = $1 ORDER BY assessed_at DESC, id DESC`,
   rules: 'SELECT rule, parameter, weight, active FROM risk_rules ORDER BY rule',
-  insert: `INSERT INTO fraud_assessments
-       (pseudonym, amount, tx_hour, geohash, prior_count, avg_prior_amount, risk_score, decision, rules_fired, assessed_at)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::text[], $10)`,
 } as const;
+
+/**
+ * ADR-0006: the two statements that name the column of the subject, the only SQL that differs between the modes. The
+ * folder of each mode (`proposed/`, `baseline/`) supplies them; the repository below is one code for both.
+ */
+export interface SubjectSql {
+  // PRD 10: the whole history of the subject, newest first. The 30 days come from the age of the token, not from here.
+  readonly history: string;
+  readonly insert: string;
+}
 
 interface HistoryRow {
   amount: string;
   geohash: string | null;
 }
 
-/** The proposed adapter of the seam (spec fraud 2): the key is the pseudonym. The baseline one, by customer, is M5-01. */
+/**
+ * The repository of the seam (spec fraud 2, ADR-0006). It knows no mode: the key of the history is the pseudonym in
+ * proposed and the `customer_id` in baseline, and the SQL that names it is handed in by the adapter of the mode.
+ */
 export class AssessmentRepository {
-  constructor(private readonly pool: Pick<Pool, 'query'>) {}
+  constructor(
+    private readonly pool: Pick<Pool, 'query'>,
+    private readonly subject: SubjectSql,
+  ) {}
 
   async history(pseudonym: string): Promise<PriorAssessment[]> {
-    const found = await this.pool.query<HistoryRow>(ASSESSMENT_SQL.history, [pseudonym]);
+    const found = await this.pool.query<HistoryRow>(this.subject.history, [pseudonym]);
     // NUMERIC(18,2) comes back as text; the amounts of this platform are whole rupiah (qa C-12).
     return found.rows.map((row) => ({ amount: Number(row.amount), geohash: row.geohash }));
   }
@@ -46,7 +58,7 @@ export class AssessmentRepository {
   }
 
   async insert(row: NewAssessment): Promise<void> {
-    await this.pool.query(ASSESSMENT_SQL.insert, [
+    await this.pool.query(this.subject.insert, [
       row.pseudonym,
       row.amount,
       row.txHour,

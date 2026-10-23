@@ -11,23 +11,28 @@ export interface LogEntry {
   readonly sentAt: Date;
 }
 
-/** Every value is a bind parameter (CLAUDE.md). */
-export const CONTACT_SQL = {
-  // Registration is an upsert keyed by the domain token (spec notification 3.1, ADR-0005): a repeat changes the phone and
+/**
+ * ADR-0006: the three statements that name the columns of the subject, the only SQL that differs between the modes.
+ * The folder of each mode (`proposed/`, `baseline/`) supplies them; the repository below is one code for both.
+ */
+export interface SubjectSql {
+  // Registration is an upsert keyed by the subject (spec notification 3.1, ADR-0005): a repeat changes the phone and
   // keeps the moment of the first registration. `xmax = 0` is true only for a row that this statement inserted.
-  upsert: `INSERT INTO contact_registry (pseudonym, phone, channel, registered_at)
-     VALUES ($1, $2, $3, $4)
-     ON CONFLICT (pseudonym) DO UPDATE SET phone = EXCLUDED.phone, channel = EXCLUDED.channel
-     RETURNING (xmax = 0) AS created, registered_at`,
-  phone: 'SELECT phone FROM contact_registry WHERE pseudonym = $1',
+  readonly upsert: string;
+  readonly phone: string;
   // No column for the text of the message (spec notification 3.2): it holds an amount and could become a profile.
-  log: `INSERT INTO notification_log (sender_pseudonym, recipient_pseudonym, template, channel, sent_at, status)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-} as const;
+  readonly log: string;
+}
 
-/** The proposed adapter of the repository seam: the key is the domain token. The baseline one, by customer, is M5-01. */
+/**
+ * The repository of the seam (ADR-0006). It knows no mode: the contact is keyed by the domain token in proposed and by
+ * the `customer_id` in baseline, and the SQL that names the key is handed in by the adapter of the mode.
+ */
 export class ContactRepository {
-  constructor(private readonly pool: Pick<Pool, 'query'>) {}
+  constructor(
+    private readonly pool: Pick<Pool, 'query'>,
+    private readonly subject: SubjectSql,
+  ) {}
 
   async upsert(
     pseudonym: string,
@@ -36,7 +41,7 @@ export class ContactRepository {
     at: Date,
   ): Promise<{ created: boolean; registeredAt: Date }> {
     const result = await this.pool.query<{ created: boolean; registered_at: Date }>(
-      CONTACT_SQL.upsert,
+      this.subject.upsert,
       [pseudonym, phone, channel, at],
     );
     const row = result.rows[0];
@@ -45,12 +50,12 @@ export class ContactRepository {
   }
 
   async phoneOf(pseudonym: string): Promise<string | undefined> {
-    const result = await this.pool.query<{ phone: string }>(CONTACT_SQL.phone, [pseudonym]);
+    const result = await this.pool.query<{ phone: string }>(this.subject.phone, [pseudonym]);
     return result.rows[0]?.phone;
   }
 
   async log(entry: LogEntry): Promise<void> {
-    await this.pool.query(CONTACT_SQL.log, [
+    await this.pool.query(this.subject.log, [
       entry.sender,
       entry.recipient,
       entry.template,

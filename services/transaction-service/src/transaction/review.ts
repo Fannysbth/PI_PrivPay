@@ -7,7 +7,7 @@ import type { HeldItem, TransactionRepository } from './repository';
 export interface TransactionReviewDeps {
   readonly repository: Pick<
     TransactionRepository,
-    'listHeld' | 'decideHeld' | 'updateTokens' | 'markPrivacySynced'
+    'listHeld' | 'decideHeld' | 'updateTokens' | 'markPrivacySynced' | 'markPrivacyRejected'
   >;
   readonly clock: Clock;
   readonly subjects: SubjectReferencePort;

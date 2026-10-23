@@ -23,7 +23,8 @@ import type { Request } from 'express';
 import type { Pool } from 'pg';
 import { loadFraudConfig } from './config';
 import { FraudHttp } from './fraud-http';
-import { AssessmentRepository, FraudAssessor, RiskEngine } from './risk';
+import { proposedAssessmentRepository } from './proposed';
+import { FraudAssessor, RiskEngine } from './risk';
 
 const FRAUD_HTTP = Symbol('FRAUD_HTTP');
 const OWNED_POOLS = Symbol('OWNED_POOLS');
@@ -89,7 +90,7 @@ export function fraudModules(
         source: idpJwksSource(http),
       }),
       assessor: new FraudAssessor({
-        repository: new AssessmentRepository(app),
+        repository: proposedAssessmentRepository(app),
         engine: new RiskEngine(),
         config: {
           amountThreshold: config.FRAUD_AMOUNT_THRESHOLD,

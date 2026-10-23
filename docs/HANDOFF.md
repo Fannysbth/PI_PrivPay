@@ -1,4 +1,45 @@
-# HANDOFF (2026-10-23): M4 DITUTUP (M4-10 + penutup, dua putaran hijau), di-merge ke `main` lokal; berikutnya M5 (belum dimulai)
+# HANDOFF (2026-10-23): M5 sesi 1 SELESAI (N-40 + M5-01 untuk Transaction, Fraud, Notification, Reconciliation), di-merge ke `main` lokal; berikutnya M5 sesi 2 (M5-02, M5-03, penutup M5; belum dimulai)
+
+## Status M5 sesi 1
+
+Cabang `feat/m5-sesi-1` (tidak dihapus, tidak di-push): `07ded7e` N-40 (kolom `privacy_rejected_at`, migrasi proposed/0004, E-33), `2ad3e14` Transaction, `7cde929` Fraud, `611542f` Notification, `8b93a40` Reconciliation (M5-01 per layanan), `3f317e1` tes arsitektur + docs + pii-scan, `44163d3` simplify, `2218eb8` perbaikan code-review. Penjelasan pemula: `docs/PENJELASAN_MODE_BASELINE.md`.
+
+Desain: satu kelas repositori per layanan; SQL yang menyebut kolom subjek datang dari `src/proposed/subject-sql.ts` atau `src/baseline/subject-sql.ts`; pabrik `proposedXRepository` / `baselineXRepository` (baseline menolak bila `PRIVACY_MODE` bukan `baseline`). Transaction: `BaselineSubjectReferences` (menyerahkan `customer_id` apa adanya). Migrasi baseline per layanan di `migrations/baseline/`. Tes arsitektur `tests/repo/mode-folders.spec.ts`; pembanding skema `tests/baseline/schema-parity.ts`; `pnpm pii-scan` kini memuat kontrol positif: pada skema baseline pemindai HARUS menemukan data asli.
+
+| Langkah | Putaran 1 | Putaran 2 |
+| --- | --- | --- |
+| eslint + prettier, typecheck | hijau | hijau |
+| unit (2 worker) | 67 suite, 1309 tes | 67 suite, 1309 tes |
+| integrasi | 55/56 suite, 1093/1094 tes (1 GAGAL) | 56 suite, 1094 tes |
+| smoke | 20 tes | 20 tes |
+| audit --prod | bersih | bersih |
+| gitleaks riwayat penuh | bersih | bersih |
+| pii-scan | 35 + 109 tes | 35 + 109 tes |
+
+Riwayat jujur: putaran 1 gagal satu tes, `privacy-service/test/de-pseudonymize.integration.spec.ts` TK-08/AZ-22 `expectDenied` (panjang 2 diharapkan, 1 diterima). Privacy tidak diubah di sesi ini; suite itu sendirian lulus 24/24 dan putaran 2 hijau penuh. Penyebab belum diselidiki (tak stabil, bukan akibat perubahan sesi ini sejauh bukti ada); bila terulang, perlakukan sebagai bug yang berdiri sendiri. Putaran 2 pertama dihentikan sistem (memori kritis) sekali, lalu diulang dari awal dengan memori ±6 GB dan keep-awake; satu putaran penuh hijau menyusul. Mutasi M5-01 (7 butir) semuanya terbunuh.
+
+### Keputusan yang butuh persetujuan Fanny
+
+- N-42 rename kolom `notification_log` di baseline; N-43 satu kelas repositori + SQL per folder mode.
+- N-44 (bahan M5-02): regex `PSEU-` di HTTP tiap layanan; adaptor baseline `resolveDomain` Notification dan klien Privacy Reconciliation; modul belum membaca `PRIVACY_MODE`, jadi `baseline` masih menjalankan proposed sampai M5-02.
+- N-45: jendela riwayat Fraud (proposed 30 hari lewat umur token, baseline tak terbatas) = ancaman validitas; pilih `FRAUD_HISTORY_DAYS=30` atau terima sebagai keterbatasan.
+- Apakah `customerToken`/`accountToken` di domain diganti nama netral (`subjectRef`).
+
+### Temuan ditolak
+
+Modul belum membaca `PRIVACY_MODE` (itu M5-02); SQL kembar per mode (disengaja: larangan concat); `resyncBatch` dibutuhkan tes; N-40 terpisah dari M5-01 (sengaja, commit terpisah); `/simplify`: factory berpenjaga (perlu M5-02), reissue berurutan (kode lama), helper kecil.
+
+### Belum teruji
+
+Adapter baseline terpasang ke layanan yang berjalan, Gateway jalur baseline (M5-03), Newman (M6-01), Docker/fail-closed (M7).
+
+### Sisa tahapan
+
+M5-02, M5-03, penutup M5 (`/security-review`, retro, `/improve-codebase-architecture`).
+
+---
+
+## (sebelumnya) HANDOFF (2026-10-23): M4 DITUTUP (M4-10 + penutup, dua putaran hijau), di-merge ke `main` lokal; berikutnya M5 (belum dimulai)
 
 ## Status M4-10 dan penutup M4
 

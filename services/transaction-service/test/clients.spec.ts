@@ -3,9 +3,9 @@ import {
   HttpFraudClient,
   HttpNotificationClient,
   HttpPrivacyClient,
-  ProposedSubjectReferences,
 } from '../src/transaction/clients';
-import { TokenExpiredError } from '../src/transaction';
+import { PrivacyRejectedError, TokenExpiredError } from '../src/transaction';
+import { ProposedSubjectReferences } from '../src/proposed';
 
 // Seam: the HTTP adapters towards Privacy, Fraud and Notification, through the shared client with a stub for fetch.
 // NFR-12: only an idempotent call may be sent twice. The stub counts what actually reaches the neighbour.
@@ -167,4 +167,28 @@ describe('M4-02 FR-10 the proposed adapter of the port', () => {
       transaction_id: 'TX-2001',
     });
   });
+});
+
+describe('N-40 which answers of Privacy to a status PATCH are final', () => {
+  it.each([409])(
+    'N-40 a %i from Privacy is a rejection of this row, in one call',
+    async (status) => {
+      const { deps, count } = setup(() => Promise.resolve(json(status, { error: {} })));
+      await expect(
+        new HttpPrivacyClient(deps).patchStatus('TX-2001', 'COMPLETED'),
+      ).rejects.toBeInstanceOf(PrivacyRejectedError);
+      expect(count()).toBe(1);
+    },
+  );
+
+  // Not about the row: the same answer would come for every row, so the rows must not be marked as refused.
+  it.each([400, 401, 403, 404, 408, 422, 429, 500, 503])(
+    'N-40 a %i from Privacy is not final, the row is tried again later',
+    async (status) => {
+      const { deps } = setup(() => Promise.resolve(json(status, { error: {} })));
+      const failure = new HttpPrivacyClient(deps).patchStatus('TX-2001', 'COMPLETED');
+      await expect(failure).rejects.toMatchObject({ reason: 'SERVICE_UNAVAILABLE' });
+      await expect(failure).rejects.not.toBeInstanceOf(PrivacyRejectedError);
+    },
+  );
 });

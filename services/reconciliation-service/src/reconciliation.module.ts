@@ -32,11 +32,11 @@ import type { Pool } from 'pg';
 import { z } from 'zod';
 import { loadReconciliationConfig, readClientSecret } from './config';
 import {
-  ReconciliationRepository,
   ReconciliationService,
   type PrivacyClient,
   type TransactionClient,
 } from './reconciliation';
+import { proposedReconciliationRepository } from './proposed';
 import { HttpPrivacyClient, HttpTransactionClient } from './reconciliation/clients';
 import { previousDate } from './reconciliation/schedule';
 import { ReconciliationHttp } from './reconciliation-http';
@@ -178,7 +178,7 @@ export function reconciliationModules(
     });
 
     const service = new ReconciliationService({
-      repository: new ReconciliationRepository(app),
+      repository: proposedReconciliationRepository(app),
       transactions:
         overrides.transactions ??
         new HttpTransactionClient({ http, serviceToken: tokenFor('transaction-service') }),

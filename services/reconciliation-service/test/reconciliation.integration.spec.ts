@@ -1,11 +1,8 @@
+import { proposedReconciliationRepository } from '../src/proposed';
 import { join } from 'node:path';
 import { DomainError, FakeClock, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import {
-  ReconciliationRepository,
-  ReconciliationService,
-  type ReportItem,
-} from '../src/reconciliation';
+import { ReconciliationService, type ReportItem } from '../src/reconciliation';
 import { A1, A3, FakePrivacy, FakeTransactions, PRD16_COMPLETED, recordingLogger } from './fakes';
 
 // Seam: ReconciliationService (spec reconciliation 3.1, 3.2) on the real reconciliation database as the real runtime
@@ -30,7 +27,7 @@ beforeEach(async () => {
   privacy = new FakePrivacy();
   log = recordingLogger();
   service = new ReconciliationService({
-    repository: new ReconciliationRepository(db.app),
+    repository: proposedReconciliationRepository(db.app),
     transactions,
     privacy,
     clock,

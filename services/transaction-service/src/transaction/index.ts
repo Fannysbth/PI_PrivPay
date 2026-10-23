@@ -6,6 +6,7 @@ export {
 } from './processor';
 export {
   privacyStatusOf,
+  PrivacyRejectedError,
   TokenExpiredError,
   type FraudClient,
   type FraudVerdict,
@@ -20,6 +21,7 @@ export { assertTransition, canTransition } from './status-machine';
 export {
   TRANSACTION_SQL,
   TransactionRepository,
+  type SubjectSql,
   type FraudDecision,
   type NewTransaction,
   type Outcome,

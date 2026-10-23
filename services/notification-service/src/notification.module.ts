@@ -26,9 +26,9 @@ import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
+import { proposedContactRepository } from './proposed';
 import { loadNotificationConfig } from './config';
 import {
-  ContactRepository,
   HttpPrivacyClient,
   HttpSmsGateway,
   NotificationService,
@@ -156,7 +156,7 @@ export function notificationModules(
         source: idpJwksSource(http),
       }),
       notifications: new NotificationService({
-        contacts: new ContactRepository(app),
+        contacts: proposedContactRepository(app),
         privacy:
           overrides.privacy ??
           new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') }),

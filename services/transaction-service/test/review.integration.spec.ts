@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { DomainError, FakeClock, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import { TransactionRepository, TransactionReview } from '../src/transaction';
+import { proposedTransactionRepository } from '../src/proposed';
+import { TransactionReview } from '../src/transaction';
 import { FakeNotifications, FakePrivacy, FakeSubjects, recordingLogger } from './fakes';
 
 // Seam: TransactionReview (spec transaction 3.2, 3.3) on the real transaction database as the real runtime role, with
@@ -20,7 +21,7 @@ let review: TransactionReview;
 
 const buildReview = (): TransactionReview =>
   new TransactionReview({
-    repository: new TransactionRepository(db.app),
+    repository: proposedTransactionRepository(db.app),
     clock,
     subjects,
     notifications,

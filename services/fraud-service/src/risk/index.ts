@@ -14,4 +14,9 @@ export {
   type RiskResult,
   type RuleRow,
 } from './engine';
-export { ASSESSMENT_SQL, AssessmentRepository, type NewAssessment } from './repository';
+export {
+  ASSESSMENT_SQL,
+  AssessmentRepository,
+  type NewAssessment,
+  type SubjectSql,
+} from './repository';

@@ -1,5 +1,5 @@
 export { HttpPrivacyClient, HttpSmsGateway, type HttpAdapterDeps } from './adapters';
-export { CONTACT_SQL, ContactRepository, type LogEntry, type SendStatus } from './contacts';
+export { ContactRepository, type LogEntry, type SendStatus, type SubjectSql } from './contacts';
 export {
   NotificationService,
   TEMPLATES,

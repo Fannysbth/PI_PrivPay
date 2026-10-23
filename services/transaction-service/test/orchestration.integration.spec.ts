@@ -1,11 +1,8 @@
+import { proposedTransactionRepository } from '../src/proposed';
 import { join } from 'node:path';
 import { FakeClock, FakeDelay, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import {
-  TransactionProcessor,
-  TransactionRepository,
-  type TransactionRequest,
-} from '../src/transaction';
+import { TransactionProcessor, type TransactionRequest } from '../src/transaction';
 import { FakeFraud, FakeNotifications, FakePrivacy, FakeSubjects, recordingLogger } from './fakes';
 
 // Seam: TransactionProcessor.process with the decisions of Fraud, Notification and Privacy injected (spec transaction
@@ -34,7 +31,7 @@ beforeEach(async () => {
   privacy = new FakePrivacy();
   log = recordingLogger();
   processor = new TransactionProcessor({
-    repository: new TransactionRepository(db.app),
+    repository: proposedTransactionRepository(db.app),
     clock,
     delay: new FakeDelay(),
     fraudAmountThreshold: THRESHOLD,

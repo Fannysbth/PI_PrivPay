@@ -1,7 +1,8 @@
+import { proposedAssessmentRepository } from '../src/proposed';
 import { join } from 'node:path';
 import { FakeClock, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import { AssessmentRepository, FraudAssessor, RiskEngine, type RiskConfig } from '../src/risk';
+import { FraudAssessor, RiskEngine, type RiskConfig } from '../src/risk';
 
 // Seam: FraudAssessor.assess (POST /fraud/assess without HTTP, spec fraud 3 and 4) on the real fraud database, as the
 // real runtime role, with a FakeClock. The pseudonyms are invented. Needs PostgreSQL and scripts/db/bootstrap.ps1.
@@ -25,7 +26,7 @@ beforeEach(async () => {
   await migrate(db.owner, { root: migrations, mode: 'proposed' });
   clock = new FakeClock('2026-10-20T08:00:00.000Z');
   assessor = new FraudAssessor({
-    repository: new AssessmentRepository(db.app),
+    repository: proposedAssessmentRepository(db.app),
     engine: new RiskEngine(),
     config: RISK,
     clock,

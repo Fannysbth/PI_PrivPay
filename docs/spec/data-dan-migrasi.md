@@ -90,6 +90,8 @@ Kolom pseudonim diganti kolom identitas asli, selebihnya sama:
 | reconciliation-db | `settlement_items.account_pseudonym` | `settlement_items.account_number` |
 | notification-db | `contact_registry.pseudonym` | `contact_registry.customer_id` sebagai kunci |
 
+**[M5-01, N-42]** Kolom lain yang menyimpan subjek ikut berganti nama supaya skema tidak berbohong: `notification_log.sender_pseudonym` dan `recipient_pseudonym` menjadi `sender_customer_id` dan `recipient_customer_id` di baseline. Panjang kolom: `customer_id` 16, `account_number` 20 (format Gateway); `settlement_items` baseline memakai `CHECK account_number ~ '^[0-9]{8,20}$'` sebagai pengganti pemeriksaan token. Kolom `privacy_synced_at` dan `privacy_rejected_at` tetap ada di transaction-db baseline (kode domain satu untuk kedua mode; Privacy tidak dipanggil, klien status tanpa-aksi menandai baris sebagai terdengar). Tes paritas (`tests/baseline/schema-parity.ts`) membandingkan kolom, tipe, nullability, dan hak peran runtime kedua mode setelah kolom identitas dipetakan. Mode baseline: migrasi memakai folder `baseline/` saja (tanpa `common/`, karena migrasi lama ada di `proposed/`).
+
 Aturan: kolom tambahan khusus baseline tidak boleh dimuat pada migrasi `common`. Tes arsitektur (ADR-0006) menjaga agar kode domain tidak mengimpor apa pun dari `migrations/` atau dari folder repositori per mode. Jumlah kolom identitas per layanan menjadi bukti pendukung E(s) (inspeksi skema, `pengujian-dan-pengukuran.md`).
 
 ## 10. Data awal dan data uji

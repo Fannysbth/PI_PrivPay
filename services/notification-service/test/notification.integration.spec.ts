@@ -1,12 +1,8 @@
+import { proposedContactRepository } from '../src/proposed';
 import { join } from 'node:path';
 import { FakeClock, DomainError, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import {
-  ContactRepository,
-  NotificationService,
-  type PrivacyClient,
-  type SmsGateway,
-} from '../src/notification';
+import { NotificationService, type PrivacyClient, type SmsGateway } from '../src/notification';
 
 // Seam: NotificationService.register and .send (spec notification 3) on the real notification database, as the real
 // runtime role, with a FakeClock and fake Privacy and SMS adapters that count their calls. The phone numbers and the
@@ -51,7 +47,7 @@ beforeEach(async () => {
     },
   };
   service = new NotificationService({
-    contacts: new ContactRepository(db.app),
+    contacts: proposedContactRepository(db.app),
     privacy,
     sms,
     clock,
