@@ -101,7 +101,7 @@ export class Tokenizer {
     const context = { targetService: 'TRANSACTION', purpose: 'PAYMENT_PROCESSING', transactionId };
     // If one is refused or unavailable the whole request fails (gateway spec 4). The other token may already exist;
     // that is harmless, because a retry reuses it (privacy spec 7.2) and nothing is forwarded.
-    const [customerToken, accountToken] = await Promise.all([
+    const [customerSubjectRef, accountSubjectRef] = await Promise.all([
       privacy.pseudonymize({
         subjectType: 'CUSTOMER',
         subjectId: input.claims.customerId,
@@ -120,8 +120,8 @@ export class Tokenizer {
       outbound: {
         transaction_id: transactionId,
         idempotency_key: input.idempotencyKey,
-        customer_token: customerToken,
-        account_token: accountToken,
+        customer_token: customerSubjectRef,
+        account_token: accountSubjectRef,
         merchant_id,
         amount,
         geohash,

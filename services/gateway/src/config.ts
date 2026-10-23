@@ -2,6 +2,8 @@ import {
   httpConfigSchema,
   idpConfigShape,
   loadConfig,
+  modeConfigShape,
+  privacyUrlMatchesMode,
   readSecret,
   type EnvSource,
 } from '@privpay/common';
@@ -14,19 +16,23 @@ const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname })
  * What the gateway reads from the environment, on top of the shared bootstrap (platform spec 6, PRD 17). The client
  * secret is not here: it is a file named by API_GATEWAY_CLIENT_SECRET_FILE (CLAUDE.md, secrets).
  */
-export const gatewayConfigSchema = z.object({
-  ...httpConfigSchema.shape,
-  ...idpConfigShape,
-  PRIVACY_SERVICE_URL: serviceUrl,
-  TRANSACTION_SERVICE_URL: serviceUrl,
-  RECONCILIATION_SERVICE_URL: serviceUrl,
-  NOTIFICATION_SERVICE_URL: serviceUrl,
-  RATE_LIMIT_ENABLED: z
-    .enum(['true', 'false'])
-    .default('true')
-    .transform((value) => value === 'true'),
-  RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(100),
-});
+export const gatewayConfigSchema = z
+  .object({
+    ...modeConfigShape,
+    ...httpConfigSchema.shape,
+    ...idpConfigShape,
+    // ADR-0006: only proposed has a Privacy to call; baseline with an address, or proposed without one, does not start.
+    PRIVACY_SERVICE_URL: serviceUrl.optional(),
+    TRANSACTION_SERVICE_URL: serviceUrl,
+    RECONCILIATION_SERVICE_URL: serviceUrl,
+    NOTIFICATION_SERVICE_URL: serviceUrl,
+    RATE_LIMIT_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+    RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(100),
+  })
+  .superRefine(privacyUrlMatchesMode);
 export type GatewayConfig = z.output<typeof gatewayConfigSchema>;
 
 export function loadGatewayConfig(env: EnvSource): GatewayConfig & { clientSecret: string } {

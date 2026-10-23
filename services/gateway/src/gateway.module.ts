@@ -6,6 +6,8 @@ import {
   createTokenCache,
   idpJwksSource,
   JwksKeys,
+  privacyBaseUrl,
+  subjectRefShape,
   DomainError,
   type HttpClient,
   type TokenCache,
@@ -14,6 +16,7 @@ import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { loadGatewayConfig } from './config';
+import { baselinePrivacyPort } from './baseline';
 import { ErrorMasker } from './error-masker';
 import { Gateway } from './gateway';
 import { RateLimiter } from './rate-limiter';
@@ -104,7 +107,7 @@ export function gatewayModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        'privacy-service': config.PRIVACY_SERVICE_URL,
+        ...privacyBaseUrl(config.PRIVACY_SERVICE_URL),
         'transaction-service': config.TRANSACTION_SERVICE_URL,
         'reconciliation-service': config.RECONCILIATION_SERVICE_URL,
         'notification-service': config.NOTIFICATION_SERVICE_URL,
@@ -146,11 +149,11 @@ export function gatewayModules(
     const masker = new ErrorMasker();
     const ids = new TransactionIdGenerator(clock);
 
-    const privacy = new HttpPrivacyPort({
-      http,
-      masker,
-      serviceToken: serviceTokens['privacy-service'],
-    });
+    // ADR-0006: the one place the mode picks the port; the tokenizer and the registration below are the same code.
+    const privacy =
+      config.PRIVACY_MODE === 'baseline'
+        ? baselinePrivacyPort(config.PRIVACY_MODE)
+        : new HttpPrivacyPort({ http, masker, serviceToken: serviceTokens['privacy-service'] });
     const gateway = new Gateway({
       clock,
       issuer: config.IDP_ISSUER,
@@ -176,6 +179,7 @@ export function gatewayModules(
         http,
         privacy,
         masker,
+        domainRef: subjectRefShape(config.PRIVACY_MODE).customer,
         idpAdminToken: tokenFor(DEV_IDP),
         notificationToken: serviceTokens['notification-service'],
         logger: createLogger({ service: 'gateway', destination: overrides.logDestination }),

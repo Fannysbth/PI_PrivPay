@@ -65,8 +65,8 @@ const request = (over: Partial<TransactionRequest> = {}): TransactionRequest => 
   return {
     transactionId: `TX-${String(1_000 + sequence)}`,
     idempotencyKey: KEY,
-    customerToken: 'PSEU-00000001',
-    accountToken: 'PSEU-00000002',
+    customerSubjectRef: 'PSEU-00000001',
+    accountSubjectRef: 'PSEU-00000002',
     merchantId: 'MRC-001',
     amount: 35000,
     geohash: 'qqgu4',
@@ -118,8 +118,8 @@ describe('M4-01 FR-36 NFR-23 TF-08 idempotency in sequence', () => {
     ['amount', { amount: 36000 }],
     ['merchant_id', { merchantId: 'MRC-002' }],
     ['geohash', { geohash: 'qqt8h' }],
-    ['the source account', { accountToken: 'PSEU-000000AA' }],
-    ['the customer', { customerToken: 'PSEU-000000BB' }],
+    ['the source account', { accountSubjectRef: 'PSEU-000000AA' }],
+    ['the customer', { customerSubjectRef: 'PSEU-000000BB' }],
   ])(
     'M4-01 FR-36 TF-08 the same key with another %s is IDEMPOTENCY_CONFLICT and the stored row is untouched',
     async (_name, over) => {
@@ -133,7 +133,10 @@ describe('M4-01 FR-36 NFR-23 TF-08 idempotency in sequence', () => {
   it('M4-01 TF-08 a replay after the tokens were issued again (outside the window) is IDEMPOTENCY_CONFLICT and makes no second transaction', async () => {
     await processor.process(request());
     clock.advance(901);
-    const replay = request({ customerToken: 'PSEU-0000CCCC', accountToken: 'PSEU-0000DDDD' });
+    const replay = request({
+      customerSubjectRef: 'PSEU-0000CCCC',
+      accountSubjectRef: 'PSEU-0000DDDD',
+    });
     expect(await reasonOf(processor.process(replay))).toBe('IDEMPOTENCY_CONFLICT');
     expect(await rows()).toHaveLength(1);
   });

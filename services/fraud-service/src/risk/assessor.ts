@@ -1,4 +1,4 @@
-import type { Clock } from '@privpay/common';
+import { DAY_MS, type Clock } from '@privpay/common';
 import type { RiskConfig, RiskDecision, RiskEngine, RiskInput } from './engine';
 import type { AssessmentRepository } from './repository';
 
@@ -19,6 +19,8 @@ export interface FraudAssessorDeps {
   readonly repository: Pick<AssessmentRepository, 'history' | 'rules' | 'insert'>;
   readonly engine: Pick<RiskEngine, 'evaluate'>;
   readonly config: RiskConfig;
+  /** FRAUD_HISTORY_DAYS (N-45): how far back the history reaches, in both modes. */
+  readonly historyDays: number;
   readonly clock: Clock;
 }
 
@@ -27,8 +29,9 @@ export class FraudAssessor {
   constructor(private readonly deps: FraudAssessorDeps) {}
 
   async assess(request: AssessRequest): Promise<Assessment> {
+    const since = new Date(this.deps.clock.now().getTime() - this.deps.historyDays * DAY_MS);
     const [history, rules] = await Promise.all([
-      this.deps.repository.history(request.pseudonym),
+      this.deps.repository.history(request.pseudonym, since),
       this.deps.repository.rules(),
     ]);
     const result = this.deps.engine.evaluate(request, history, rules, this.deps.config);

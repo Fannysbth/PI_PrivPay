@@ -48,7 +48,7 @@ export class FakePrivacy implements PrivacyClient {
   openAnswer: DisclosedAttributes | Reason = {};
   readonly openCalls: { auditToken: string; disclosureId: string; actor: Actor }[] = [];
 
-  accountToken(transactionId: string): Promise<string | null> {
+  accountSubjectRef(transactionId: string): Promise<string | null> {
     this.asked.push(transactionId);
     if (this.fail) return Promise.reject(new DomainError('SERVICE_UNAVAILABLE'));
     return Promise.resolve(this.tokens.get(transactionId) ?? null);

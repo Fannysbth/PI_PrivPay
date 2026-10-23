@@ -115,7 +115,7 @@ describe('M4-06 D2 the adapter towards Privacy', () => {
     const t = setup(() =>
       json(200, { pseudonym: 'PSEU-B80D2C4F', expires_at: 'x', reused: false }),
     );
-    expect(await client(t).accountToken('TX-10001')).toBe('PSEU-B80D2C4F');
+    expect(await client(t).accountSubjectRef('TX-10001')).toBe('PSEU-B80D2C4F');
     expect(JSON.parse(t.seen[0]?.body ?? '{}')).toEqual({
       subject_type: 'ACCOUNT',
       transaction_id: 'TX-10001',
@@ -129,9 +129,9 @@ describe('M4-06 D2 the adapter towards Privacy', () => {
     const gone = setup(() =>
       json(404, { error: { code: 'ACCESS_DENIED', reason: 'TOKEN_NOT_FOUND' } }),
     );
-    expect(await client(gone).accountToken('TX-1')).toBeNull();
+    expect(await client(gone).accountSubjectRef('TX-1')).toBeNull();
     const revoked = setup(() => json(403, { error: { code: 'ACCESS_DENIED', reason: 'REVOKED' } }));
-    expect(await client(revoked).accountToken('TX-1')).toBeNull();
+    expect(await client(revoked).accountSubjectRef('TX-1')).toBeNull();
   });
 
   it.each([
@@ -143,7 +143,7 @@ describe('M4-06 D2 the adapter towards Privacy', () => {
   ])(
     'M4-06 K-22 %s is SERVICE_UNAVAILABLE, so the run stops instead of guessing',
     async (_label, answer) => {
-      await expect(client(setup(answer)).accountToken('TX-1')).rejects.toMatchObject({
+      await expect(client(setup(answer)).accountSubjectRef('TX-1')).rejects.toMatchObject({
         reason: 'SERVICE_UNAVAILABLE',
       });
     },
@@ -155,7 +155,7 @@ describe('M4-06 D2 the adapter towards Privacy', () => {
         ? json(503, {})
         : json(200, { pseudonym: 'PSEU-B80D2C4F', expires_at: 'x', reused: true }),
     );
-    expect(await client(t).accountToken('TX-1')).toBe('PSEU-B80D2C4F');
+    expect(await client(t).accountSubjectRef('TX-1')).toBe('PSEU-B80D2C4F');
     expect(t.count()).toBe(3);
   });
 });

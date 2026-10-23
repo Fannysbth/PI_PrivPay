@@ -2,7 +2,14 @@ import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { FakeClock, loadConfig, migrate, pgConfigSchema, type Timers } from '@privpay/common';
+import {
+  FakeClock,
+  loadConfig,
+  migrate,
+  pgConfigSchema,
+  type PrivacyMode,
+  type Timers,
+} from '@privpay/common';
 import { createServiceApp, type ServiceApp } from '@privpay/common/nest';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
 import request from 'supertest';
@@ -58,6 +65,8 @@ export interface Stack {
   fail(host: Host, path: string, times?: number): void;
   /** Every call that reached a host, in order, as `METHOD host path`. */
   readonly calls: string[];
+  /** Every call that was tried, also at a host that is down or not there (baseline has no Privacy), as `METHOD host path`. */
+  readonly attempted: string[];
   /** Runs before a call reaches its host; a test uses it to move the clock at an exact point of a flow. */
   hook: ((host: Host, method: string, path: string) => void) | undefined;
   /** A token of a seeded person or customer, as the dev IdP gives it (`dev_login`). */
@@ -70,7 +79,15 @@ export interface Stack {
   close(): Promise<void>;
 }
 
+/** The stack of baseline mode (M5-02): the same system without Privacy Service, its database and its address. */
+export type BaselineStack = Omit<Stack, 'dbs' | 'apps'> & {
+  readonly apps: Readonly<Record<Exclude<Host, 'privacy.test'> | 'gateway', ServiceApp>>;
+  readonly dbs: Omit<Stack['dbs'], 'privacy'>;
+};
+
 export interface StackOptions {
+  /** The mode of every service of the stack; proposed unless said otherwise. */
+  readonly mode?: PrivacyMode;
   /** TTL of a payment token and the grace after it, in seconds. Shorter than the 300 s of a JWT, a token can end mid-flow. */
   readonly paymentTtl?: string;
   readonly grace?: string;
@@ -85,7 +102,18 @@ export interface StackOptions {
   };
 }
 
-export async function startStack(suffix: string, options: StackOptions = {}): Promise<Stack> {
+export function startStack(
+  suffix: string,
+  options: StackOptions & { readonly mode: 'baseline' },
+): Promise<BaselineStack>;
+export function startStack(suffix: string, options?: StackOptions): Promise<Stack>;
+export async function startStack(
+  suffix: string,
+  options: StackOptions = {},
+): Promise<Stack | BaselineStack> {
+  const mode = options.mode ?? 'proposed';
+  // ADR-0006: the Privacy address belongs to proposed only; a baseline service refuses to start with it.
+  const privacyUrl = mode === 'proposed' ? { PRIVACY_SERVICE_URL: 'http://privacy.test' } : {};
   const clock = new FakeClock('2026-10-05T12:05:00.000Z');
   const logs = {} as Record<Host | 'gateway', string[]>;
   const sink = (name: Host | 'gateway') => {
@@ -95,6 +123,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
   const down = new Set<Host>();
   const failing = new Map<string, number>();
   const calls: string[] = [];
+  const attempted: string[] = [];
 
   const dir = mkdtempSync(join(tmpdir(), 'privpay-e2e-'));
   const secretsDir = join(dir, 'secrets');
@@ -115,26 +144,22 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
   const secret = (client: string): string => join(secretsDir, `${client}_client_secret`);
 
   const dbs = {
-    privacy: await createTestDb(pg, { service: 'privacy', suffix: `${suffix}p` }),
+    privacy:
+      mode === 'proposed'
+        ? await createTestDb(pg, { service: 'privacy', suffix: `${suffix}p` })
+        : undefined,
     transaction: await createTestDb(pg, { service: 'transaction', suffix: `${suffix}t` }),
     fraud: await createTestDb(pg, { service: 'fraud', suffix: `${suffix}f` }),
     notification: await createTestDb(pg, { service: 'notification', suffix: `${suffix}n` }),
     reconciliation: await createTestDb(pg, { service: 'reconciliation', suffix: `${suffix}r` }),
   };
-  await migrate(dbs.privacy.owner, { root: migrations('privacy-service'), mode: 'proposed' });
-  await migrate(dbs.transaction.owner, {
-    root: migrations('transaction-service'),
-    mode: 'proposed',
-  });
-  await migrate(dbs.fraud.owner, { root: migrations('fraud-service'), mode: 'proposed' });
-  await migrate(dbs.notification.owner, {
-    root: migrations('notification-service'),
-    mode: 'proposed',
-  });
-  await migrate(dbs.reconciliation.owner, {
-    root: migrations('reconciliation-service'),
-    mode: 'proposed',
-  });
+  if (dbs.privacy !== undefined) {
+    await migrate(dbs.privacy.owner, { root: migrations('privacy-service'), mode: 'proposed' });
+  }
+  await migrate(dbs.transaction.owner, { root: migrations('transaction-service'), mode });
+  await migrate(dbs.fraud.owner, { root: migrations('fraud-service'), mode });
+  await migrate(dbs.notification.owner, { root: migrations('notification-service'), mode });
+  await migrate(dbs.reconciliation.owner, { root: migrations('reconciliation-service'), mode });
 
   const running: Partial<Record<Host, ServiceApp>> = {};
   const stack = { hook: undefined } as { hook: Stack['hook'] };
@@ -147,6 +172,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
     const host = url.hostname as Host;
     const method = (init?.method ?? 'GET').toLowerCase() as 'get' | 'post' | 'patch' | 'delete';
     stack.hook?.(host, method, url.pathname);
+    attempted.push(`${method.toUpperCase()} ${host} ${url.pathname}`);
     const target = running[host];
     if (target === undefined || down.has(host)) {
       throw new TypeError('connection refused to ' + url.hostname);
@@ -173,7 +199,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
     });
   };
 
-  const base = { PRIVACY_MODE: 'proposed', PORT: '0' };
+  const base = { PRIVACY_MODE: mode, PORT: '0' };
   const pgEnv = {
     PG_HOST: pg.PG_HOST,
     PG_PORT: String(pg.PG_PORT),
@@ -192,41 +218,44 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
     { ...base, ...idpEnv, SMS_SIMULATOR_TEST_ENDPOINTS: 'true' },
     appOptions('sms.test'),
   );
-  running['privacy.test'] = await createServiceApp(
-    {
-      service: 'privacy-service',
-      modules: privacyModules({
-        fetch: network,
-        logDestination: sink('privacy.test'),
-        timers: options.timers?.privacy,
-        pools: {
-          app: dbs.privacy.app,
-          ...(dbs.privacy.auditor === undefined ? {} : { auditor: dbs.privacy.auditor }),
-        },
-      }),
-    },
-    {
-      ...base,
-      ...pgEnv,
-      ...idpEnv,
-      GRACE_PERIOD_SECONDS: options.grace ?? '30',
-      TTL_PAYMENT_PROCESSING: options.paymentTtl ?? '900',
-      TTL_FRAUD_DETECTION: '2592000',
-      TTL_NOTIFICATION: '900',
-      TTL_NOTIFICATION_REGISTRATION: '31536000',
-      TTL_DAILY_RECONCILIATION: '86400',
-      TTL_INTERNAL_AUDIT: '600',
-      DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
-      RETENTION_DAYS: '90',
-      RETENTION_JOB_RUN_UTC: '01:00',
-      ...(options.timers?.privacy === undefined ? {} : { SCHEDULER_ENABLED: 'true' }),
-      PSEUDONYM_KEY_VERSION: '1',
-      PSEUDONYM_HMAC_SECRET_FILE: join(dir, 'hmac'),
-      BLIND_INDEX_SECRET_FILE: join(dir, 'index'),
-      FIELD_ENCRYPTION_KEY_FILE: join(dir, 'field'),
-    },
-    appOptions('privacy.test'),
-  );
+  if (dbs.privacy !== undefined) {
+    const privacyDb = dbs.privacy;
+    running['privacy.test'] = await createServiceApp(
+      {
+        service: 'privacy-service',
+        modules: privacyModules({
+          fetch: network,
+          logDestination: sink('privacy.test'),
+          timers: options.timers?.privacy,
+          pools: {
+            app: privacyDb.app,
+            ...(privacyDb.auditor === undefined ? {} : { auditor: privacyDb.auditor }),
+          },
+        }),
+      },
+      {
+        ...base,
+        ...pgEnv,
+        ...idpEnv,
+        GRACE_PERIOD_SECONDS: options.grace ?? '30',
+        TTL_PAYMENT_PROCESSING: options.paymentTtl ?? '900',
+        TTL_FRAUD_DETECTION: '2592000',
+        TTL_NOTIFICATION: '900',
+        TTL_NOTIFICATION_REGISTRATION: '31536000',
+        TTL_DAILY_RECONCILIATION: '86400',
+        TTL_INTERNAL_AUDIT: '600',
+        DISCLOSURE_APPROVAL_TTL_SECONDS: '600',
+        RETENTION_DAYS: '90',
+        RETENTION_JOB_RUN_UTC: '01:00',
+        ...(options.timers?.privacy === undefined ? {} : { SCHEDULER_ENABLED: 'true' }),
+        PSEUDONYM_KEY_VERSION: '1',
+        PSEUDONYM_HMAC_SECRET_FILE: join(dir, 'hmac'),
+        BLIND_INDEX_SECRET_FILE: join(dir, 'index'),
+        FIELD_ENCRYPTION_KEY_FILE: join(dir, 'field'),
+      },
+      appOptions('privacy.test'),
+    );
+  }
   running['fraud.test'] = await createServiceApp(
     {
       service: 'fraud-service',
@@ -241,6 +270,8 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       FRAUD_ODD_HOUR_END: '6',
       FRAUD_HOLD_THRESHOLD: '50',
       FRAUD_BLOCK_THRESHOLD: '90',
+
+      FRAUD_HISTORY_DAYS: '30',
     },
     appOptions('fraud.test'),
   );
@@ -253,7 +284,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       ...base,
       ...pgEnv,
       ...idpEnv,
-      PRIVACY_SERVICE_URL: 'http://privacy.test',
+      ...privacyUrl,
       SMS_SIMULATOR_URL: 'http://sms.test',
       NOTIFICATION_CLIENT_SECRET_FILE: secret('notification'),
     },
@@ -277,7 +308,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       TX_PENDING_TIMEOUT_SECONDS: '300',
       TX_SWEEP_INTERVAL_SECONDS: '30',
       ...(options.timers?.transaction === undefined ? {} : { SCHEDULER_ENABLED: 'true' }),
-      PRIVACY_SERVICE_URL: 'http://privacy.test',
+      ...privacyUrl,
       FRAUD_SERVICE_URL: 'http://fraud.test',
       NOTIFICATION_SERVICE_URL: 'http://notification.test',
       TRANSACTION_CLIENT_SECRET_FILE: secret('transaction'),
@@ -300,7 +331,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       ...idpEnv,
       RECON_DAILY_RUN_UTC: '00:10',
       ...(options.timers?.reconciliation === undefined ? {} : { SCHEDULER_ENABLED: 'true' }),
-      PRIVACY_SERVICE_URL: 'http://privacy.test',
+      ...privacyUrl,
       TRANSACTION_SERVICE_URL: 'http://transaction.test',
       RECONCILIATION_CLIENT_SECRET_FILE: secret('reconciliation'),
     },
@@ -314,7 +345,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
     {
       ...base,
       ...idpEnv,
-      PRIVACY_SERVICE_URL: 'http://privacy.test',
+      ...privacyUrl,
       TRANSACTION_SERVICE_URL: 'http://transaction.test',
       RECONCILIATION_SERVICE_URL: 'http://reconciliation.test',
       NOTIFICATION_SERVICE_URL: 'http://notification.test',
@@ -325,14 +356,19 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
   );
 
   const apps = { ...running, gateway } as Record<Host | 'gateway', ServiceApp>;
+  // The privacy members are absent in baseline; the overloads above tell the caller which stack it holds.
   const result: Stack = {
     clock,
     gateway,
     apps,
-    dbs,
+    // Baseline has no `privacy` key at all, as its type says.
+    dbs: Object.fromEntries(
+      Object.entries(dbs).filter(([, db]) => db !== undefined),
+    ) as unknown as Stack['dbs'],
     logs,
     down,
     calls,
+    attempted,
     fail: (host, path, times = Number.MAX_SAFE_INTEGER) =>
       void failing.set(`${host} ${path}`, times),
     get hook() {
@@ -349,7 +385,7 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
     },
     reset: async () => {
       // The databases are emptied by their owners (the application roles may not truncate); the IdP keeps its users.
-      await dbs.privacy.owner.query(
+      await dbs.privacy?.owner.query(
         'TRUNCATE pseudonym_mapping, transaction_status, audit_log, identity_vault, disclosure_request CASCADE',
       );
       await dbs.transaction.owner.query('TRUNCATE transactions');
@@ -362,13 +398,14 @@ export async function startStack(suffix: string, options: StackOptions = {}): Pr
       down.clear();
       failing.clear();
       calls.length = 0;
+      attempted.length = 0;
       stack.hook = undefined;
       for (const name of Object.keys(logs) as (Host | 'gateway')[]) logs[name].length = 0;
     },
     close: async () => {
       for (const app of [gateway, ...Object.values(running)].reverse()) await app.close();
       rmSync(dir, { recursive: true, force: true });
-      for (const db of Object.values(dbs)) await db.close();
+      for (const db of Object.values(dbs)) await db?.close();
     },
   };
   return result;

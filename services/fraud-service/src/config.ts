@@ -2,6 +2,7 @@ import {
   httpConfigSchema,
   idpConfigShape,
   loadConfig,
+  modeConfigShape,
   pgConfigSchema,
   type EnvSource,
 } from '@privpay/common';
@@ -16,6 +17,7 @@ const hour = z.coerce.number().int().min(0).max(23);
  */
 export const fraudConfigSchema = z
   .object({
+    ...modeConfigShape,
     ...pgConfigSchema.shape,
     ...httpConfigSchema.shape,
     ...idpConfigShape,
@@ -25,6 +27,9 @@ export const fraudConfigSchema = z
     // K-20: the score from which a transaction is held, and from which it is blocked.
     FRAUD_HOLD_THRESHOLD: z.coerce.number().int().min(1),
     FRAUD_BLOCK_THRESHOLD: z.coerce.number().int().min(1),
+    // N-45 (PRD 10): how many days back the history reaches, the same in both modes.
+    // The upper bound keeps `now - days` a valid date; ten years is far beyond what the research uses.
+    FRAUD_HISTORY_DAYS: z.coerce.number().int().min(1).max(3650),
   })
   .refine((config) => config.FRAUD_HOLD_THRESHOLD < config.FRAUD_BLOCK_THRESHOLD, {
     path: ['FRAUD_HOLD_THRESHOLD'],

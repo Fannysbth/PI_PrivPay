@@ -5,9 +5,10 @@ import { join, relative, sep } from 'node:path';
 // a mode (`proposed/`, `baseline/`) or a migration, and it must not branch on the mode. Only the composition root
 // (`*.module.ts`, `main.ts`) and the folders of the modes themselves may know the modes. A source reader, no dependency.
 const ROOT = join(__dirname, '..', '..');
-const SERVICES = ['transaction', 'fraud', 'notification', 'reconciliation'].map(
-  (name) => `${name}-service`,
-);
+const SERVICES = [
+  ...['transaction', 'fraud', 'notification', 'reconciliation'].map((name) => `${name}-service`),
+  'gateway',
+];
 const MODE_FOLDERS = ['proposed', 'baseline'];
 
 const IMPORT_PATH = /(?:from\s+|import\s*\(\s*|require\s*\(\s*|import\s+)['"]([^'"]+)['"]/g;
@@ -91,6 +92,8 @@ describe.each(SERVICES)('M5-01 ADR-0006 FR-23 %s', (service) => {
 
   it('M5-01 ADR-0006 both modes have a folder, and each exports its adapter', () => {
     const names = files.map((file) => file.name);
-    for (const mode of MODE_FOLDERS) expect(names).toContain(`${mode}/index.ts`);
+    // The gateway has no `proposed/` folder: its proposed adapter (`HttpPrivacyPort`) is the original one and lives in `tokenizer/`.
+    const folders = service === 'gateway' ? ['baseline'] : MODE_FOLDERS;
+    for (const mode of folders) expect(names).toContain(`${mode}/index.ts`);
   });
 });

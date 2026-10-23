@@ -17,7 +17,6 @@ export interface NewAssessment {
 
 /** Every value is a bind parameter (CLAUDE.md). */
 export const ASSESSMENT_SQL = {
-  // PRD 10: the whole history of the token, newest first. The 30 days come from the age of the token, not from here.
   rules: 'SELECT rule, parameter, weight, active FROM risk_rules ORDER BY rule',
 } as const;
 
@@ -26,7 +25,8 @@ export const ASSESSMENT_SQL = {
  * folder of each mode (`proposed/`, `baseline/`) supplies them; the repository below is one code for both.
  */
 export interface SubjectSql {
-  // PRD 10: the whole history of the subject, newest first. The 30 days come from the age of the token, not from here.
+  // PRD 10 + N-45: the history of the subject from $2 on (FRAUD_HISTORY_DAYS), newest first. The window is stated here
+  // and not left to the age of the token, so both modes judge the same transactions.
   readonly history: string;
   readonly insert: string;
 }
@@ -46,8 +46,8 @@ export class AssessmentRepository {
     private readonly subject: SubjectSql,
   ) {}
 
-  async history(pseudonym: string): Promise<PriorAssessment[]> {
-    const found = await this.pool.query<HistoryRow>(this.subject.history, [pseudonym]);
+  async history(pseudonym: string, since: Date): Promise<PriorAssessment[]> {
+    const found = await this.pool.query<HistoryRow>(this.subject.history, [pseudonym, since]);
     // NUMERIC(18,2) comes back as text; the amounts of this platform are whole rupiah (qa C-12).
     return found.rows.map((row) => ({ amount: Number(row.amount), geohash: row.geohash }));
   }

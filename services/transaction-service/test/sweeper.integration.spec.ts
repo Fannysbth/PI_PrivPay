@@ -121,8 +121,8 @@ describe('M4-03 FR-39 TF-17 the PENDING sweeper', () => {
     const request: TransactionRequest = {
       transactionId: 'TX-6001',
       idempotencyKey: ['7c9e6679', '7425', '40de', '944b', 'e07fc1f90ae7'].join('-'),
-      customerToken: 'PSEU-00000001',
-      accountToken: 'PSEU-00000002',
+      customerSubjectRef: 'PSEU-00000001',
+      accountSubjectRef: 'PSEU-00000002',
       merchantId: 'MRC-001',
       amount: 2_000_000,
       geohash: 'qqgu4',

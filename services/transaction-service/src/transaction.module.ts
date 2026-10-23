@@ -22,12 +22,15 @@ import {
   DomainError,
   idpJwksSource,
   JwksKeys,
+  privacyBaseUrl,
   readSecret,
   RealDelay,
   schedulerProviders,
   SERVICE_DBS,
+  subjectRefShape,
   type Delay,
   type HttpClient,
+  type PrivacyMode,
   type Timers,
   type TokenCache,
 } from '@privpay/common';
@@ -37,6 +40,11 @@ import type { Pool } from 'pg';
 import { loadTransactionConfig } from './config';
 import { z } from 'zod';
 import { HttpFraudClient, HttpNotificationClient, HttpPrivacyClient } from './transaction/clients';
+import {
+  baselinePrivacyStatus,
+  baselineSubjectReferences,
+  baselineTransactionRepository,
+} from './baseline';
 import { ProposedSubjectReferences, proposedTransactionRepository } from './proposed';
 import {
   PendingSweeper,
@@ -149,7 +157,7 @@ export function transactionModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        'privacy-service': config.PRIVACY_SERVICE_URL,
+        ...privacyBaseUrl(config.PRIVACY_SERVICE_URL),
         'fraud-service': config.FRAUD_SERVICE_URL,
         'notification-service': config.NOTIFICATION_SERVICE_URL,
       },
@@ -161,8 +169,13 @@ export function transactionModules(
       service: 'transaction-service',
       destination: overrides.logDestination,
     });
-    const repository = proposedTransactionRepository(app);
-    const neighbours = overrides.neighbours ?? httpNeighbours(http, env, clock);
+    // ADR-0006: the one place the mode picks the repository and the neighbours; the domain code below is the same.
+    const mode = config.PRIVACY_MODE;
+    const repository =
+      mode === 'baseline'
+        ? baselineTransactionRepository(mode, app)
+        : proposedTransactionRepository(app);
+    const neighbours = overrides.neighbours ?? httpNeighbours(http, env, clock, mode);
     const transactions = new TransactionHttp({
       clock,
       issuer: config.IDP_ISSUER,
@@ -182,7 +195,8 @@ export function transactionModules(
         logger,
       }),
       review: new TransactionReview({ repository, clock, ...neighbours, logger }),
-      reads: new TransactionReads({ repository }),
+      reads: new TransactionReads({ repository, discloseAccount: mode === 'baseline' }),
+      subjectRefs: subjectRefShape(mode),
     });
     // M4-03, M4-10: the cleaner of PENDING rows and of the status Privacy has not heard, every TX_SWEEP_INTERVAL_SECONDS.
     const sweeper = new PendingSweeper({
@@ -224,6 +238,7 @@ function httpNeighbours(
   http: HttpClient,
   env: Readonly<Record<string, string | undefined>>,
   clock: Parameters<typeof createTokenCache>[0]['clock'],
+  mode: PrivacyMode,
 ) {
   const clientSecret = readSecret(env, 'TRANSACTION_CLIENT_SECRET');
   const tokenFor = (audience: string): TokenCache =>
@@ -252,14 +267,23 @@ function httpNeighbours(
         };
       },
     });
-  const privacy = new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') });
+  // Baseline has no Privacy: no client, no service token for it, and the identity goes on as it is (ADR-0006 no. 6).
+  const toward =
+    mode === 'baseline'
+      ? { subjects: baselineSubjectReferences(mode), privacy: baselinePrivacyStatus(mode) }
+      : proposedNeighbours(http, tokenFor('privacy-service'));
   return {
-    subjects: new ProposedSubjectReferences(privacy),
-    privacy,
+    ...toward,
     fraud: new HttpFraudClient({ http, serviceToken: tokenFor('fraud-service') }),
     notifications: new HttpNotificationClient({
       http,
       serviceToken: tokenFor('notification-service'),
     }),
   };
+}
+
+/** The proposed side: Privacy over HTTP, which also exchanges and issues the tokens again. */
+function proposedNeighbours(http: HttpClient, serviceToken: TokenCache) {
+  const privacy = new HttpPrivacyClient({ http, serviceToken });
+  return { subjects: new ProposedSubjectReferences(privacy), privacy };
 }

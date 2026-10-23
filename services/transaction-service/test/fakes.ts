@@ -47,10 +47,13 @@ export class FakeSubjects implements SubjectReferencePort {
     return Promise.resolve('PSEU-A0000001');
   }
 
-  reissue(row: SubjectRow): Promise<{ customerToken: string; accountToken: string }> {
+  reissue(row: SubjectRow): Promise<{ customerSubjectRef: string; accountSubjectRef: string }> {
     this.reissued.push(row);
     if (this.failReissue) return Promise.reject(new DomainError('TX_TERMINAL'));
-    return Promise.resolve({ customerToken: 'PSEU-0000AAA1', accountToken: 'PSEU-0000AAA2' });
+    return Promise.resolve({
+      customerSubjectRef: 'PSEU-0000AAA1',
+      accountSubjectRef: 'PSEU-0000AAA2',
+    });
   }
 }
 

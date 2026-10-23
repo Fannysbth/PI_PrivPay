@@ -1,6 +1,8 @@
 import { assertBaselineMode, type PrivacyMode } from '@privpay/common';
 import type { Pool } from 'pg';
+import type { PrivacyStatusClient } from '../transaction/ports';
 import { TransactionRepository } from '../transaction/repository';
+import { BaselinePrivacyStatus } from './privacy-status';
 import { BaselineSubjectReferences } from './subject-references';
 import { SUBJECT_SQL } from './subject-sql';
 
@@ -19,4 +21,10 @@ export function baselineTransactionRepository(
 export function baselineSubjectReferences(mode: PrivacyMode): BaselineSubjectReferences {
   assertBaselineMode(mode);
   return new BaselineSubjectReferences();
+}
+
+/** ADR-0006: the status port of the baseline mode, which has no Privacy to tell. Refused unless baseline. */
+export function baselinePrivacyStatus(mode: PrivacyMode): PrivacyStatusClient {
+  assertBaselineMode(mode);
+  return new BaselinePrivacyStatus();
 }

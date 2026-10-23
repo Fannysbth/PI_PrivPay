@@ -29,6 +29,7 @@ beforeEach(async () => {
     repository: proposedAssessmentRepository(db.app),
     engine: new RiskEngine(),
     config: RISK,
+    historyDays: 30,
     clock,
   });
 });
@@ -207,5 +208,27 @@ describe('M4-04 K-20 the rules are read from the table at run time', () => {
       geohash: 'qqgu7',
     });
     expect(result.rulesFired).toContain('AMOUNT_OVER_3X_AVG');
+  });
+});
+
+describe('N-45 FRAUD_HISTORY_DAYS the history is the last 30 days, in both modes', () => {
+  const DAY = 86_400;
+  const first = { pseudonym: FRAUD_TOKEN, amount: 100_000, txHour: 13, geohash: 'qqgu7' };
+
+  it('N-45 an assessment exactly 30 days old still counts (proposed)', async () => {
+    await assessor.assess(first);
+    clock.advance(30 * DAY);
+    expect((await assessor.assess(first)).priorCount).toBe(1);
+  });
+
+  it('N-45 an assessment 30 days and a second old no longer counts: a cold start again (proposed)', async () => {
+    await assessor.assess(first);
+    clock.advance(30 * DAY + 1);
+    const result = await assessor.assess(first);
+    expect(result.priorCount).toBe(0);
+    expect([...result.rulesSkipped].sort()).toEqual([
+      'AMOUNT_OVER_3X_AVG',
+      'NEW_LOCATION_VS_LAST_3',
+    ]);
   });
 });

@@ -13,7 +13,7 @@ Menyimpan kontak (nomor HP) terhadap pseudonim domain berumur panjang (P5) dan m
 | `NotificationService` | `register(req)`, `send(req)` | menyusun teks dari templat tetap; satu-satunya modul yang menyentuh HP |
 | `ContactRepository` | seam repositori per mode: `upsert`, `find` | proposed berkunci `pseudonym`, baseline berkunci `customer_id` |
 | `SmsGateway` | `send(to, text)` | **dua adapter nyata**: HTTP ke `sms-simulator` dan palsu untuk tes |
-| `PrivacyClient` | `resolveDomain(notifToken)` | adapter proposed; baseline tidak ada (identitas diterima langsung) |
+| `PrivacyClient` | `resolveDomain(notifToken)` | adapter proposed; adapter baseline (M5-02, N-44) mengembalikan token apa adanya, jadi tidak memanggil Privacy |
 
 ## 3. Kontrak
 

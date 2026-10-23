@@ -121,8 +121,8 @@ export class Followups {
       if (!(error instanceof TokenExpiredError)) throw error;
       const issued = await this.deps.subjects.reissue({ ...row });
       await this.deps.repository.updateTokens(row.transactionId, issued);
-      row.customerToken = issued.customerToken;
-      row.accountToken = issued.accountToken;
+      row.customerSubjectRef = issued.customerSubjectRef;
+      row.accountSubjectRef = issued.accountSubjectRef;
       return step({ ...row });
     }
   }

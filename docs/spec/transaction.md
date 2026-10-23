@@ -37,7 +37,7 @@ Peran `fraud_analyst`. Body `{decision: "APPROVE"|"REJECT", reason_code: "CONFIR
 PRD 9 (D1, E1) mengandaikan Reconciliation membaca transaksi, tetapi PRD 10 tidak mendaftarkan endpoint-nya. Disetujui Fanny (Gerbang 3, errata E-23/E-24):
 
 - `GET /transaction/completed?date=YYYY-MM-DD&limit&cursor`: `{items:[{transaction_id, amount, completed_at}], next_cursor}`; hanya `COMPLETED` (HELD dan FAILED tidak ikut); tanggal menurut `completed_at` UTC; tanpa token dan tanpa identitas; pemanggil `RECONCILIATION`.
-- `GET /transaction/{transaction_id}`: `{transaction_id, amount, status, created_at, completed_at}`; pemanggil `RECONCILIATION`; tidak ada: 404 `TRANSACTION_NOT_FOUND` (K-02).
+- `GET /transaction/{transaction_id}`: `{transaction_id, amount, status, created_at, completed_at}`; pemanggil `RECONCILIATION`; tidak ada: 404 `TRANSACTION_NOT_FOUND` (K-02). **[N-46, M5-02]** Pada mode baseline jawaban ini juga memuat `account_number` (Reconciliation baseline tidak punya Privacy untuk mengubah transaksi menjadi rekening); pada proposed tidak pernah.
 
 **[M4-06, M4-07]** Diimplementasikan: kursor `completed` bersama dengan `held` (`cursor.ts`), `GET /transaction/{id}` mengembalikan juga `status` `PENDING`, `HELD`, `FAILED` (audit boleh menanyakan transaksi apa pun), dan id yang tidak berbentuk `TX-<angka>` dijawab `VALIDATION_ERROR` sebelum basis data disentuh. Rute literal (`held`, `completed`) dideklarasikan sebelum `{id}`.
 
@@ -66,7 +66,7 @@ PENDING ─(lewat TX_PENDING_TIMEOUT_SECONDS)─▶ FAILED
 5. **Token kedaluwarsa di tengah proses (TF-04):** bila pertukaran mengembalikan `EXPIRED`, `reissue` kedua token (hanya selama transaksi non-terminal), perbarui `customer_token`/`account_token` pada baris, ulangi pertukaran satu kali. `TX_TERMINAL` atau penolakan lain diperlakukan sebagai kegagalan langkah itu (jalur 2 atau 4). `re-issue` aman diulang (Privacy mengembalikan token baru yang sama pada panggilan kedua).
 6. **Pembersih `PENDING`:** job periodik (`TX_SWEEP_INTERVAL_SECONDS`, bawaan 30, **[K-19]**) menandai `FAILED` baris `PENDING` yang lebih tua dari `TX_PENDING_TIMEOUT_SECONDS` dan memperbarui Privacy (usaha terbaik). `Clock` disuntik (TF-17).
 
-Mode baseline: langkah sama; `SubjectReferencePort` baseline tidak memanggil Privacy, Fraud menerima `customer_id`, Notification menerima `customer_id`; repositori baseline menyimpan `customer_id` dan `account_number` (ADR-0006).
+Mode baseline: langkah sama; `PrivacyStatusClient` baseline tidak melakukan apa-apa (tidak ada Privacy; baris ditandai sudah didengar); `SubjectReferencePort` baseline tidak memanggil Privacy, Fraud menerima `customer_id`, Notification menerima `customer_id`; repositori baseline menyimpan `customer_id` dan `account_number` (ADR-0006).
 
 **[M4-02/M4-03, disetujui Fanny pada Gerbang 2 M4]** Di kode, langkah 4 (notifikasi) berjalan **sebelum** `PATCH` status final dari langkah 3. Alasannya: Privacy menolak `re-issue` (`TX_TERMINAL`, privacy 4.4) setelah transaksi final, dan TF-04 menuntut token yang kedaluwarsa di tengah proses masih dapat diterbitkan ulang untuk notifikasi; bila `PATCH` lebih dulu, nasabah tidak diberi tahu. Status lokal sudah disimpan (langkah 3, bagian pertama) sebelum keduanya.
 

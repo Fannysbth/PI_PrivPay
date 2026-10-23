@@ -1,4 +1,11 @@
-import { DomainError, REASONS, isReason, type HttpClient, type TokenCache } from '@privpay/common';
+import {
+  ACCOUNT_NUMBER,
+  DomainError,
+  REASONS,
+  isReason,
+  type HttpClient,
+  type TokenCache,
+} from '@privpay/common';
 import { z } from 'zod';
 import { disclosedAttributes } from './attributes';
 import type {
@@ -18,6 +25,8 @@ const detailAnswer = z.object({
   transaction_id: z.string().regex(TRANSACTION_ID),
   amount: z.number().int().min(1),
   status: z.enum(['PENDING', 'COMPLETED', 'HELD', 'FAILED']),
+  // Only baseline names it (N-46): the account number, in the form of that mode.
+  account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
 });
 const openAnswer = z.object({ attributes: disclosedAttributes });
 const completedPage = z.object({
@@ -95,6 +104,9 @@ export class HttpTransactionClient implements TransactionClient {
       transactionId: parsed.data.transaction_id,
       amount: parsed.data.amount,
       status: parsed.data.status,
+      ...(parsed.data.account_number === undefined
+        ? {}
+        : { accountRef: parsed.data.account_number }),
     };
   }
 }
@@ -127,7 +139,7 @@ function refusalOf(response: { readonly status: number; readonly body: unknown }
 export class HttpPrivacyClient implements PrivacyClient {
   constructor(private readonly deps: ClientDeps) {}
 
-  async accountToken(transactionId: string): Promise<string | null> {
+  async accountSubjectRef(transactionId: string): Promise<string | null> {
     const response = await this.deps.http.request({
       service: 'privacy-service',
       method: 'POST',

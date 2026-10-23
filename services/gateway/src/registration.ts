@@ -22,12 +22,13 @@ const registrationBody = z.strictObject({
 });
 
 const created = z.object({ customer_id: z.string().regex(/^CUST-[0-9]{6}$/) });
-const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 
 export interface RegistrationDeps {
   readonly http: HttpClient;
   readonly privacy: PrivacyPort;
   readonly masker: ErrorMasker;
+  /** The form of the domain reference of a customer in this mode (N-44): a token, or the customer id in baseline. */
+  readonly domainRef: RegExp;
   /** The gateway's own token for the dev IdP admin API (`aud` dev-idp) and for Notification. */
   readonly idpAdminToken: Pick<TokenCache, 'get'>;
   readonly notificationToken: Pick<TokenCache, 'get'>;
@@ -99,7 +100,8 @@ export class RegistrationFlow {
   }
 
   private async registerPhone(domain: string, phone: string): Promise<void> {
-    if (!PSEUDONYM.test(domain)) throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
+    if (!this.deps.domainRef.test(domain))
+      throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
     const response = await this.deps.http.request({
       service: 'notification-service',
       method: 'POST',

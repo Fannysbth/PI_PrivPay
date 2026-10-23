@@ -79,8 +79,8 @@ const request = (over: Partial<TransactionRequest> = {}): TransactionRequest => 
   return {
     transactionId: `TX-${String(7_000 + sequence)}`,
     idempotencyKey: [KEY.slice(0, 24), String(sequence).padStart(12, '0')].join(''),
-    customerToken: 'PSEU-00000001',
-    accountToken: 'PSEU-00000002',
+    customerSubjectRef: 'PSEU-00000001',
+    accountSubjectRef: 'PSEU-00000002',
     merchantId: 'MRC-001',
     amount: 35000,
     geohash: 'qqgu4',

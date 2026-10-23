@@ -31,8 +31,8 @@ afterEach(async () => {
 const newRow = (over: Record<string, unknown> = {}) => ({
   transactionId: 'TX-5001',
   idempotencyKey: KEY,
-  customerToken: person.customer_id,
-  accountToken: person.rekening,
+  customerSubjectRef: person.customer_id,
+  accountSubjectRef: person.rekening,
   merchantId: 'MRC-001',
   amount: 35000,
   geohash: 'qqgu4',
@@ -80,8 +80,8 @@ describe('M5-01 FR-23 the baseline repository is the same domain over the other 
     expect(await repository.insertPending(newRow({ transactionId: 'TX-5002' }))).toBe(false);
     expect(await repository.findByKey(KEY)).toMatchObject({
       transactionId: 'TX-5001',
-      customerToken: person.customer_id,
-      accountToken: person.rekening,
+      customerSubjectRef: person.customer_id,
+      accountSubjectRef: person.rekening,
       status: 'PENDING',
     });
     const stored = await db.owner.query(
@@ -111,8 +111,8 @@ describe('M5-01 FR-23 the baseline repository is the same domain over the other 
       reviewedAt: at,
     });
     expect(decided).toMatchObject({
-      customerToken: person.customer_id,
-      accountToken: person.rekening,
+      customerSubjectRef: person.customer_id,
+      accountSubjectRef: person.rekening,
     });
     const again = await repository.decideHeld('TX-5001', {
       status: 'FAILED',
@@ -126,12 +126,12 @@ describe('M5-01 FR-23 the baseline repository is the same domain over the other 
     const repository = baselineTransactionRepository('baseline', db.app);
     await repository.insertPending(newRow());
     await repository.updateTokens('TX-5001', {
-      customerToken: 'CUST-000102',
-      accountToken: '1234567802',
+      customerSubjectRef: 'CUST-000102',
+      accountSubjectRef: '1234567802',
     });
     expect(await repository.findById('TX-5001')).toMatchObject({
-      customerToken: 'CUST-000102',
-      accountToken: '1234567802',
+      customerSubjectRef: 'CUST-000102',
+      accountSubjectRef: '1234567802',
     });
   });
 
@@ -170,8 +170,8 @@ describe('M5-01 FR-23 US-09 the same processor runs on the baseline adapters', (
     const result = await processor.process({
       transactionId: 'TX-5010',
       idempotencyKey: KEY,
-      customerToken: person.customer_id,
-      accountToken: person.rekening,
+      customerSubjectRef: person.customer_id,
+      accountSubjectRef: person.rekening,
       merchantId: 'MRC-001',
       amount: 2_000_000,
       geohash: 'qqgu4',
@@ -193,7 +193,7 @@ describe('M5-01 NFR-15 the positive control: in baseline the scanner finds the r
     other = await createTestDb(config, { service: 'transaction', suffix: 'm501q' });
     await migrate(other.owner, { root: migrations, mode: 'proposed' });
     await proposedTransactionRepository(other.app).insertPending(
-      newRow({ customerToken: 'PSEU-00000001', accountToken: 'PSEU-00000002' }),
+      newRow({ customerSubjectRef: 'PSEU-00000001', accountSubjectRef: 'PSEU-00000002' }),
     );
     expect(await scanDatabase(other.owner, [person], 'transaction')).toEqual([]);
   });

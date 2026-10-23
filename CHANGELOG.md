@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M5 Sesi 2
+
+- N-45: env baru wajib `FRAUD_HISTORY_DAYS` (nilai kerja 30). Riwayat Fraud dibatasi di SQL (`assessed_at >= $2`) pada kedua mode, bukan lewat umur token; tes batas tepat 30 hari dan 30 hari + 1 detik di proposed dan baseline, mutasi (klausa dihapus) terbunuh. Ancaman validitas di OPEN_QUESTIONS N-45.
+- Tes TK-08 / AZ-22: `expectDenied` menerima thunk supaya jumlah baris audit dibaca sebelum operasi mulai; penyebab flake ada di tes, bukan di kode produksi (`AuditedOperation` meng-commit baris DENIED sebelum melempar).
+- M5-02, M5-03, N-44: `PRIVACY_MODE` dibaca semua layanan (`modeConfigShape`); akar komposisi tiap layanan memilih repositori dan adaptor (Fraud, Notification, Transaction, Reconciliation, Gateway). Adaptor baru: `BaselinePrivacyClient` (Notification, Reconciliation), `BaselinePrivacyStatus` (Transaction), `PassthroughPrivacyPort` (Gateway), semuanya lewat pabrik yang menolak mode selain baseline. Bentuk referensi per mode di `subjectRefShape`. `PRIVACY_SERVICE_URL` wajib di proposed dan dilarang di baseline; Privacy Service menolak start di baseline (N-47). Detail Transaction baseline memuat `account_number` (N-46). Suite kesetaraan di stack E2E (`equivalence.integration.spec.ts`): jawaban, baris, dan pesan sama di kedua mode, dan pemindai menemukan data asli hanya di baseline. Mutasi tiap penjaga terbunuh.
+- Perbaikan `/code-review` M5: detail baseline dibaca dalam satu kueri (`findDetailWithAccount`, tidak ada dua pembacaan yang bisa terpisah); `FRAUD_HISTORY_DAYS` berbatas atas 3650 (tanggal tidak valid gagal saat start, bukan di kueri pertama); port Gateway baseline menolak identitas berbentuk salah di tepi (`VALIDATION_ERROR`); smoke test menjalankan proses hasil build di kedua mode dan menolak mode tak konsisten (36 tes).
+- Refactor: `customerToken`/`accountToken` menjadi `customerSubjectRef`/`accountSubjectRef` (tanpa perubahan perilaku; kunci kawat tetap).
+
 ### M5 Sesi 1
 
 - M5-01 (Transaction, Fraud, Notification, Reconciliation): migrasi `baseline/` per layanan, satu repositori per layanan untuk kedua mode (folder `proposed/` dan `baseline/` hanya menyuplai SQL penamaan kolom subjek), `BaselineSubjectReferences` (Transaction), `assertBaselineMode` di `packages/common` (adaptor baseline menolak dibangun selain pada `PRIVACY_MODE=baseline`), pembantu paritas skema `tests/baseline/schema-parity.ts`, tes arsitektur `tests/repo/mode-folders.spec.ts`, dan kontrol positif pemindai di `pnpm pii-scan` (di baseline data asli ditemukan). Tes lama hanya berganti cara membuat repositori. N-42, N-43, N-44 di OPEN_QUESTIONS.

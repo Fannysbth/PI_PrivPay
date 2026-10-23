@@ -2,7 +2,9 @@ import {
   httpConfigSchema,
   idpConfigShape,
   loadConfig,
+  modeConfigShape,
   pgConfigSchema,
+  privacyUrlMatchesMode,
   readSecret,
   runTimeUtc,
   schedulerConfigShape,
@@ -18,16 +20,20 @@ const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname })
  * K-23). No default for the run time: a missing value stops the start (fail fast). The database password and the client
  * secret at the IdP are files named by `<NAME>_FILE`, not values here.
  */
-export const reconciliationConfigSchema = z.object({
-  ...pgConfigSchema.shape,
-  ...httpConfigSchema.shape,
-  ...idpConfigShape,
-  ...schedulerConfigShape,
-  // K-23: the daily run, as HH:MM in UTC.
-  RECON_DAILY_RUN_UTC: runTimeUtc,
-  PRIVACY_SERVICE_URL: serviceUrl,
-  TRANSACTION_SERVICE_URL: serviceUrl,
-});
+export const reconciliationConfigSchema = z
+  .object({
+    ...modeConfigShape,
+    ...pgConfigSchema.shape,
+    ...httpConfigSchema.shape,
+    ...idpConfigShape,
+    ...schedulerConfigShape,
+    // K-23: the daily run, as HH:MM in UTC.
+    RECON_DAILY_RUN_UTC: runTimeUtc,
+    // ADR-0006: only proposed has a Privacy to call; baseline with an address, or proposed without one, does not start.
+    PRIVACY_SERVICE_URL: serviceUrl.optional(),
+    TRANSACTION_SERVICE_URL: serviceUrl,
+  })
+  .superRefine(privacyUrlMatchesMode);
 export type ReconciliationConfig = z.output<typeof reconciliationConfigSchema>;
 
 export const loadReconciliationConfig = (env: EnvSource): ReconciliationConfig =>
