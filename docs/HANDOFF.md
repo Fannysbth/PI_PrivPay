@@ -1,4 +1,4 @@
-# HANDOFF (2026-10-23): kesetiaan baseline, bagian jelas SELESAI (G1) di cabang, BELUM di-merge (satu tes integrasi merah di lingkungan, juga di main); keputusan A/B menunggu
+# HANDOFF (2026-10-23): kesetiaan baseline, bagian jelas SELESAI (G1), gerbang lengkap (dua tes yang merah ternyata gangguan lingkungan sesi lama, kini hijau sendirian), di-merge ke `main` lokal; kesetiaan lanjut sebagai versi B (belum dikerjakan)
 
 ## PENGUKURAN BARU BOLEH DIMULAI SETELAH KEPUTUSAN A/B DAN PERSETUJUANMU
 
@@ -21,7 +21,11 @@ Cabang `feat/m5-kesetiaan-baseline` (tidak dihapus, tidak di-push), dari `main` 
 
 `/security-review` seluruh cabang: tanpa temuan keyakinan 8 ke atas.
 
-### Gerbang (satu putaran penuh pada `36d716a`, satu proses pada satu waktu): TIDAK HIJAU PENUH
+### Pembaruan gerbang (sesi lanjutan, tanpa perubahan kode produksi sejak `36d716a`; `bb584fa` hanya dokumen)
+
+Proses sesi ini tanpa variabel `PG*`/`PRIVACY*`/`PRIVPAY*`/`NODE_ENV` dan tanpa proses node sisa; memori bebas ±3,6 GB dari 14 GB. `packages/common/test/test-db-cleanup.integration.spec.ts` sendirian: 1 suite, 5 tes hijau (kegagalan lama berasal dari lingkungan sesi lama, bukan kode). `services/privacy-service/test/token-forms.integration.spec.ts` sendirian: 44/44 hijau. Karena tidak ada perubahan kode produksi sejak putaran penuh pada `36d716a`, gerbang dianggap lengkap (satu putaran penuh, dua kegagalan terakhir terselesaikan sendirian); ini bukan putaran penuh kedua. Keputusan: N-51 diarahkan ke pilihan B (belum diimplementasikan, lihat `OPEN_QUESTIONS.md`), kesetiaan baseline lanjut sebagai versi B; penyimpanan salinan butuh migrasi baseline, jadi berhenti dan tanya sebelum mengerjakannya.
+
+### Gerbang (satu putaran penuh pada `36d716a`, satu proses pada satu waktu): riwayat sebelum pembaruan di atas
 
 | Langkah | Hasil |
 | --- | --- |
