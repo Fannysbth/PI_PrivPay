@@ -19,6 +19,7 @@ import {
   idpJwksSource,
   JwksKeys,
   SERVICE_DBS,
+  subjectRefShape,
   type HttpClient,
   type TokenCache,
 } from '@privpay/common';
@@ -26,6 +27,7 @@ import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { z } from 'zod';
+import { baselineContactRepository, baselinePrivacyClient } from './baseline';
 import { proposedContactRepository } from './proposed';
 import { loadNotificationConfig } from './config';
 import {
@@ -111,7 +113,9 @@ export function notificationModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        'privacy-service': config.PRIVACY_SERVICE_URL,
+        ...(config.PRIVACY_SERVICE_URL === undefined
+          ? {}
+          : { 'privacy-service': config.PRIVACY_SERVICE_URL }),
         'sms-simulator': config.SMS_SIMULATOR_URL,
       },
       timeoutMs: config.HTTP_TIMEOUT_MS,
@@ -155,11 +159,18 @@ export function notificationModules(
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
         source: idpJwksSource(http),
       }),
+      customerRef: subjectRefShape(config.PRIVACY_MODE).customer,
       notifications: new NotificationService({
-        contacts: proposedContactRepository(app),
+        // ADR-0006: the one place the mode picks the adapters; the service below is the same code in both.
+        contacts:
+          config.PRIVACY_MODE === 'baseline'
+            ? baselineContactRepository(config.PRIVACY_MODE, app)
+            : proposedContactRepository(app),
         privacy:
           overrides.privacy ??
-          new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') }),
+          (config.PRIVACY_MODE === 'baseline'
+            ? baselinePrivacyClient(config.PRIVACY_MODE)
+            : new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') })),
         sms: overrides.sms ?? new HttpSmsGateway({ http, serviceToken: tokenFor('sms-simulator') }),
         clock,
       }),

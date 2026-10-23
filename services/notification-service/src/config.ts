@@ -2,7 +2,9 @@ import {
   httpConfigSchema,
   idpConfigShape,
   loadConfig,
+  modeConfigShape,
   pgConfigSchema,
+  privacyUrlMatchesMode,
   readSecret,
   type EnvSource,
 } from '@privpay/common';
@@ -16,13 +18,17 @@ const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname })
  * database password and the client secret at the IdP are not here: they are files named by `<NAME>_FILE` (CLAUDE.md,
  * secrets), read by `createPool` and `loadNotificationConfig`.
  */
-export const notificationConfigSchema = z.object({
-  ...pgConfigSchema.shape,
-  ...httpConfigSchema.shape,
-  ...idpConfigShape,
-  PRIVACY_SERVICE_URL: serviceUrl,
-  SMS_SIMULATOR_URL: serviceUrl,
-});
+export const notificationConfigSchema = z
+  .object({
+    ...modeConfigShape,
+    ...pgConfigSchema.shape,
+    ...httpConfigSchema.shape,
+    ...idpConfigShape,
+    // ADR-0006: only proposed has a Privacy to call; baseline with an address, or proposed without one, does not start.
+    PRIVACY_SERVICE_URL: serviceUrl.optional(),
+    SMS_SIMULATOR_URL: serviceUrl,
+  })
+  .superRefine(privacyUrlMatchesMode);
 export type NotificationConfig = z.output<typeof notificationConfigSchema>;
 
 export function loadNotificationConfig(

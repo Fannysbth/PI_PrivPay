@@ -17,20 +17,22 @@ const REGISTERER = 'API_GATEWAY';
 /** Spec notification 3.2: Transaction asks for a message (AZ-33). */
 const SENDER = 'TRANSACTION';
 
-const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 const TRANSACTION_ID = /^TX-[0-9]{1,29}$/;
 
-// A token and a phone number come in; a field of any other name, an identity among them, is refused (S-40).
-const register = z.strictObject({
-  notification_domain_id: z.string().regex(PSEUDONYM),
-  phone: z.string().regex(/^08[0-9]{8,12}$/),
-  channel: z.literal('SMS'),
-});
-const send = z.strictObject({
-  notif_token: z.string().regex(PSEUDONYM),
-  template: z.enum(TEMPLATES),
-  amount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
-  transaction_id: z.string().regex(TRANSACTION_ID),
+// A reference to the customer and a phone number come in; a field of any other name, an identity among them, is refused
+// (S-40). The reference is a token in proposed and the customer id in baseline (N-44), so its form is the mode's.
+const bodies = (customer: RegExp) => ({
+  register: z.strictObject({
+    notification_domain_id: z.string().regex(customer),
+    phone: z.string().regex(/^08[0-9]{8,12}$/),
+    channel: z.literal('SMS'),
+  }),
+  send: z.strictObject({
+    notif_token: z.string().regex(customer),
+    template: z.enum(TEMPLATES),
+    amount: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    transaction_id: z.string().regex(TRANSACTION_ID),
+  }),
 });
 
 export interface NotificationHttpDeps {
@@ -38,6 +40,8 @@ export interface NotificationHttpDeps {
   readonly issuer: string;
   readonly keys: JwksKeys;
   readonly notifications: Pick<NotificationService, 'register' | 'send'>;
+  /** The form of the reference to the customer in this mode (N-44). */
+  readonly customerRef: RegExp;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -49,7 +53,11 @@ const single = (value: string | string[] | undefined): string | undefined =>
  * ever in an answer, an error or a log.
  */
 export class NotificationHttp {
-  constructor(private readonly deps: NotificationHttpDeps) {}
+  private readonly schemas: ReturnType<typeof bodies>;
+
+  constructor(private readonly deps: NotificationHttpDeps) {
+    this.schemas = bodies(deps.customerRef);
+  }
 
   private async caller(headers: AuthHeaders): Promise<Authenticated> {
     // The keys are loaded for the key id a token claims before its signature is checked; an unknown id gains nothing.
@@ -69,7 +77,7 @@ export class NotificationHttp {
   async register(headers: AuthHeaders, body: unknown) {
     const who = await this.caller(headers);
     if (who.requestingService !== REGISTERER) throw new DomainError('POLICY_NOT_ALLOWED');
-    const parsed = register.safeParse(body);
+    const parsed = this.schemas.register.safeParse(body);
     if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
     const input = parsed.data;
     const result = await this.deps.notifications.register({
@@ -90,7 +98,7 @@ export class NotificationHttp {
   async send(headers: AuthHeaders, body: unknown) {
     const who = await this.caller(headers);
     if (who.requestingService !== SENDER) throw new DomainError('POLICY_NOT_ALLOWED');
-    const parsed = send.safeParse(body);
+    const parsed = this.schemas.send.safeParse(body);
     if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
     const input = parsed.data;
     return this.deps.notifications.send({
