@@ -1,5 +1,5 @@
 import { TransactionReads } from '../src/transaction/reads';
-import type { StoredTransaction, TransactionDetail } from '../src/transaction/repository';
+import type { TransactionDetail } from '../src/transaction/repository';
 
 // Seam: TransactionReads.detail (spec transaction 3.4) with a repository that answers from memory. N-46: in baseline
 // Reconciliation has no Privacy to turn a transaction into an account, so the detail it reads carries the account number;
@@ -12,15 +12,6 @@ const DETAIL: TransactionDetail = {
   created_at: '2026-10-23T08:00:00.000Z',
   completed_at: '2026-10-23T08:00:01.000Z',
 };
-const STORED = {
-  transactionId: 'TX-10001',
-  customerSubjectRef: 'CUST-000101',
-  accountSubjectRef: ACCOUNT_NUMBER,
-  merchantId: 'MRC-001',
-  amount: 35_000,
-  geohash: 'qqgu4',
-  status: 'COMPLETED',
-} as unknown as StoredTransaction;
 
 const reads = (discloseAccount: boolean, found = true) =>
   new TransactionReads({
@@ -28,7 +19,9 @@ const reads = (discloseAccount: boolean, found = true) =>
     repository: {
       listCompleted: () => Promise.resolve([]),
       findDetail: () => Promise.resolve(found ? DETAIL : undefined),
-      findById: () => Promise.resolve(found ? STORED : undefined),
+      // One read that holds the account next to the rest, so the answer cannot tear between two reads.
+      findDetailWithAccount: () =>
+        Promise.resolve(found ? { ...DETAIL, accountRef: ACCOUNT_NUMBER } : undefined),
     },
   });
 

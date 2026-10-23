@@ -19,7 +19,10 @@ export interface CompletedPage {
 export class TransactionReads {
   constructor(
     private readonly deps: {
-      readonly repository: Pick<TransactionRepository, 'listCompleted' | 'findDetail' | 'findById'>;
+      readonly repository: Pick<
+        TransactionRepository,
+        'listCompleted' | 'findDetail' | 'findDetailWithAccount'
+      >;
       readonly discloseAccount: boolean;
     },
   ) {}
@@ -47,11 +50,14 @@ export class TransactionReads {
 
   /** K-02: a transaction that is not there is `TRANSACTION_NOT_FOUND`, not an empty answer. */
   async detail(transactionId: string): Promise<TransactionDetailAnswer> {
-    const found = await this.deps.repository.findDetail(transactionId);
+    if (!this.deps.discloseAccount) {
+      const found = await this.deps.repository.findDetail(transactionId);
+      if (found === undefined) throw new DomainError('TRANSACTION_NOT_FOUND');
+      return found;
+    }
+    const found = await this.deps.repository.findDetailWithAccount(transactionId);
     if (found === undefined) throw new DomainError('TRANSACTION_NOT_FOUND');
-    if (!this.deps.discloseAccount) return found;
-    const stored = await this.deps.repository.findById(transactionId);
-    if (stored === undefined) throw new DomainError('TRANSACTION_NOT_FOUND');
-    return { ...found, account_number: stored.accountSubjectRef };
+    const { accountRef, ...detail } = found;
+    return { ...detail, account_number: accountRef };
   }
 }

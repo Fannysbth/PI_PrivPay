@@ -14,6 +14,8 @@ export const SUBJECT_SQL: SubjectSql = {
      FROM transactions WHERE transaction_id = $1 FOR UPDATE`,
   updateTokens: `UPDATE transactions SET customer_pseudonym = $2, account_pseudonym = $3
      WHERE transaction_id = $1 AND status IN ('PENDING', 'HELD')`,
+  findDetailWithAccount: `SELECT transaction_id, amount, status, created_at, completed_at, account_pseudonym AS account_ref
+     FROM transactions WHERE transaction_id = $1`,
   findById: `SELECT transaction_id, customer_pseudonym AS customer_ref, account_pseudonym AS account_ref, merchant_id, amount, geohash, status
      FROM transactions WHERE transaction_id = $1`,
 };

@@ -1,3 +1,4 @@
+import { DomainError, subjectRefShape } from '@privpay/common';
 import type { PrivacyPort, PseudonymizeRequest } from '../tokenizer/privacy-port';
 
 /**
@@ -9,6 +10,12 @@ import type { PrivacyPort, PseudonymizeRequest } from '../tokenizer/privacy-port
  */
 export class PassthroughPrivacyPort implements PrivacyPort {
   pseudonymize(request: PseudonymizeRequest): Promise<string> {
+    // The identity is passed on only in the form of this mode (N-44), as proposed checks the form of the token it gets.
+    const shape = subjectRefShape('baseline');
+    const form = request.subjectType === 'CUSTOMER' ? shape.customer : shape.account;
+    if (!form.test(request.subjectId)) {
+      return Promise.reject(new DomainError('VALIDATION_ERROR', 'subject'));
+    }
     return Promise.resolve(request.subjectId);
   }
 

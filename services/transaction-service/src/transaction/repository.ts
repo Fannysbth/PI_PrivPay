@@ -137,6 +137,8 @@ export interface SubjectSql {
   // Re-issue in the middle of a transaction (spec transaction 5, step 5): while it is still open, PENDING or HELD.
   readonly updateTokens: string;
   readonly findById: string;
+  // N-46: the detail of an audit with the account reference beside it, in one read, for the baseline mode only.
+  readonly findDetailWithAccount: string;
 }
 
 interface Row {
@@ -381,6 +383,30 @@ export class TransactionRepository {
           status: row.status,
           created_at: row.created_at.toISOString(),
           completed_at: row.completed_at === null ? null : row.completed_at.toISOString(),
+        };
+  }
+
+  async findDetailWithAccount(
+    transactionId: string,
+  ): Promise<(TransactionDetail & { readonly accountRef: string }) | undefined> {
+    const found = await this.pool.query<{
+      transaction_id: string;
+      amount: string;
+      status: TransactionStatus;
+      created_at: Date;
+      completed_at: Date | null;
+      account_ref: string;
+    }>(this.subject.findDetailWithAccount, [transactionId]);
+    const row = found.rows[0];
+    return row === undefined
+      ? undefined
+      : {
+          transaction_id: row.transaction_id,
+          amount: Number(row.amount),
+          status: row.status,
+          created_at: row.created_at.toISOString(),
+          completed_at: row.completed_at === null ? null : row.completed_at.toISOString(),
+          accountRef: row.account_ref,
         };
   }
 

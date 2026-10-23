@@ -224,7 +224,7 @@ describe('M4-04 K-20 the start needs its settings', () => {
     ).rejects.toThrow();
   });
 
-  it.each([['0'], ['-5'], ['abc'], ['1.5']])(
+  it.each([['0'], ['-5'], ['abc'], ['1.5'], ['3651'], ['99999999']])(
     'N-45 FRAUD_HISTORY_DAYS=%s is not a whole number of days and stops the start',
     async (value) => {
       await expect(

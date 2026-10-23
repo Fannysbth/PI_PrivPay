@@ -28,7 +28,8 @@ export const fraudConfigSchema = z
     FRAUD_HOLD_THRESHOLD: z.coerce.number().int().min(1),
     FRAUD_BLOCK_THRESHOLD: z.coerce.number().int().min(1),
     // N-45 (PRD 10): how many days back the history reaches, the same in both modes.
-    FRAUD_HISTORY_DAYS: z.coerce.number().int().min(1),
+    // The upper bound keeps `now - days` a valid date; ten years is far beyond what the research uses.
+    FRAUD_HISTORY_DAYS: z.coerce.number().int().min(1).max(3650),
   })
   .refine((config) => config.FRAUD_HOLD_THRESHOLD < config.FRAUD_BLOCK_THRESHOLD, {
     path: ['FRAUD_HOLD_THRESHOLD'],
