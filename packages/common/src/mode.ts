@@ -22,9 +22,12 @@ export function assertBaselineMode(mode: PrivacyMode): void {
  * account; in baseline it is the identifier itself (spec data 9). Services validate with the shape of their mode, so the
  * check of the HTTP edge exists in both modes and only the accepted form differs.
  */
+/** An account number as the bank and the baseline schema write it (8 to 20 digits). */
+export const ACCOUNT_NUMBER = /^[0-9]{8,20}$/;
+
 export const SUBJECT_REF_SHAPES = {
   proposed: { customer: /^PSEU-[0-9A-F]{8}$/, account: /^PSEU-[0-9A-F]{8}$/ },
-  baseline: { customer: /^CUST-[0-9]{6}$/, account: /^[0-9]{8,20}$/ },
+  baseline: { customer: /^CUST-[0-9]{6}$/, account: ACCOUNT_NUMBER },
 } as const satisfies Record<PrivacyMode, { customer: RegExp; account: RegExp }>;
 
 export const subjectRefShape = (mode: PrivacyMode): (typeof SUBJECT_REF_SHAPES)[PrivacyMode] =>

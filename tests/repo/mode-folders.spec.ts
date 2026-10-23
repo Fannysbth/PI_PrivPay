@@ -5,7 +5,7 @@ import { join, relative, sep } from 'node:path';
 // a mode (`proposed/`, `baseline/`) or a migration, and it must not branch on the mode. Only the composition root
 // (`*.module.ts`, `main.ts`) and the folders of the modes themselves may know the modes. A source reader, no dependency.
 const ROOT = join(__dirname, '..', '..');
-const SERVICES = ['transaction', 'fraud', 'notification', 'reconciliation'].map(
+const SERVICES = ['transaction', 'fraud', 'notification', 'reconciliation', 'gateway'].map(
   (name) => `${name}-service`,
 );
 const MODE_FOLDERS = ['proposed', 'baseline'];

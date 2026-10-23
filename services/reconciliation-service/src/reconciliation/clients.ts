@@ -1,8 +1,8 @@
 import {
+  ACCOUNT_NUMBER,
   DomainError,
   REASONS,
   isReason,
-  subjectRefShape,
   type HttpClient,
   type TokenCache,
 } from '@privpay/common';
@@ -26,7 +26,7 @@ const detailAnswer = z.object({
   amount: z.number().int().min(1),
   status: z.enum(['PENDING', 'COMPLETED', 'HELD', 'FAILED']),
   // Only baseline names it (N-46): the account number, in the form of that mode.
-  account_number: z.string().regex(subjectRefShape('baseline').account).optional(),
+  account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
 });
 const openAnswer = z.object({ attributes: disclosedAttributes });
 const completedPage = z.object({
