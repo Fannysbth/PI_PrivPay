@@ -66,3 +66,21 @@ describe('M4-10 K-26 the retention job: how long and when, from the environment,
     });
   });
 });
+
+describe('M5-02 ADR-0006 the privacy service is the privacy layer, so it runs in proposed only', () => {
+  it('M5-02 ADR-0006 PRIVACY_MODE=proposed starts', () => {
+    expect(loadPrivacyConfig(env()).PRIVACY_MODE).toBe('proposed');
+  });
+
+  it('M5-02 ADR-0006 PRIVACY_MODE=baseline does not start and names only the variable', () => {
+    const settings = env();
+    settings['PRIVACY_MODE'] = 'baseline';
+    expect(() => loadPrivacyConfig(settings)).toThrow('PRIVACY_MODE');
+  });
+
+  it('M5-02 ADR-0006 a missing PRIVACY_MODE does not start', () => {
+    const settings = env();
+    Reflect.deleteProperty(settings, 'PRIVACY_MODE');
+    expect(() => loadPrivacyConfig(settings)).toThrow('PRIVACY_MODE');
+  });
+});
