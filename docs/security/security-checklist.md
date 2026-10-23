@@ -98,3 +98,6 @@ Kolom "Status (penutup M4)" diisi pada penutup milestone M3 (2026-10-21) dan dip
 | S-72 | Uji penautan baseline vs proposed berjalan dan dilaporkan jujur, termasuk linkability dalam TTL | skrip penautan | M6 | — belum, [bukti](review-M3.md#s-72) |
 | S-73 | Fail-closed diuji dengan replika dimatikan saat beban | skrip | M6 | — belum, [bukti](review-M3.md#s-73) |
 | S-74 | Data uji seluruhnya fiktif | tinjauan seed | M0, tiap PR | ✔ lulus, [bukti](review-M3.md#s-74) |
+| S-75 | Kode baseline (identitas mentah) tidak dapat aktif pada konfigurasi proposed; env tak konsisten ditolak saat start; Privacy Service menolak baseline | tes mode per layanan + mutasi, smoke proses nyata | M5 | ✔ lulus (M5), [bukti](review-M5.md#s-75) |
+| S-76 | Mode benar-benar mengubah perilaku: pemindai menemukan data asli di baseline dan tidak di proposed | `equivalence.integration.spec.ts` | M5 | ✔ lulus (M5), [bukti](review-M5.md#s-76) |
+| S-77 | Perilaku domain sama di kedua mode (jawaban, baris, pesan) | `equivalence.integration.spec.ts` | M5 | ✔ lulus (M5), [bukti](review-M5.md#s-77) |

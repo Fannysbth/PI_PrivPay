@@ -1,4 +1,76 @@
-# HANDOFF (2026-10-23): M5 sesi 1 SELESAI (N-40 + M5-01 untuk Transaction, Fraud, Notification, Reconciliation), di-merge ke `main` lokal; berikutnya M5 sesi 2 (M5-02, M5-03, penutup M5; belum dimulai)
+# HANDOFF (2026-10-23): M5 sesi 2 SELESAI (gerbang hijau satu putaran), siap di-merge ke `main` lokal; berikutnya M6 hanya setelah persetujuanmu
+
+## PENGUKURAN BARU BOLEH DIMULAI SETELAH M5 SELESAI DAN TERBUKTI
+
+**Jangan menjalankan pengukuran apa pun (k6, E(s), uji penautan, angka latensi atau throughput, perbandingan baseline vs proposed untuk laporan) sebelum Fanny menyetujui penutup M5 dan `main` memuat M5 dengan gerbang hijau.** Bukti M5 ada di `docs/security/review-M5.md`, `docs/RETRO_M5.md`, dan tabel gerbang di bawah. Angka dari lingkungan lokal tidak masuk laporan (CLAUDE.md).
+
+## Status M5 sesi 2
+
+Cabang `feat/m5-sesi-2` (tidak dihapus, tidak di-push), commit dari `345c6e7`:
+
+| Hash | Isi |
+| --- | --- |
+| `fe93e99` | TK-08 / AZ-22: `expectDenied` menerima thunk (penyebab flake di tes) |
+| `251c8c9` | rename `customerToken`/`accountToken` menjadi `customerSubjectRef`/`accountSubjectRef` (tanpa perubahan perilaku) |
+| `878d778` | N-45: `FRAUD_HISTORY_DAYS` di kedua mode |
+| `130ca92` `cd9a13b` `b59ad91` `188d11b` `17999ba` `e556ae4` | M5-02/M5-03 per layanan: common+Fraud, Notification, Transaction, Reconciliation, Gateway, Privacy |
+| `97746dc` | suite kesetaraan E2E (stack parametrik per mode) |
+| `b3bcc66` | dokumen N-44/N-46/N-47, spek, CHANGELOG |
+| `255ecd6` | `/simplify` (+ perbaikan tes arsitektur: Gateway dulu tidak ikut terjalankan) |
+| `9024b0f` | smoke test proses nyata di kedua mode + RETRO_M5 |
+| `c286dc8` | perbaikan `/code-review` |
+
+### Hasil TK-08 / AZ-22
+
+Penyebab: di tes, bukan di kode produksi. `expectDenied(given, reason, open(...))` memulai `open` sebelum badan helper membaca jumlah baris audit; penolakan `FORBIDDEN_ROLE` tidak membaca baris apa pun, jadi cepat, dan bisa meng-commit baris DENIED sebelum `before` dibaca (diharapkan 2, diterima 1). `AuditedOperation` meng-commit baris DENIED dan menunggunya sebelum melempar error, jadi penolakan selalu meninggalkan baris audit. Bukti: 20 putaran suite hijau (tidak mereproduksi sendirian), probe deterministik dengan janji yang sudah selesai mereproduksi `Expected length: 2, Received length: 1`, perbaikan (thunk: jumlah dibaca sebelum operasi mulai) lalu 24/24 hijau dan seluruh folder integrasi Privacy 17 suite, 453 tes. Tanpa pelonggaran asersi. Bila muncul lagi, perlakukan sebagai bug.
+
+### Gerbang (satu putaran penuh pada `c286dc8`, satu proses pada satu waktu, tanpa terhenti sistem)
+
+| Langkah | Hasil |
+| --- | --- |
+| eslint + prettier, typecheck | hijau |
+| unit (2 worker) | 71 suite, 1340 tes |
+| integrasi | 61 suite, 1134 tes |
+| smoke | 36 tes (proses hasil build di kedua mode + mode tak konsisten ditolak) |
+| audit --prod | tidak ada kerentanan |
+| gitleaks riwayat penuh | 157 commit, bersih (tanpa allowlist baru) |
+| pii-scan | 35 + 116 tes |
+
+Memori bebas sebelum gerbang: 6457 MB dari 14141 MB.
+
+### Yang dibangun
+
+- Semua layanan membaca `PRIVACY_MODE` (`modeConfigShape`); akar komposisi (`*.module.ts`) memilih repositori dan adaptor; pabrik baseline menolak mode selain baseline. Bentuk referensi per mode (`subjectRefShape`) divalidasi di HTTP tiap layanan (N-44).
+- Aturan env (N-47): `PRIVACY_SERVICE_URL` wajib di proposed dan DILARANG di baseline (Gateway, Transaction, Notification, Reconciliation); Privacy Service menolak start di baseline.
+- Adaptor baseline: `BaselinePrivacyClient` (Notification, Reconciliation), `BaselinePrivacyStatus` (Transaction), `PassthroughPrivacyPort` (Gateway). Reconciliation baseline mengambil rekening dari Transaction (`account_number` pada `GET /transaction/{id}`, N-46).
+- N-45: `FRAUD_HISTORY_DAYS` (wajib, 1..3650, nilai kerja 30) membatasi riwayat di SQL pada kedua mode.
+- Suite kesetaraan: jawaban, baris, dan pesan identik di kedua mode; pemindai menemukan data asli hanya di baseline.
+- Skill dipakai: diagnosing-bugs (TK-08), tdd (dimuat untuk N-45; tes merah dulu diikuti di seluruh sesi), simplify, code-review, security-review, run. Tidak ada: `improve-codebase-architecture` dan `implement` (tidak ada di daftar skill).
+
+### Ancaman validitas N-45 (catat di laporan skripsi)
+
+Jendela riwayat Fraud kini 30 hari di kedua mode (SQL, bukan umur token). Selisih yang TETAP: di proposed riwayat terikat pada token FRAUD_DETECTION yang hidup 30 hari, sehingga setelah token berganti, assessment di bawah token lama tidak terbaca walau masih dalam jendela; di baseline kunci `customer_id` tidak berganti, seluruh jendela terbaca. Itu efek mekanisme privasi, bukan rancangan eksperimen, dan harus dilaporkan sebagai ancaman validitas. Ongkos kegunaan data: pemotongan 30 hari membuang riwayat lebih lama yang di baseline tersedia. Dicatat di `docs/OPEN_QUESTIONS.md` N-45.
+
+### Keputusan yang butuh persetujuan Fanny
+
+- N-46: `GET /transaction/{id}` memuat `account_number` pada baseline (perluasan kontrak spek 3.4 hanya di baseline); Reconciliation baseline memanggil `byId` sekali per transaksi.
+- N-47: definisi "env tak konsisten"; di baseline `/register` tidak menyimpan NIK dan nama di mana pun (tidak ada brankas) dan rute `audit-request`/`disclosure` dijawab 503 (`SERVICE_UNAVAILABLE`, tanpa kode error baru).
+- Batas atas 3650 pada `FRAUD_HISTORY_DAYS` (usulan saya dari `/code-review`, PRD 17 tidak menyebutnya).
+- Perbaikan tes arsitektur: Gateway hanya diwajibkan punya folder `baseline/` (adaptor proposed-nya ada di `tokenizer/`).
+- Penutup M5: persetujuan merge; poin 5 `docs/RETRO_M5.md` dan poin 5 `docs/RETRO_M4.md` ("Yang kuhentikan") menunggu isianmu.
+- Usulan perubahan CLAUDE.md di `docs/RETRO_M5.md` bagian 4 (belum diterapkan).
+
+### Belum teruji
+
+Fail-closed dengan Docker (M7); Newman (M6-01); Semgrep/CI; isi log aplikasi pada mode baseline; ketidakcocokan mode antar-proses yang berjalan; kinerja (sengaja belum diukur); TK-01/06/09/13/14/15 end-to-end lewat Gateway (M6-01).
+
+### Sisa tahapan
+
+`/improve-codebase-architecture` setelah M5 (skill tidak ada di daftar; perlu keputusanmu), merge ke `main` lokal, M6 (Newman, E(s), penautan, pengukuran setelah persetujuan), M7 (Docker, fail-closed, k6), DK-01..02 (Docker Compose, Kong plugin Lua).
+
+---
+
+# (Riwayat) HANDOFF (2026-10-23): M5 sesi 1 SELESAI (N-40 + M5-01 untuk Transaction, Fraud, Notification, Reconciliation), di-merge ke `main` lokal; berikutnya M5 sesi 2 (M5-02, M5-03, penutup M5; belum dimulai)
 
 ## Status M5 sesi 1
 
