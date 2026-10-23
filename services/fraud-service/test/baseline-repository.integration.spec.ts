@@ -33,12 +33,16 @@ afterEach(async () => {
   other = undefined;
 });
 
-const assessorOver = (repository: ReturnType<typeof baselineAssessmentRepository>) =>
+const assessorOver = (
+  repository: ReturnType<typeof baselineAssessmentRepository>,
+  clock = new FakeClock('2026-10-23T08:00:00.000Z'),
+) =>
   new FraudAssessor({
     repository,
     engine: new RiskEngine(),
     config: RISK,
-    clock: new FakeClock('2026-10-23T08:00:00.000Z'),
+    historyDays: 30,
+    clock,
   });
 
 describe('M5-01 FR-23 the baseline fraud schema keys the history by customer_id', () => {
@@ -142,5 +146,36 @@ describe('M5-01 NFR-15 the positive control: in baseline the scanner finds the r
       geohash: 'qqgu7',
     });
     expect(await scanDatabase(other.owner, [person], 'fraud')).toEqual([]);
+  });
+});
+
+describe('N-45 FRAUD_HISTORY_DAYS the history is the last 30 days, in baseline as in proposed', () => {
+  const DAY = 86_400;
+  const first = { pseudonym: person.customer_id, amount: 100_000, txHour: 13, geohash: 'qqgu7' };
+  const start = () => {
+    const clock = new FakeClock('2026-10-23T08:00:00.000Z');
+    return {
+      clock,
+      assessor: assessorOver(baselineAssessmentRepository('baseline', db.app), clock),
+    };
+  };
+
+  it('N-45 an assessment exactly 30 days old still counts (baseline)', async () => {
+    const { clock, assessor } = start();
+    await assessor.assess(first);
+    clock.advance(30 * DAY);
+    expect((await assessor.assess(first)).priorCount).toBe(1);
+  });
+
+  it('N-45 an assessment 30 days and a second old no longer counts: a cold start again (baseline)', async () => {
+    const { clock, assessor } = start();
+    await assessor.assess(first);
+    clock.advance(30 * DAY + 1);
+    const result = await assessor.assess(first);
+    expect(result.priorCount).toBe(0);
+    expect([...result.rulesSkipped].sort()).toEqual([
+      'AMOUNT_OVER_3X_AVG',
+      'NEW_LOCATION_VS_LAST_3',
+    ]);
   });
 });

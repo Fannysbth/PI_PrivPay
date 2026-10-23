@@ -99,6 +99,7 @@ export function fraudModules(
           holdThreshold: config.FRAUD_HOLD_THRESHOLD,
           blockThreshold: config.FRAUD_BLOCK_THRESHOLD,
         },
+        historyDays: config.FRAUD_HISTORY_DAYS,
         clock,
       }),
     });

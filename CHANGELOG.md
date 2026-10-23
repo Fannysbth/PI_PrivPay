@@ -4,6 +4,12 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M5 Sesi 2
+
+- N-45: env baru wajib `FRAUD_HISTORY_DAYS` (nilai kerja 30). Riwayat Fraud dibatasi di SQL (`assessed_at >= $2`) pada kedua mode, bukan lewat umur token; tes batas tepat 30 hari dan 30 hari + 1 detik di proposed dan baseline, mutasi (klausa dihapus) terbunuh. Ancaman validitas di OPEN_QUESTIONS N-45.
+- Tes TK-08 / AZ-22: `expectDenied` menerima thunk supaya jumlah baris audit dibaca sebelum operasi mulai; penyebab flake ada di tes, bukan di kode produksi (`AuditedOperation` meng-commit baris DENIED sebelum melempar).
+- Refactor: `customerToken`/`accountToken` menjadi `customerSubjectRef`/`accountSubjectRef` (tanpa perubahan perilaku; kunci kawat tetap).
+
 ### M5 Sesi 1
 
 - M5-01 (Transaction, Fraud, Notification, Reconciliation): migrasi `baseline/` per layanan, satu repositori per layanan untuk kedua mode (folder `proposed/` dan `baseline/` hanya menyuplai SQL penamaan kolom subjek), `BaselineSubjectReferences` (Transaction), `assertBaselineMode` di `packages/common` (adaptor baseline menolak dibangun selain pada `PRIVACY_MODE=baseline`), pembantu paritas skema `tests/baseline/schema-parity.ts`, tes arsitektur `tests/repo/mode-folders.spec.ts`, dan kontrol positif pemindai di `pnpm pii-scan` (di baseline data asli ditemukan). Tes lama hanya berganti cara membuat repositori. N-42, N-43, N-44 di OPEN_QUESTIONS.

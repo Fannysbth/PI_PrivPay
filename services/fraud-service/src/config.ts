@@ -25,6 +25,8 @@ export const fraudConfigSchema = z
     // K-20: the score from which a transaction is held, and from which it is blocked.
     FRAUD_HOLD_THRESHOLD: z.coerce.number().int().min(1),
     FRAUD_BLOCK_THRESHOLD: z.coerce.number().int().min(1),
+    // N-45 (PRD 10): how many days back the history reaches, the same in both modes.
+    FRAUD_HISTORY_DAYS: z.coerce.number().int().min(1),
   })
   .refine((config) => config.FRAUD_HOLD_THRESHOLD < config.FRAUD_BLOCK_THRESHOLD, {
     path: ['FRAUD_HOLD_THRESHOLD'],

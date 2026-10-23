@@ -70,6 +70,8 @@ beforeEach(async () => {
       FRAUD_ODD_HOUR_END: '6',
       FRAUD_HOLD_THRESHOLD: '50',
       FRAUD_BLOCK_THRESHOLD: '90',
+
+      FRAUD_HISTORY_DAYS: '30',
     },
     { clock, logDestination: { write: (line) => void logLines.push(line) } },
   );

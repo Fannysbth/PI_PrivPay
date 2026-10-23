@@ -40,6 +40,7 @@ const fraudEnv = (over: Record<string, string> = {}): Record<string, string> => 
   FRAUD_ODD_HOUR_END: '6',
   FRAUD_HOLD_THRESHOLD: '50',
   FRAUD_BLOCK_THRESHOLD: '90',
+  FRAUD_HISTORY_DAYS: '30',
   ...over,
 });
 
@@ -200,6 +201,7 @@ describe('M4-04 K-20 the start needs its settings', () => {
     ['FRAUD_ODD_HOUR_END'],
     ['FRAUD_HOLD_THRESHOLD'],
     ['FRAUD_BLOCK_THRESHOLD'],
+    ['FRAUD_HISTORY_DAYS'],
   ])(
     'M4-04 K-20 without %s the service does not start and names only the variable',
     async (name) => {
@@ -221,6 +223,18 @@ describe('M4-04 K-20 the start needs its settings', () => {
       ),
     ).rejects.toThrow();
   });
+
+  it.each([['0'], ['-5'], ['abc'], ['1.5']])(
+    'N-45 FRAUD_HISTORY_DAYS=%s is not a whole number of days and stops the start',
+    async (value) => {
+      await expect(
+        createServiceApp(
+          { service: 'fraud-service', modules: fraudModules({ pools: { app: db.app } }) },
+          fraudEnv({ FRAUD_HISTORY_DAYS: value }),
+        ),
+      ).rejects.toThrow('FRAUD_HISTORY_DAYS');
+    },
+  );
 
   it.each([
     ['swapped (start 6, end 22)', { FRAUD_ODD_HOUR_START: '6', FRAUD_ODD_HOUR_END: '22' }],
