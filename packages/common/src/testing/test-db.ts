@@ -5,13 +5,12 @@ import {
   createPool,
   readRolePassword,
   SERVICE_DBS,
+  serviceDatabase,
   type PgConfig,
   type ServiceName,
 } from '../db';
 
 export const TEST_ADMIN_ROLE = 'privpay_test_admin';
-
-const SUFFIX = /^[a-z0-9]{1,20}$/;
 
 /**
  * Starting a PostgreSQL backend on Windows takes seconds when memory is short or a database was just recreated, and a
@@ -99,9 +98,7 @@ export async function dropWhenFree(
 
 /** `privpay_<service>_test_<suffix>`: one database per test file, so files can run side by side. */
 export function testDatabaseName(service: ServiceName, suffix: string): string {
-  if (!SUFFIX.test(suffix))
-    throw new RangeError('suffix must be 1 to 20 lowercase letters or digits');
-  return `${SERVICE_DBS[service].database}_test_${suffix}`;
+  return serviceDatabase(service, suffix);
 }
 
 /**

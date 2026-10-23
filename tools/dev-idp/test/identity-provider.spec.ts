@@ -99,7 +99,7 @@ describe('M1-01 client_credentials issues a service token (ADR-0007, NFR-21)', (
   it('M1-01 lives at most 300 seconds, and an older token is expired', () => {
     const idp = make({ ttlSeconds: 120 });
     const { access_token: token, expires_in: lifetime } = idp.token(
-      service('fraud', ['privacy-service']),
+      service('reconciliation', ['privacy-service']),
     );
     expect(lifetime).toBe(120);
     clock.advance(119);
@@ -164,13 +164,31 @@ describe('M1-01 client_credentials issues a service token (ADR-0007, NFR-21)', (
 
   it('M1-01 an audience the client may not ask for, or none at all, is refused (FORBIDDEN_ROLE)', () => {
     const idp = make();
-    expect(reasonOf(() => idp.token(service('fraud', ['transaction-service'])))).toBe(
+    expect(reasonOf(() => idp.token(service('notification', ['transaction-service'])))).toBe(
       'FORBIDDEN_ROLE',
     );
-    expect(reasonOf(() => idp.token(service('fraud', ['privacy-service', 'dev-idp'])))).toBe(
+    expect(reasonOf(() => idp.token(service('notification', ['privacy-service', 'dev-idp'])))).toBe(
       'FORBIDDEN_ROLE',
     );
-    expect(reasonOf(() => idp.token(service('fraud', [])))).toBe('FORBIDDEN_ROLE');
+    expect(reasonOf(() => idp.token(service('notification', [])))).toBe('FORBIDDEN_ROLE');
+  });
+
+  it('M5 G-a fraud only receives calls: it may ask for a token for no audience, Privacy included', () => {
+    const idp = make();
+    for (const audience of [
+      'privacy-service',
+      'transaction-service',
+      'notification-service',
+      'reconciliation-service',
+      'sms-simulator',
+      'dev-idp',
+    ]) {
+      expect(reasonOf(() => idp.token(service('fraud', [audience])))).toBe('FORBIDDEN_ROLE');
+    }
+    // The others keep the audience they use, so the refusal above is the registry and not a broken request.
+    expect(reasonOf(() => idp.token(service('reconciliation', ['privacy-service'])))).toBe(
+      'no error',
+    );
   });
 
   it('M1-01 the notification service may ask for a token for the sms simulator (AZ-41)', () => {
@@ -293,7 +311,7 @@ describe('M1-01 the signing key is made at start and published as a JWKS (ADR-00
   it('M1-01 a token from one instance does not verify against another one', () => {
     const first = make();
     const second = make();
-    const { access_token: token } = first.token(service('fraud', ['privacy-service']));
+    const { access_token: token } = first.token(service('reconciliation', ['privacy-service']));
     expect(() => verifyFor(second, token, 'privacy-service')).toThrow(DomainError);
   });
 });

@@ -2,7 +2,14 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { ConfigError, loadConfig } from '../src/config';
-import { createPool, pgConfigSchema, readRolePassword, SERVICE_DBS } from '../src/db';
+import {
+  createPool,
+  createServicePool,
+  pgConfigSchema,
+  readRolePassword,
+  SERVICE_DBS,
+  serviceDatabase,
+} from '../src/db';
 import { testDatabaseName } from '../src/testing';
 
 const CANARY = 'canary-db-password-5b1f9c3a7d2e4f60';
@@ -146,4 +153,76 @@ describe('M0-05 test databases have predictable, namespaced names', () => {
       expect(() => testDatabaseName('fraud', suffix)).toThrow(RangeError);
     },
   );
+});
+
+describe('N-50 a service can be pointed at a disposable database of the same shape (PG_DATABASE_SUFFIX)', () => {
+  it('N-50 names the real database without a suffix and the test-shaped one with it, as createTestDb does', () => {
+    expect(serviceDatabase('transaction', undefined)).toBe('privpay_transaction');
+    expect(serviceDatabase('transaction', 'devbl')).toBe(testDatabaseName('transaction', 'devbl'));
+  });
+
+  it('N-50 refuses a suffix that could name something else', () => {
+    for (const bad of ['', 'Dev', 'dev_bl', 'a'.repeat(21), "x'; drop", '../x']) {
+      expect(() => serviceDatabase('fraud', bad)).toThrow(RangeError);
+    }
+  });
+
+  it('N-50 the environment may carry the suffix, and only in that form', () => {
+    const base = { PG_HOST: 'localhost', PG_PORT: '5432' };
+    expect(pgConfigSchema.parse(base).PG_DATABASE_SUFFIX).toBeUndefined();
+    expect(pgConfigSchema.parse({ ...base, PG_DATABASE_SUFFIX: 'devbl' }).PG_DATABASE_SUFFIX).toBe(
+      'devbl',
+    );
+    expect(pgConfigSchema.safeParse({ ...base, PG_DATABASE_SUFFIX: 'Dev_Bl' }).success).toBe(false);
+  });
+});
+
+describe('N-50 createServicePool is the one way a service reaches its database', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'privpay-service-pool-'));
+  for (const role of ['privpay_transaction_app', 'privpay_app', 'privpay_auditor']) {
+    writeFileSync(join(dir, `${role}_password`), 'fake-password-0123456789\n');
+  }
+  afterAll(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+  const base = { PG_HOST: 'localhost', PG_PORT: 5432, PG_SECRETS_DIR: dir };
+
+  it('N-50 without a suffix: the runtime role on the real database of the service', async () => {
+    const pool = createServicePool(base, 'transaction');
+    try {
+      expect(pool.options).toMatchObject({
+        user: 'privpay_transaction_app',
+        database: 'privpay_transaction',
+      });
+    } finally {
+      await pool.end();
+    }
+  });
+
+  it('N-50 with a suffix: the same role on the database of that suffix, for every service, Privacy and its auditor included', async () => {
+    const config = { ...base, PG_DATABASE_SUFFIX: 'devbl' };
+    const app = createServicePool(config, 'transaction');
+    const privacy = createServicePool(config, 'privacy');
+    const auditor = createServicePool(config, 'privacy', 'auditor');
+    try {
+      expect(app.options).toMatchObject({
+        user: 'privpay_transaction_app',
+        database: 'privpay_transaction_test_devbl',
+      });
+      expect(privacy.options).toMatchObject({
+        user: 'privpay_app',
+        database: 'privpay_privacy_test_devbl',
+      });
+      expect(auditor.options).toMatchObject({
+        user: 'privpay_auditor',
+        database: 'privpay_privacy_test_devbl',
+      });
+    } finally {
+      await Promise.all([app.end(), privacy.end(), auditor.end()]);
+    }
+  });
+
+  it('N-50 a service without an audit role has none to open', () => {
+    expect(() => createServicePool(base, 'transaction', 'auditor')).toThrow(RangeError);
+  });
 });

@@ -79,7 +79,7 @@ Kunci `azp + sub` (nasabah/manusia/service) dan, untuk `POST /register`, alamat 
 
 ## 8. Mode
 
-`PRIVACY_MODE=proposed`: perilaku di atas. `PRIVACY_MODE=baseline` (M5-03): `tokenize` mengembalikan `customer_id`, `account_number`, dan (bila ada) `nik`, `nama`, `email` apa adanya; Privacy Service tidak dipanggil; JWT, laju, `transaction_id`, dan `ErrorMasker` identik (jalur Gateway sama). Logika bisnis Gateway tidak bercabang menurut mode di luar `Tokenizer` (ADR-0006).
+`PRIVACY_MODE=proposed`: perilaku di atas. `PRIVACY_MODE=baseline` (M5-03): `tokenize` mengembalikan `customer_id`, `account_number`, dan (bila ada) `nik`, `nama`, `email` apa adanya; Privacy Service tidak dipanggil; JWT, laju, `transaction_id`, dan `ErrorMasker` identik (jalur Gateway sama). Logika bisnis Gateway tidak bercabang menurut mode di luar `Tokenizer` (ADR-0006). **[N-48, G1]** Diimplementasikan untuk `nik` dan `nama` pada `POST /transaction` (opsi `forwardClientIdentity` yang diisi akar komposisi); `email` belum diteruskan karena Tabel IV tidak memasukkannya ke P(s) baseline (G2 terbuka), dan rute lain tidak berubah (`docs/security/kesenjangan-baseline.md`).
 
 ## 9. Invarian keamanan
 

@@ -42,10 +42,10 @@ const claimsFor = (extra: Record<string, unknown>): Record<string, unknown> => {
 };
 const service = (client: string, aud = ['privacy-service'], key = pair.privateKey): string =>
   signJwt(claimsFor({ sub: client, azp: client, aud }), { privateKey: key, kid: KID });
-const person = (role: string): string =>
+const person = (role: string, sub = `usr-${role}`): string =>
   signJwt(
     claimsFor({
-      sub: `usr-${role}`,
+      sub,
       azp: 'admin-console',
       aud: ['api-gateway', 'privacy-service', 'reconciliation-service'],
       roles: [role],
@@ -638,7 +638,7 @@ describe('M3-04 POST /disclosure-requests and its approve and reject', () => {
     expect(await count('disclosure_request')).toBe(0);
   });
 
-  it('M3-04 AZ-11 TK-24 TK-25 the admin approves for 600 s; an auditor is FORBIDDEN_ROLE; the requester cannot approve their own', async () => {
+  it('M3-04 AZ-11 TK-24 TK-25 the admin approves for 600 s; an auditor is FORBIDDEN_ROLE (the self-approval case is the next test)', async () => {
     const id = await open();
     const path = `/disclosure-requests/${id}/approve`;
     expect((await post(path, undefined, {})).status).toBe(401);
@@ -655,6 +655,52 @@ describe('M3-04 POST /disclosure-requests and its approve and reject', () => {
     const again = await post(path, person('admin'), undefined);
     expect(again.status).toBe(409);
     expect(again.body).toMatchObject({ error: { reason: 'DISCLOSURE_NOT_PENDING' } });
+  });
+
+  it('M3-04 AZ-11 TK-24 the same person who asked as auditor and approves as admin is SELF_APPROVAL, not FORBIDDEN_ROLE: the role passes, the four-eyes rule refuses', async () => {
+    const asker = person('auditor', 'usr-both');
+    const approver = person('admin', 'usr-both');
+    await issueP1();
+    const token = (
+      (
+        await post(
+          '/pseudonymize',
+          service('reconciliation'),
+          {
+            subject_type: 'CUSTOMER',
+            transaction_id: 'TX-7001',
+            target_service: 'RECONCILIATION',
+            purpose: 'INTERNAL_AUDIT',
+          },
+          asker,
+        )
+      ).body as { pseudonym: string }
+    ).pseudonym;
+    const id = (
+      (await post('/disclosure-requests', asker, requestBody(token))).body as {
+        disclosure_id: string;
+      }
+    ).disclosure_id;
+    const before = await count('audit_log');
+    const answer = await post(`/disclosure-requests/${id}/approve`, approver, {});
+    expect(answer.status).toBe(403);
+    expect(answer.body).toMatchObject({ error: { reason: 'SELF_APPROVAL' } });
+    expect(await count('audit_log')).toBe(before + 1);
+    expect(await lastAudit()).toMatchObject({
+      action: 'DISCLOSURE_APPROVED',
+      status: 'DENIED',
+      reason: 'SELF_APPROVAL',
+      actor_id: 'usr-both',
+    });
+    const stored = await db.owner.query<{ status: string }>(
+      'SELECT status FROM disclosure_request WHERE id = $1',
+      [id],
+    );
+    expect(stored.rows[0]?.status).toBe('PENDING');
+    // A different admin, with the same role and the same request, does approve: the role was never the obstacle.
+    expect((await post(`/disclosure-requests/${id}/approve`, person('admin'), {})).status).toBe(
+      200,
+    );
   });
 
   it('M3-04 AZ-12 the admin rejects; a fraud analyst never reaches Privacy; an unknown id is 404; a field in the body is 422', async () => {

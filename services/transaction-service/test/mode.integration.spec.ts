@@ -13,6 +13,7 @@ import {
 import { createServiceApp, type ServiceApp } from '@privpay/common/nest';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
 import request from 'supertest';
+import { buildCanary } from '../../../tests/pii-scan/canary';
 import { transactionModules } from '../src/transaction.module';
 
 // Seam: POST /transaction and the detail Reconciliation reads, in each mode, with the service's real module over the
@@ -201,7 +202,39 @@ describe('M5-02 FR-23 Transaction in baseline mode', () => {
   });
 });
 
+describe('M5-03 FR-23 G1 Transaction in baseline mode receives the NIK and the name the Gateway passes on', () => {
+  const person = buildCanary(54);
+
+  it('M5-03 G1 the payment is accepted with them, and they are kept nowhere and handed to no one', async () => {
+    running = await start('baseline');
+    const answer = await running.pay({ nik: person.nik, nama: person.nama });
+    expect(answer.status).toBe(201);
+    const everything = JSON.stringify([
+      await running.rows(),
+      running.fraudBodies,
+      running.notificationBodies,
+    ]);
+    expect(everything).not.toContain(person.nik);
+    expect(everything).not.toContain(person.nama);
+  });
+
+  it('M5-03 G1 S-40 a field outside the list, the email among them, is still refused and nothing is stored', async () => {
+    running = await start('baseline');
+    expect((await running.pay({ email: person.email })).status).toBe(422);
+    expect((await running.pay({ hp: person.hp })).status).toBe(422);
+    expect(await running.rows()).toEqual([]);
+  });
+});
+
 describe('M5-02 FR-23 Transaction in proposed mode', () => {
+  it('M5-03 G1 the schema of proposed stays strict: a NIK or a name is refused and nothing is stored', async () => {
+    const person = buildCanary(54);
+    running = await start('proposed');
+    expect((await running.pay({ nik: person.nik })).status).toBe(422);
+    expect((await running.pay({ nama: person.nama })).status).toBe(422);
+    expect(await running.rows()).toEqual([]);
+  });
+
   it('M5-02 N-44 an identifier in place of a token is refused at the edge and nothing is stored', async () => {
     running = await start('proposed');
     expect((await running.pay({ customer_token: CUSTOMER_ID })).status).toBe(422);

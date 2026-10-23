@@ -7,9 +7,9 @@ Bab ini berisi langkah dari repo yang baru di-clone sampai sembilan proses berja
 Langkah 1 (build), 3 (migrasi: `up to date`), 4 (rahasia, di direktori sementara), dan 5 (sembilan proses) di bawah **dijalankan sungguhan** pada 2026-10-23 (Windows 11, Node 24.12, pnpm 12.14 lewat corepack, PostgreSQL lokal), termasuk seluruh alur di bagian "Mencoba alurnya". Langkah 2 (`.env` dan `bootstrap.ps1`) dan pemasangan dependensi hanya diperiksa, tidak diulang. Dua hal tidak bisa saya ulang dari nol karena mesin ini sudah dipakai untuk pengembangan dan saya tidak boleh menghapus databasenya:
 
 - **Instalasi bersih** (`node_modules` kosong) dan **`bootstrap.ps1` pada server PostgreSQL kosong**: perintahnya saya tuliskan dari berkas aslinya ([`scripts/db/README.md`](../../scripts/db/README.md), [`scripts/db/bootstrap.ps1`](../../scripts/db/bootstrap.ps1)), tetapi pada sesi ini hanya diperiksa, tidak dijalankan. Skrip itu idempoten dan diuji dua kali berturut-turut di CI (`scripts/ci/bootstrap-twice.sh`).
-- **Menyalakan mode baseline secara manual** (lihat bagian khusus di bawah). Yang terbukti: proses hasil build mau start di kedua mode, dan skenario yang sama lulus di kedua mode lewat tes.
+- **Mode baseline sebagai proses nyata**: sejak sesi kesetiaan baseline (`feat/m5-kesetiaan-baseline`) dijalankan sungguhan lewat `pnpm dev:up --mode baseline` (delapan proses, database sendiri), bersama proposed (sembilan proses). Lihat bagian "Mode baseline" di bawah.
 
-**Tidak ada satu perintah yang menyalakan semuanya.** `package.json` tidak punya skrip `start`; `docker compose up` belum ada (ditunda, ADR-0004). Sembilan proses dijalankan satu per satu, dan layanan **tidak membaca `.env`**: mereka hanya membaca `process.env` ([`packages/common/src/nest/run-service.ts`](../../packages/common/src/nest/run-service.ts)). `.env.example` adalah daftar rujukan, bukan berkas yang dimuat. Karena itu skrip peluncur di bawah mengisi lingkungan tiap proses sendiri. Skrip itu **bukan bagian repo**; ia contoh yang saya uji.
+**Satu perintah menyalakan semuanya: `corepack pnpm dev:up`** (`dev:down` menghentikan, `dev:keys` membuat tiga kunci Privacy; [`scripts/dev/README.md`](../../scripts/dev/README.md)). Port dan lingkungan tiap proses ditulis di satu berkas, [`scripts/dev/services.cjs`](../../scripts/dev/services.cjs). Layanan **tidak membaca `.env`**: mereka hanya membaca `process.env` ([`packages/common/src/nest/run-service.ts`](../../packages/common/src/nest/run-service.ts)); `.env.example` adalah daftar rujukan, dan `dev:up` mengisi lingkungan tiap proses sendiri. Skrip peluncur PowerShell dan Bash di langkah 5 adalah versi yang saya tulis dan uji lebih dulu; dipertahankan karena menjelaskan apa yang dilakukan `dev:up`. `docker compose up` belum ada (ditunda, ADR-0004).
 
 ## Prasyarat
 
@@ -75,7 +75,7 @@ Layanan membaca rahasia dari berkas yang disebut variabel `<NAMA>_FILE`; nilai m
    ```
 
    Direktori tujuan diatur `DEV_IDP_SECRETS_DIR` (bawaan `./secrets`). Skrip tidak menimpa berkas yang ada dan hanya mencetak nama berkas ([`tools/dev-idp/scripts/make-secrets.mjs`](../../tools/dev-idp/scripts/make-secrets.mjs)).
-2. **Tiga kunci Privacy**, masing-masing 32 byte acak dalam heks, **harus berbeda** satu sama lain (FR-30): `pseudonym_hmac_secret` (K_token), `blind_index_secret` (K_index), `field_encryption_key` (K_field). **Tidak ada skrip lokal yang membuatnya**; hanya CI yang memakai `openssl rand -hex 32` (`.github/workflows/ci.yml`). Alternatif tanpa openssl, terverifikasi:
+2. **Tiga kunci Privacy**, masing-masing 32 byte acak dalam heks, **harus berbeda** satu sama lain (FR-30): `pseudonym_hmac_secret` (K_token), `blind_index_secret` (K_index), `field_encryption_key` (K_field). Dibuat oleh `corepack pnpm dev:keys` ke `secrets/` (atau `DEV_SECRETS_DIR`): tidak menimpa berkas yang ada, tidak membaca apa pun, hanya mencetak nama berkas. Karena tidak membaca, ia tidak bisa menjamin kunci yang sudah ada berbeda satu sama lain; Privacy menolak start bila ada yang sama, hilang, atau bukan 32 byte ([`services/privacy-service/src/crypto/keys.ts`](../../services/privacy-service/src/crypto/keys.ts)).
 
    ```powershell
    node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex')+'\n')" > secrets/pseudonym_hmac_secret
@@ -273,19 +273,21 @@ Dua catatan hasil yang penting untuk dipahami:
 
 Data yang tertulis di database pengembangan oleh percobaan ini (transaksi fiktif, token, baris audit) tetap ada; itu isi normal `privpay_*` yang boleh diperiksa. Tidak ada tombol "reset" di repo.
 
-## Mode baseline secara manual
+## Mode baseline
 
-Mode ditentukan `PRIVACY_MODE` pada **setiap** proses, dan skema database berbeda per mode. Nama database tetap (`SERVICE_DBS` di [`packages/common/src/db.ts`](../../packages/common/src/db.ts)), jadi satu mesin tidak bisa menjalankan dua mode bersamaan, dan database yang sudah dimigrasi proposed tidak bisa dimigrasi baseline. Yang saya uji:
+Mode ditentukan `PRIVACY_MODE` pada **setiap** proses, dan skema database berbeda per mode. Nama database layanan tetap (`SERVICE_DBS` di [`packages/common/src/db.ts`](../../packages/common/src/db.ts)) dan database pengembangan berisi skema proposed; menjalankan migrasi baseline di sana ditolak:
 
 ```powershell
 $env:PRIVACY_MODE = 'baseline'; corepack pnpm db:migrate transaction
 ```
 
-menghasilkan `db:migrate failed: checksum_changed` dan keluar dengan kode 1, tanpa mengubah apa pun (riwayat migrasi proposed tidak cocok dengan berkas baseline; pengaman `migrate`).
+menghasilkan `db:migrate failed: checksum_changed` dan keluar dengan kode 1, tanpa mengubah apa pun (pengaman `migrate`; terverifikasi). Karena itu baseline berjalan di database sendiri (N-50): `corepack pnpm dev:up --mode baseline` membuat ulang `privpay_<layanan>_test_devbl` untuk Transaction, Fraud, Notification, dan Reconciliation dari nol (migrasi `baseline/`), lalu menyalakan **delapan** proses (tanpa Privacy Service) dengan `PRIVACY_MODE=baseline`, `PG_DATABASE_SUFFIX=devbl`, dan tanpa `PRIVACY_SERVICE_URL`. Database proposed tidak disentuh; `pnpm db:test-databases` menampilkan database `devbl` sebagai sisa tes.
 
-Konsekuensi praktis, **belum saya jalankan karena menghapus database pengembangan**: menjalankan baseline secara manual berarti memakai database yang bersih (menjatuhkan lalu membuat ulang kelima database lewat `bootstrap.ps1`, atau server PostgreSQL lain), `PRIVACY_MODE=baseline corepack pnpm db:migrate`, lalu menyalakan **delapan** proses (tanpa Privacy Service) dengan `PRIVACY_MODE=baseline` dan **tanpa** `PRIVACY_SERVICE_URL`. Jalur yang sudah teruji untuk baseline:
+**Terverifikasi** (2026-10-23): `dev:up --mode baseline` menyalakan delapan proses yang menjawab `/health` dengan `mode=baseline`; `POST /register` 201, pembayaran 35.000 dan 1.000.000 `COMPLETED`, 8.000.000 `HELD`, daftar ditahan berisi satu item; jawaban dan jumlah SMS sama dengan proposed; pembayaran yang membawa `nik` dan `nama` diterima (201). Log semua proses tidak memuat NIK, nama, HP, rekening, email, maupun `customer_id` skenario itu. Satu skenario, bukan bukti umum.
 
-- Tes E2E `services/gateway/test/e2e/equivalence.integration.spec.ts` menjalankan skenario yang sama di kedua mode dengan database tes terpisah per mode.
+Jalur lain yang teruji untuk baseline:
+
+- Tes E2E `services/gateway/test/e2e/equivalence.integration.spec.ts` menjalankan skenario yang sama di kedua mode dengan database tes terpisah per mode, memindai basis data, log, payload antar-layanan, jawaban, dan SMS.
 - Tes asap `tests/smoke/built-service.smoke.spec.ts` menjalankan hasil build tiap layanan di baseline dan proposed sebagai proses nyata.
 
 Aturan yang menolak konfigurasi setengah-beralih, terverifikasi pada proses hasil build (pesan hanya menyebut nama variabel):

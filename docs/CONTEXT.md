@@ -24,7 +24,7 @@ Dipakai oleh `/grill-with-docs`: tiap istilah baru atau penajaman istilah langsu
 | Brankas identitas | Tabel `identity_vault`: NIK, nama, HP, rekening terenkripsi per kolom | `identityVault` | "tabel user" |
 | Audit rutin | `audit-request` yang mengembalikan token P7 + data transaksi, tanpa identitas | `auditRequest` | pembukaan identitas |
 | Pembukaan identitas (disclosure) | Proses bersyarat membuka atribut brankas: permintaan → persetujuan admin lain → `/de-pseudonymize` | `disclosureRequest` | "de-pseudonymize" saja (itu langkah terakhir) |
-| De-pseudonimisasi | Satu langkah akhir `POST /de-pseudonymize` dengan `disclosure_id` APPROVED, lima gerbang | `dePseudonymize` | |
+| De-pseudonimisasi | Satu langkah akhir `POST /de-pseudonymize` dengan `disclosure_id` APPROVED: lima gerbang ditambah STEP 0 (pemanggil dan peran, diperiksa lebih dulu, N-29) | `dePseudonymize` | |
 | Empat mata (four-eyes) | Pemohon ≠ penyetuju | `chk_four_eyes`, `SELF_APPROVAL` | |
 | Gerbang (GATE 1..5) | Pemeriksaan berurutan pada `/de-pseudonymize`; berhenti di kegagalan pertama | `gate` | gate = gateway (jangan campur) |
 | Gateway | API Gateway Kong + plugin `privacy-tokenizer` | `gateway` | gate |

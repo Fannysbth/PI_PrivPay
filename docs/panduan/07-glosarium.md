@@ -18,7 +18,7 @@ Urutan: (A) awalan ID yang sering muncul di dokumen dan komentar kode, (B) istil
 | **Q-nn** | pertanyaan terbuka yang diputuskan atau dikembalikan ke dosen (bagian B dan C `OPEN_QUESTIONS.md`) |
 | **K-nn** | keputusan spek yang diusulkan dengan nilai bawaan lalu diterima pemilik (bagian F `OPEN_QUESTIONS.md`); "K" dari "konfirmasi" |
 | **N-nn** | keputusan implementasi yang diambil saat membangun, menunggu atau sudah disetujui pemilik (bagian G `OPEN_QUESTIONS.md`). N-45 jendela riwayat Fraud, N-46 `account_number` di baseline, N-47 definisi env tak konsisten |
-| **S-nn** | dua penggunaan berbeda: di [`docs/security/security-checklist.md`](../security/security-checklist.md) dan komentar kode, S-nn adalah **butir checklist keamanan** (S-03 kunci berbeda, S-34 audit append-only); di `OPEN_QUESTIONS.md` bagian E, S-01 sampai S-07 adalah butir wajib spek dengan penomoran sendiri. Bila ragu, lihat berkas tempat ia muncul |
+| **S-nn**, **W-nn** | `S-nn` adalah butir checklist keamanan; `W-nn` butir wajib spek. Di [`docs/security/security-checklist.md`](../security/security-checklist.md) dan komentar kode, S-nn adalah **butir checklist keamanan** (S-03 kunci berbeda, S-34 audit append-only); di `OPEN_QUESTIONS.md` bagian E, butir wajib spek berawalan **W-nn** (dulu S-01 sampai S-07; diganti agar tidak bertabrakan dengan checklist) |
 | **T-nn** | ancaman di [`docs/security/threat-model.md`](../security/threat-model.md) (T-16 ciphertext dipindah antar baris) |
 | **C-nn** | butir QA di [`docs/qa/qa-checklist.md`](../qa/qa-checklist.md) |
 | **M0..M8** | milestone PRD 19 (M4 layanan bisnis, **M5 mode baseline**, M6 Newman dan pemindai, M7 k6) |

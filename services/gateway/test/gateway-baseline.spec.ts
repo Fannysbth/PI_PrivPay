@@ -65,6 +65,33 @@ describe('M5-03 FR-23 POST /transaction in baseline mode', () => {
     expect(privacyCalls()).toHaveLength(0);
   });
 
+  it('M5-03 FR-23 gateway spec 8 the NIK and the name the client sent go on as they are, the email does not (G1, G2)', async () => {
+    const answer = await pay(gateway.tokens.customer(), {
+      ...PAYMENT,
+      nik: person.nik,
+      nama: person.nama,
+      email: person.email,
+    });
+    expect(answer.status).toBe(201);
+    const [toTransaction] = hostCalls('transaction-service');
+    expect(toTransaction?.body).toMatchObject({ nik: person.nik, nama: person.nama });
+    expect(JSON.stringify(toTransaction?.body)).not.toContain(person.email);
+  });
+
+  it('M5-03 FR-23 gateway spec 8 what the client did not send is not invented (G1)', async () => {
+    await pay(gateway.tokens.customer());
+    const [toTransaction] = hostCalls('transaction-service');
+    expect(Object.keys(toTransaction?.body as object).sort()).toEqual([
+      'account_token',
+      'amount',
+      'customer_token',
+      'geohash',
+      'idempotency_key',
+      'merchant_id',
+      'transaction_id',
+    ]);
+  });
+
   it('M5-03 FR-23 the rest of the path is that of proposed: a new TX id for each request, no token is 401, a person is 403', async () => {
     const one = await pay(gateway.tokens.customer());
     const two = await pay(gateway.tokens.customer());

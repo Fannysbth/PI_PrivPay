@@ -189,7 +189,7 @@ describe('M4-01 NFR-24 until Fraud is wired, an amount at or over the threshold 
   });
 });
 
-describe('M4-01 NFR-23 S-02 T-13 the same key at the same time', () => {
+describe('M4-01 NFR-23 W-02 T-13 the same key at the same time', () => {
   // 20 rounds, as the Phase 2 criterion asks. Each round uses its own key, so a round cannot hide behind the last.
   it.each([[2], [20]])(
     'M4-01 NFR-23 T-13 %s identical requests at once, 20 rounds: one row, every answer 200 or 201 with the same transaction_id, no 5xx',

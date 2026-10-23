@@ -387,8 +387,8 @@ describe('M1-01 /admin/users is for the gateway only (AZ-38, AZ-39)', () => {
     await request(app.httpServer).delete('/admin/users/CUST-000104').expect(401);
     const other = await tokenOf(app, {
       grant_type: 'client_credentials',
-      client_id: 'fraud',
-      client_secret: SECRETS['fraud'],
+      client_id: 'reconciliation',
+      client_secret: SECRETS['reconciliation'],
       audience: ['privacy-service'],
     });
     await request(app.httpServer)

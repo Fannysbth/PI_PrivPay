@@ -67,6 +67,11 @@ export interface Stack {
   readonly calls: string[];
   /** Every call that was tried, also at a host that is down or not there (baseline has no Privacy), as `METHOD host path`. */
   readonly attempted: string[];
+  /**
+   * The bodies that went to each host, in memory only (the observer of docs/spec/pengujian-dan-pengukuran.md 6, target 1):
+   * a test scans them and reports attribute and place, never a value.
+   */
+  readonly payloads: Record<string, string[]>;
   /** Runs before a call reaches its host; a test uses it to move the clock at an exact point of a flow. */
   hook: ((host: Host, method: string, path: string) => void) | undefined;
   /** A token of a seeded person or customer, as the dev IdP gives it (`dev_login`). */
@@ -124,6 +129,7 @@ export async function startStack(
   const failing = new Map<string, number>();
   const calls: string[] = [];
   const attempted: string[] = [];
+  const payloads: Record<string, string[]> = {};
 
   const dir = mkdtempSync(join(tmpdir(), 'privpay-e2e-'));
   const secretsDir = join(dir, 'secrets');
@@ -173,6 +179,7 @@ export async function startStack(
     const method = (init?.method ?? 'GET').toLowerCase() as 'get' | 'post' | 'patch' | 'delete';
     stack.hook?.(host, method, url.pathname);
     attempted.push(`${method.toUpperCase()} ${host} ${url.pathname}`);
+    if (typeof init?.body === 'string') (payloads[host] ??= []).push(init.body);
     const target = running[host];
     if (target === undefined || down.has(host)) {
       throw new TypeError('connection refused to ' + url.hostname);
@@ -369,6 +376,7 @@ export async function startStack(
     down,
     calls,
     attempted,
+    payloads,
     fail: (host, path, times = Number.MAX_SAFE_INTEGER) =>
       void failing.set(`${host} ${path}`, times),
     get hook() {
@@ -399,6 +407,7 @@ export async function startStack(
       failing.clear();
       calls.length = 0;
       attempted.length = 0;
+      for (const bodies of Object.values(payloads)) bodies.length = 0;
       stack.hook = undefined;
       for (const name of Object.keys(logs) as (Host | 'gateway')[]) logs[name].length = 0;
     },

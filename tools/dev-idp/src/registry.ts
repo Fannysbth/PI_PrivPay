@@ -36,7 +36,8 @@ export const SERVICE_AUDIENCES: Readonly<Record<ServiceClient, readonly string[]
     DEV_IDP_AUDIENCE,
   ],
   transaction: ['privacy-service', 'fraud-service', 'notification-service'],
-  fraud: ['privacy-service'],
+  // Fraud only answers Transaction (spec fraud 3, AZ-31): it calls no one, Privacy least of all.
+  fraud: [],
   notification: ['privacy-service', 'sms-simulator'],
   reconciliation: ['privacy-service', 'transaction-service'],
 };

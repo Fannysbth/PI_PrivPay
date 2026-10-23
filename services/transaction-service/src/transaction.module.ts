@@ -17,7 +17,7 @@ import {
 import {
   createHttpClient,
   createLogger,
-  createPool,
+  createServicePool,
   createTokenCache,
   DomainError,
   idpJwksSource,
@@ -26,7 +26,6 @@ import {
   readSecret,
   RealDelay,
   schedulerProviders,
-  SERVICE_DBS,
   subjectRefShape,
   type Delay,
   type HttpClient,
@@ -147,11 +146,10 @@ export function transactionModules(
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
     const config = loadTransactionConfig(env);
-    const db = SERVICE_DBS.transaction;
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, { role: db.app, database: db.database });
+      app = createServicePool(config, 'transaction');
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({
@@ -197,6 +195,7 @@ export function transactionModules(
       review: new TransactionReview({ repository, clock, ...neighbours, logger }),
       reads: new TransactionReads({ repository, discloseAccount: mode === 'baseline' }),
       subjectRefs: subjectRefShape(mode),
+      acceptClientIdentity: mode === 'baseline',
     });
     // M4-03, M4-10: the cleaner of PENDING rows and of the status Privacy has not heard, every TX_SWEEP_INTERVAL_SECONDS.
     const sweeper = new PendingSweeper({

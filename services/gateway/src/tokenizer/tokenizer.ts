@@ -13,6 +13,11 @@ export interface TokenizerDeps {
   readonly privacy: PrivacyPort;
   /** K-17: a new `TX-` id for each request. */
   readonly newTransactionId: () => string;
+  /**
+   * Gateway spec 8 (G1): the baseline passes the NIK and the name of the request on as they are, where proposed drops
+   * them (FR-03). Set by the composition root; the email is not passed on (G2 is open).
+   */
+  readonly forwardClientIdentity?: boolean;
 }
 
 export type TokenizeInput =
@@ -40,6 +45,8 @@ export interface TransactionOutbound {
   readonly merchant_id: string;
   readonly amount: number;
   readonly geohash: string;
+  readonly nik?: string;
+  readonly nama?: string;
 }
 
 export interface SettlementOutbound {
@@ -113,7 +120,8 @@ export class Tokenizer {
         ...context,
       }),
     ]);
-    const { merchant_id, amount, geohash } = parsed.data;
+    const { merchant_id, amount, geohash, nik, nama } = parsed.data;
+    const clientIdentity = this.deps.forwardClientIdentity === true;
     return {
       route: 'transaction',
       transactionId,
@@ -125,6 +133,8 @@ export class Tokenizer {
         merchant_id,
         amount,
         geohash,
+        ...(clientIdentity && nik !== undefined ? { nik } : {}),
+        ...(clientIdentity && nama !== undefined ? { nama } : {}),
       },
     };
   }

@@ -194,6 +194,14 @@ async function whereIsThe(stack: AnyStack, person: Canary, answers: unknown[]): 
       scanText(stack.logs[host].join('\n'), [person], { service: host, location: 'log' }),
     );
   }
+  // The bodies the services sent each other. Privacy is the one place that may receive the raw identity (invariant 1).
+  for (const [host, bodies] of Object.entries(stack.payloads)) {
+    if (host === 'privacy.test') continue;
+    note(
+      `payload:${host}`,
+      scanText(bodies.join('\n'), [person], { service: host, location: 'payload' }),
+    );
+  }
   note(
     'answers',
     scanText(JSON.stringify(answers), [person], { service: 'gateway', location: 'answers' }),
@@ -234,7 +242,15 @@ async function leaveATrail(stack: AnyStack, index: number): Promise<string[]> {
       .post('/transaction')
       .set('authorization', `Bearer ${await stack.login('customer-app', username)}`)
       .set('idempotency-key', randomUUID())
-      .send({ source_account: person.rekening, merchant_id: 'MRC-001', amount, geohash });
+      // The client sends its NIK and name too (FR-03 lets it); proposed drops them, baseline passes them on (G1).
+      .send({
+        source_account: person.rekening,
+        merchant_id: 'MRC-001',
+        amount,
+        geohash,
+        nik: person.nik,
+        nama: person.nama,
+      });
   answers.push((await pay(35_000, 'qqgu4')).body);
   answers.push((await pay(2_000_000, 'qqgu7')).body);
   stack.clock.set(`${stack.clock.now().toISOString().slice(0, 10)}T23:15:00.000Z`);
@@ -299,7 +315,13 @@ describe('M5-02 FR-23 ADR-0006 the same scenario in proposed and in baseline', (
 
   it('M5-02 FR-23 FR-42 the mode changes what is kept: proposed keeps no identity, baseline keeps the real data and the scan finds it', () => {
     // Proposed: the phone is where it must be (Notification, the SMS simulator) and nowhere else.
-    expect(trail.proposed).toEqual(['hp@notification-db', 'hp@sms']);
+    expect(trail.proposed).toEqual([
+      'hp@notification-db',
+      'hp@payload:notification.test',
+      // DF13: the SMS provider is sent the phone and the text; the simulator stands in for it.
+      'hp@payload:sms.test',
+      'hp@sms',
+    ]);
     // Baseline: the scan MUST find real data, in the services that key by the identity. If it found nothing the scanner
     // would be blind, and the equality above would prove nothing about privacy.
     expect(trail.baseline).toEqual(
@@ -310,8 +332,21 @@ describe('M5-02 FR-23 ADR-0006 the same scenario in proposed and in baseline', (
         'customer_id@notification-db',
         'hp@notification-db',
         'hp@sms',
+        // G1: what the Gateway passes on to Transaction in baseline, seen on the wire and not in a table.
+        'nik@payload:transaction.test',
+        'nama@payload:transaction.test',
+        'customer_id@payload:transaction.test',
+        'rekening@payload:transaction.test',
       ]),
     );
     expect(trail.baseline.length).toBeGreaterThan(trail.proposed.length);
+  });
+
+  it('M5 G7 FR-42 NFR-17 baseline keeps real data in its tables and on the wire, but no log and no answer to the client holds any', () => {
+    // The logger takes fields from a list in both modes, so the data of baseline is where the design puts it and not in
+    // the places that outlive a request. If this fails, a log line carries an identity in baseline.
+    const loose = trail.baseline.filter((place) => /@(log:|answers)/.test(place));
+    expect(loose).toEqual([]);
+    expect(trail.proposed.filter((place) => /@(log:|answers)/.test(place))).toEqual([]);
   });
 });

@@ -33,8 +33,14 @@ const GEOHASH = /^[0-9b-hjkmnp-z]{1,12}$/;
 
 // The two references are tokens in proposed and the customer id and the account number in baseline (N-44); the field
 // names are the wire contract of the Gateway and stay the same.
-const newTransaction = (refs: { customer: RegExp; account: RegExp }) =>
+const newTransaction = (
+  refs: { customer: RegExp; account: RegExp },
+  acceptClientIdentity: boolean,
+) =>
   z.strictObject({
+    ...(acceptClientIdentity
+      ? { nik: z.string().max(64).optional(), nama: z.string().max(200).optional() }
+      : {}),
     transaction_id: z.string().regex(TRANSACTION_ID),
     idempotency_key: z.string().regex(IDEMPOTENCY_KEY),
     customer_token: z.string().regex(refs.customer),
@@ -84,6 +90,11 @@ export interface TransactionHttpDeps {
   readonly reads: Pick<TransactionReads, 'completedOn' | 'detail'>;
   /** The forms of the references to the customer and the account in this mode (N-44). */
   readonly subjectRefs: { readonly customer: RegExp; readonly account: RegExp };
+  /**
+   * G1: baseline only. The Gateway passes the NIK and the name of the request on, and this edge lets them through so the
+   * payment is not refused; they are read by no one and kept nowhere. Proposed refuses them like any unknown field.
+   */
+  readonly acceptClientIdentity?: boolean;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -97,7 +108,10 @@ export class TransactionHttp {
   private readonly newTransactionSchema: ReturnType<typeof newTransaction>;
 
   constructor(private readonly deps: TransactionHttpDeps) {
-    this.newTransactionSchema = newTransaction(deps.subjectRefs);
+    this.newTransactionSchema = newTransaction(
+      deps.subjectRefs,
+      deps.acceptClientIdentity === true,
+    );
   }
 
   private async caller(headers: AuthHeaders): Promise<Authenticated> {

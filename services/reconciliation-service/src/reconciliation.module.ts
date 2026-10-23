@@ -15,14 +15,13 @@ import {
 import {
   createHttpClient,
   createLogger,
-  createPool,
+  createServicePool,
   createTokenCache,
   DomainError,
   idpJwksSource,
   JwksKeys,
   privacyBaseUrl,
   schedulerProviders,
-  SERVICE_DBS,
   subjectRefShape,
   type HttpClient,
   type Timers,
@@ -126,11 +125,10 @@ export function reconciliationModules(
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
     const config = loadReconciliationConfig(env);
-    const db = SERVICE_DBS.reconciliation;
     const owned: Pool[] = [];
     let app = overrides.pools?.app;
     if (app === undefined) {
-      app = createPool(config, { role: db.app, database: db.database });
+      app = createServicePool(config, 'reconciliation');
       owned.push(app);
     }
     const http: HttpClient = createHttpClient({

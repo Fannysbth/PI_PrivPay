@@ -4,6 +4,18 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M5 kesetiaan baseline
+
+- G1 (N-48): pada baseline Gateway meneruskan `nik` dan `nama` dari klien ke Transaction (opsi `forwardClientIdentity`) dan Transaction baseline menerimanya tanpa menyimpannya; proposed tidak berubah. Analisis kesenjangan di `docs/security/kesenjangan-baseline.md`. Tes: unit Gateway, mode Transaction, dan suite kesetaraan kini memindai payload antar-layanan (kontrol positif per atribut dan lokasi); mutasi (NIK dihilangkan dari payload baseline, atribut dibocorkan ke proposed) terbunuh.
+
+- 3a: izin audience `privacy-service` milik klien `fraud` di dev-idp dicabut (Fraud hanya menerima panggilan; registri `fraud: []`). Tes: Fraud ditolak (`FORBIDDEN_ROLE`) untuk setiap audience; Privacy sudah menolaknya di lapis layanan. Tiga fixture lama yang memakai Fraud sebagai klien dengan akses Privacy dipindah ke Reconciliation (asersi tidak berubah); mutasi (izin dikembalikan) membuat tes baru gagal.
+
+- 3b: tes HTTP Privacy membuktikan `SELF_APPROVAL` oleh aturan empat mata (dua token berperan tunggal, `sub` sama; bukan `FORBIDDEN_ROLE`), satu baris DENIED, permintaan tetap PENDING; mutasi (pemeriksaan kode dihapus) menghasilkan 500 dan tes gagal. Pengguna dev-idp dua peran TIDAK ditambahkan karena ADR-0007 butir 8 (N-49).
+
+- 3c: `pnpm dev:keys`, `pnpm dev:up [--mode]`, `pnpm dev:down` (`scripts/dev`; port dan lingkungan di satu berkas `services.cjs`, README di sana). Baseline kini dapat dijalankan sebagai proses nyata lewat env opsional `PG_DATABASE_SUFFIX` (N-50). Tes: rencana divalidasi terhadap loader konfigurasi sembilan proses di kedua mode, aturan N-47, `dev:keys` tidak menimpa; mutasi terbunuh. Dijalankan sungguhan di proposed (9 proses) dan baseline (8 proses): register, bayar kecil, besar `HELD`, daftar ditahan; jawaban identik; log tanpa nilai kanari.
+
+- 3d: dokumen usang diperbarui (`PENJELASAN_MODE_BASELINE.md`, `review-M5.md`, panduan 01/05/07/08); istilah "lima gerbang ditambah STEP 0" disamakan; butir bagian E OPEN_QUESTIONS berawalan `W-` (dulu `S-01`..`S-07`, bentrok dengan checklist) beserta lima rujukannya; asersi baru: baseline tidak menyisakan temuan di log dan jawaban klien (satu skenario).
+
 ### M5 Sesi 2
 
 - N-45: env baru wajib `FRAUD_HISTORY_DAYS` (nilai kerja 30). Riwayat Fraud dibatasi di SQL (`assessed_at >= $2`) pada kedua mode, bukan lewat umur token; tes batas tepat 30 hari dan 30 hari + 1 detik di proposed dan baseline, mutasi (klausa dihapus) terbunuh. Ancaman validitas di OPEN_QUESTIONS N-45.
