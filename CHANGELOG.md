@@ -8,6 +8,8 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 - G1 (N-48): pada baseline Gateway meneruskan `nik` dan `nama` dari klien ke Transaction (opsi `forwardClientIdentity`) dan Transaction baseline menerimanya tanpa menyimpannya; proposed tidak berubah. Analisis kesenjangan di `docs/security/kesenjangan-baseline.md`. Tes: unit Gateway, mode Transaction, dan suite kesetaraan kini memindai payload antar-layanan (kontrol positif per atribut dan lokasi); mutasi (NIK dihilangkan dari payload baseline, atribut dibocorkan ke proposed) terbunuh.
 
+- 3a: izin audience `privacy-service` milik klien `fraud` di dev-idp dicabut (Fraud hanya menerima panggilan; registri `fraud: []`). Tes: Fraud ditolak (`FORBIDDEN_ROLE`) untuk setiap audience; Privacy sudah menolaknya di lapis layanan. Tiga fixture lama yang memakai Fraud sebagai klien dengan akses Privacy dipindah ke Reconciliation (asersi tidak berubah); mutasi (izin dikembalikan) membuat tes baru gagal.
+
 ### M5 Sesi 2
 
 - N-45: env baru wajib `FRAUD_HISTORY_DAYS` (nilai kerja 30). Riwayat Fraud dibatasi di SQL (`assessed_at >= $2`) pada kedua mode, bukan lewat umur token; tes batas tepat 30 hari dan 30 hari + 1 detik di proposed dan baseline, mutasi (klausa dihapus) terbunuh. Ancaman validitas di OPEN_QUESTIONS N-45.
