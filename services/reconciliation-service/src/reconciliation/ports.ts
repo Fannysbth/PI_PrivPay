@@ -6,10 +6,15 @@ export interface CompletedTransaction {
 }
 
 /** One transaction as an audit may see it (spec transaction 3.4): no token and no identity. */
+/**
+ * One transaction as an audit may see it (spec transaction 3.4): no token and no identity. In baseline Transaction also
+ * names the account number (N-46), since there is no Privacy to turn the transaction into an account.
+ */
 export interface TransactionDetail {
   readonly transactionId: string;
   readonly amount: number;
   readonly status: string;
+  readonly accountRef?: string;
 }
 
 /** The person behind a call: the id for the record, the token itself for Privacy, which checks the role again. */

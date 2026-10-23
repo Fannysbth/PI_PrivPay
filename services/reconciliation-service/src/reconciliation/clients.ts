@@ -1,4 +1,11 @@
-import { DomainError, REASONS, isReason, type HttpClient, type TokenCache } from '@privpay/common';
+import {
+  DomainError,
+  REASONS,
+  isReason,
+  subjectRefShape,
+  type HttpClient,
+  type TokenCache,
+} from '@privpay/common';
 import { z } from 'zod';
 import { disclosedAttributes } from './attributes';
 import type {
@@ -18,6 +25,8 @@ const detailAnswer = z.object({
   transaction_id: z.string().regex(TRANSACTION_ID),
   amount: z.number().int().min(1),
   status: z.enum(['PENDING', 'COMPLETED', 'HELD', 'FAILED']),
+  // Only baseline names it (N-46): the account number, in the form of that mode.
+  account_number: z.string().regex(subjectRefShape('baseline').account).optional(),
 });
 const openAnswer = z.object({ attributes: disclosedAttributes });
 const completedPage = z.object({
@@ -95,6 +104,9 @@ export class HttpTransactionClient implements TransactionClient {
       transactionId: parsed.data.transaction_id,
       amount: parsed.data.amount,
       status: parsed.data.status,
+      ...(parsed.data.account_number === undefined
+        ? {}
+        : { accountRef: parsed.data.account_number }),
     };
   }
 }

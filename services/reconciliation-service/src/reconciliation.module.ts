@@ -22,6 +22,7 @@ import {
   JwksKeys,
   schedulerProviders,
   SERVICE_DBS,
+  subjectRefShape,
   type HttpClient,
   type Timers,
   type TokenCache,
@@ -36,6 +37,7 @@ import {
   type PrivacyClient,
   type TransactionClient,
 } from './reconciliation';
+import { baselinePrivacyClient, baselineReconciliationRepository } from './baseline';
 import { proposedReconciliationRepository } from './proposed';
 import { HttpPrivacyClient, HttpTransactionClient } from './reconciliation/clients';
 import { previousDate } from './reconciliation/schedule';
@@ -133,7 +135,9 @@ export function reconciliationModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        'privacy-service': config.PRIVACY_SERVICE_URL,
+        ...(config.PRIVACY_SERVICE_URL === undefined
+          ? {}
+          : { 'privacy-service': config.PRIVACY_SERVICE_URL }),
         'transaction-service': config.TRANSACTION_SERVICE_URL,
       },
       timeoutMs: config.HTTP_TIMEOUT_MS,
@@ -141,10 +145,11 @@ export function reconciliationModules(
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
     });
     // A test that replaces both neighbours reaches no service, so it needs no secret; a real start always does.
-    const clientSecret =
-      overrides.transactions !== undefined && overrides.privacy !== undefined
-        ? ''
-        : readClientSecret(env);
+    const mode = config.PRIVACY_MODE;
+    const needsSecret =
+      overrides.transactions === undefined ||
+      (mode === 'proposed' && overrides.privacy === undefined);
+    const clientSecret = needsSecret ? readClientSecret(env) : '';
     // One cached service token per service it calls (NFR-21); the secret never leaves this closure.
     const tokenFor = (audience: string): TokenCache =>
       createTokenCache({
@@ -177,14 +182,21 @@ export function reconciliationModules(
       destination: overrides.logDestination,
     });
 
+    // ADR-0006: the one place the mode picks the repository and the Privacy client; the service below is the same code.
+    const transactions =
+      overrides.transactions ??
+      new HttpTransactionClient({ http, serviceToken: tokenFor('transaction-service') });
     const service = new ReconciliationService({
-      repository: proposedReconciliationRepository(app),
-      transactions:
-        overrides.transactions ??
-        new HttpTransactionClient({ http, serviceToken: tokenFor('transaction-service') }),
+      repository:
+        mode === 'baseline'
+          ? baselineReconciliationRepository(mode, app)
+          : proposedReconciliationRepository(app),
+      transactions,
       privacy:
         overrides.privacy ??
-        new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') }),
+        (mode === 'baseline'
+          ? baselinePrivacyClient(mode, transactions)
+          : new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') })),
       clock,
       logger,
     });
@@ -198,6 +210,7 @@ export function reconciliationModules(
         source: idpJwksSource(http),
       }),
       reconciliation: service,
+      accountRef: subjectRefShape(mode).account,
     });
     return [
       {
