@@ -22,7 +22,7 @@ Konvensi: `platform-dan-ci.md` bagian 4 dan 6. Pemanggil rute transaksi harus `A
 
 ### 3.1 `POST /transaction`
 
-Permintaan (Gateway→Transaction): `{transaction_id, idempotency_key, customer_token, account_token, merchant_id, amount, geohash}` (zod ketat; `idempotency_key` UUID; token `Pseudonym`; `amount` bilangan bulat ≥ 1; `merchant_id` harus ada di `merchants`, selain itu 422). Respons 201 `{transaction_id, status}` (`COMPLETED`, `HELD`, atau `FAILED`); replay identik 200 dengan isi sama; 409 `IDEMPOTENCY_CONFLICT`.
+Permintaan (Gateway→Transaction): `{transaction_id, idempotency_key, customer_token, account_token, merchant_id, amount, geohash}` (zod ketat; `idempotency_key` UUID; token `Pseudonym`; `amount` bilangan bulat ≥ 1; `merchant_id` harus ada di `merchants`, selain itu 422). Respons 201 `{transaction_id, status}` (`COMPLETED`, `HELD`, atau `FAILED`); replay identik 200 dengan isi sama; 409 `IDEMPOTENCY_CONFLICT`. **[N-48, G1]** Pada mode baseline permintaan juga boleh memuat `nik` dan `nama` (opsional) yang diteruskan Gateway; keduanya divalidasi panjangnya lalu dibuang: tidak disimpan, dicatat, atau diteruskan ke Fraud dan Notification. Pada proposed field itu tetap ditolak (422).
 
 ### 3.2 `GET /transaction/held`
 

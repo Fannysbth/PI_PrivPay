@@ -174,6 +174,7 @@ export function gatewayModules(
       tokenizer: new Tokenizer({
         privacy,
         newTransactionId: () => ids.generate(),
+        forwardClientIdentity: config.PRIVACY_MODE === 'baseline',
       }),
       registration: new RegistrationFlow({
         http,

@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M5 kesetiaan baseline
+
+- G1 (N-48): pada baseline Gateway meneruskan `nik` dan `nama` dari klien ke Transaction (opsi `forwardClientIdentity`) dan Transaction baseline menerimanya tanpa menyimpannya; proposed tidak berubah. Analisis kesenjangan di `docs/security/kesenjangan-baseline.md`. Tes: unit Gateway, mode Transaction, dan suite kesetaraan kini memindai payload antar-layanan (kontrol positif per atribut dan lokasi); mutasi (NIK dihilangkan dari payload baseline, atribut dibocorkan ke proposed) terbunuh.
+
 ### M5 Sesi 2
 
 - N-45: env baru wajib `FRAUD_HISTORY_DAYS` (nilai kerja 30). Riwayat Fraud dibatasi di SQL (`assessed_at >= $2`) pada kedua mode, bukan lewat umur token; tes batas tepat 30 hari dan 30 hari + 1 detik di proposed dan baseline, mutasi (klausa dihapus) terbunuh. Ancaman validitas di OPEN_QUESTIONS N-45.

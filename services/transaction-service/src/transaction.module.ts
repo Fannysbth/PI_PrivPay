@@ -197,6 +197,7 @@ export function transactionModules(
       review: new TransactionReview({ repository, clock, ...neighbours, logger }),
       reads: new TransactionReads({ repository, discloseAccount: mode === 'baseline' }),
       subjectRefs: subjectRefShape(mode),
+      acceptClientIdentity: mode === 'baseline',
     });
     // M4-03, M4-10: the cleaner of PENDING rows and of the status Privacy has not heard, every TX_SWEEP_INTERVAL_SECONDS.
     const sweeper = new PendingSweeper({
