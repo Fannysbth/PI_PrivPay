@@ -17,8 +17,9 @@ const isRealDate = (value: string): boolean => {
 const amount = z.number().int().min(1).max(Number.MAX_SAFE_INTEGER);
 
 /**
- * `nik`, `nama` and `email` are accepted only to be dropped (FR-03): the client may send them, the tokenizer never
- * reads them, and the outbound payload is built from the allow list instead of by deleting from this object.
+ * `nik`, `nama` and `email` are accepted so the client may send them (FR-03). In proposed they are dropped: the
+ * outbound payload is built from the allow list instead of by deleting from this object. Only in baseline does the
+ * tokenizer read `nik` and `nama` and pass them on (G1, gateway spec 8); the email is never passed on.
  */
 export const transactionBody = z.strictObject({
   source_account: z.string().regex(ACCOUNT_NUMBER),

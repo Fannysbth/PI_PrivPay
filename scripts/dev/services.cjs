@@ -175,7 +175,39 @@ function buildPlan(mode, options) {
   }));
 }
 
+/**
+ * The environment of one process: the shell's, then the plan's. The database suffix is the plan's alone (N-50): one left
+ * in the shell or in .env.test must not point a proposed run, or a service the plan gave none, at another database.
+ */
+function childEnv(parent, proc) {
+  const env = { ...parent, ...proc.env };
+  if (proc.env.PG_DATABASE_SUFFIX === undefined) delete env.PG_DATABASE_SUFFIX;
+  return env;
+}
+
+/** Whether a process with this id exists (signal 0 only checks). */
+function alive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** `--log-dir <dir>` of `dev:up` and `dev:down`: the same default and the same refusal of a missing value. */
+function logDirFrom(argv, root) {
+  const at = argv.indexOf('--log-dir');
+  if (at === -1) return path.resolve(root, DEFAULT_LOG_DIR);
+  const value = argv[at + 1];
+  if (value === undefined) throw new Error('--log-dir needs a value');
+  return path.resolve(root, value);
+}
+
 module.exports = {
+  alive,
+  childEnv,
+  logDirFrom,
   PORTS,
   MODES,
   BASELINE_DB_SUFFIX,

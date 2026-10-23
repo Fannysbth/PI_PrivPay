@@ -28,6 +28,10 @@ interface Services {
   CLIENT_SECRET_FILES: string[];
   BASELINE_DB_SERVICES: string[];
   buildPlan(mode: string, options: { secretsDir: string }): Proc[];
+  childEnv(
+    parent: Record<string, string | undefined>,
+    proc: Proc,
+  ): Record<string, string | undefined>;
 }
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const services = require('../../scripts/dev/services.cjs') as Services;
@@ -124,6 +128,32 @@ describe('3c N-47 N-50 baseline is a plan of its own', () => {
 
   it('3c a mode other than the two is refused', () => {
     expect(() => services.buildPlan('static', { secretsDir: dir })).toThrow(RangeError);
+  });
+});
+
+describe('3c the shell cannot decide which database a process uses', () => {
+  const stray = { PG_DATABASE_SUFFIX: 'stray', PATH: 'p' };
+
+  it('3c proposed: a suffix left in the shell or in .env.test never reaches a process', () => {
+    for (const proc of services.buildPlan('proposed', { secretsDir: dir })) {
+      expect(services.childEnv(stray, proc)['PG_DATABASE_SUFFIX']).toBeUndefined();
+    }
+  });
+
+  it('3c baseline: the four services get the suffix of the plan, not the one of the shell, and the others none', () => {
+    for (const proc of services.buildPlan('baseline', { secretsDir: dir })) {
+      const suffix = services.childEnv(stray, proc)['PG_DATABASE_SUFFIX'];
+      if (services.BASELINE_DB_SERVICES.includes(proc.name)) expect(suffix).toBe('devbl');
+      else expect(suffix).toBeUndefined();
+    }
+  });
+
+  it('3c the rest of the environment is handed on, and the plan wins over the shell', () => {
+    const [proc] = services.buildPlan('proposed', { secretsDir: dir });
+    if (proc === undefined) throw new Error('empty plan');
+    const env = services.childEnv({ PATH: 'p', PORT: '1' }, proc);
+    expect(env['PATH']).toBe('p');
+    expect(env['PORT']).toBe(proc.env['PORT']);
   });
 });
 

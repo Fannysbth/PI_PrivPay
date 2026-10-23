@@ -4,24 +4,13 @@
 // for a child there); the graceful path is tested on Linux in CI.
 const { existsSync, readFileSync, rmSync } = require('node:fs');
 const path = require('node:path');
-const { DEFAULT_LOG_DIR } = require('./services.cjs');
+const { alive, logDirFrom } = require('./services.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
 const GONE_WAIT_MS = 5000;
-const flag = process.argv.indexOf('--log-dir');
-const logDir = path.resolve(ROOT, flag === -1 ? DEFAULT_LOG_DIR : process.argv[flag + 1]);
-const pidFile = path.join(logDir, 'pids.json');
-
-const alive = (pid) => {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-};
 
 async function main() {
+  const pidFile = path.join(logDirFrom(process.argv.slice(2), ROOT), 'pids.json');
   if (!existsSync(pidFile)) {
     process.stdout.write('nothing recorded\n');
     return;
@@ -42,6 +31,7 @@ async function main() {
   rmSync(pidFile);
 }
 
-main().catch(() => {
+main().catch((error) => {
+  process.stderr.write(`dev:down failed: ${error instanceof Error ? error.message : 'error'}\n`);
   process.exitCode = 1;
 });

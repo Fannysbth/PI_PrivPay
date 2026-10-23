@@ -10,6 +10,7 @@ const {
   mkdirSync,
   openSync,
   readFileSync,
+  rmSync,
   writeFileSync,
 } = require('node:fs');
 const path = require('node:path');
@@ -20,7 +21,9 @@ const {
   DEFAULT_LOG_DIR,
   MODES,
   PRIVACY_KEY_FILES,
+  alive,
   buildPlan,
+  childEnv,
 } = require('./services.cjs');
 
 const ROOT = path.join(__dirname, '..', '..');
@@ -90,15 +93,6 @@ async function waitHealthy(started, deadline) {
   return undefined;
 }
 
-function alive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const out = (line) => process.stdout.write(`${line}\n`);
@@ -125,17 +119,23 @@ async function main() {
     const log = openSync(path.join(logDir, `${proc.name}.log`), 'a');
     const child = spawn(process.execPath, [path.join(ROOT, proc.entry)], {
       cwd: ROOT,
-      env: { ...process.env, ...proc.env },
+      env: childEnv(process.env, proc),
       stdio: ['ignore', log, log],
       windowsHide: true,
     });
     closeSync(log);
     const record = { name: proc.name, port: proc.port, child, exited: false };
+    child.on('error', () => {
+      out(`${proc.name} could not be started`);
+    });
     child.on('exit', (code) => {
       record.exited = true;
       out(`${proc.name} exited (${String(code)})`);
       running -= 1;
-      if (running === 0) process.exit(0);
+      if (running === 0) {
+        rmSync(pidFile, { force: true });
+        process.exit(0);
+      }
     });
     return record;
   });
@@ -150,6 +150,7 @@ async function main() {
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
       stopAll();
+      rmSync(pidFile, { force: true });
       process.exit(0);
     });
   }
