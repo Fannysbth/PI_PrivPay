@@ -17,14 +17,14 @@ export function assertBaselineMode(mode: PrivacyMode): void {
   }
 }
 
+/** An account number as the bank and the baseline schema write it (8 to 20 digits). */
+export const ACCOUNT_NUMBER = /^[0-9]{8,20}$/;
+
 /**
  * N-44: how a reference to a subject looks at the edge of a service. In proposed it is a token for a customer and for an
  * account; in baseline it is the identifier itself (spec data 9). Services validate with the shape of their mode, so the
  * check of the HTTP edge exists in both modes and only the accepted form differs.
  */
-/** An account number as the bank and the baseline schema write it (8 to 20 digits). */
-export const ACCOUNT_NUMBER = /^[0-9]{8,20}$/;
-
 export const SUBJECT_REF_SHAPES = {
   proposed: { customer: /^PSEU-[0-9A-F]{8}$/, account: /^PSEU-[0-9A-F]{8}$/ },
   baseline: { customer: /^CUST-[0-9]{6}$/, account: ACCOUNT_NUMBER },
@@ -43,18 +43,14 @@ export function privacyUrlMatchesMode(
   ctx: z.core.$RefinementCtx,
 ): void {
   const present = config.PRIVACY_SERVICE_URL !== undefined;
-  if (config.PRIVACY_MODE === 'proposed' && !present) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['PRIVACY_SERVICE_URL'],
-      message: 'required in proposed',
-    });
-  }
-  if (config.PRIVACY_MODE === 'baseline' && present) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['PRIVACY_SERVICE_URL'],
-      message: 'not allowed in baseline',
-    });
-  }
+  if ((config.PRIVACY_MODE === 'proposed') === present) return;
+  ctx.addIssue({
+    code: 'custom',
+    path: ['PRIVACY_SERVICE_URL'],
+    message: present ? 'not allowed in baseline' : 'required in proposed',
+  });
 }
+
+/** The base URL entry of Privacy for `createHttpClient`: there only when the mode has a Privacy to call. */
+export const privacyBaseUrl = (url: string | undefined): Record<string, string> =>
+  url === undefined ? {} : { 'privacy-service': url };

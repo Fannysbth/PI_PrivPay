@@ -22,6 +22,7 @@ import {
   DomainError,
   idpJwksSource,
   JwksKeys,
+  privacyBaseUrl,
   readSecret,
   RealDelay,
   schedulerProviders,
@@ -156,9 +157,7 @@ export function transactionModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        ...(config.PRIVACY_SERVICE_URL === undefined
-          ? {}
-          : { 'privacy-service': config.PRIVACY_SERVICE_URL }),
+        ...privacyBaseUrl(config.PRIVACY_SERVICE_URL),
         'fraud-service': config.FRAUD_SERVICE_URL,
         'notification-service': config.NOTIFICATION_SERVICE_URL,
       },
@@ -272,13 +271,7 @@ function httpNeighbours(
   const toward =
     mode === 'baseline'
       ? { subjects: baselineSubjectReferences(mode), privacy: baselinePrivacyStatus(mode) }
-      : (() => {
-          const privacy = new HttpPrivacyClient({
-            http,
-            serviceToken: tokenFor('privacy-service'),
-          });
-          return { subjects: new ProposedSubjectReferences(privacy), privacy };
-        })();
+      : proposedNeighbours(http, tokenFor('privacy-service'));
   return {
     ...toward,
     fraud: new HttpFraudClient({ http, serviceToken: tokenFor('fraud-service') }),
@@ -287,4 +280,10 @@ function httpNeighbours(
       serviceToken: tokenFor('notification-service'),
     }),
   };
+}
+
+/** The proposed side: Privacy over HTTP, which also exchanges and issues the tokens again. */
+function proposedNeighbours(http: HttpClient, serviceToken: TokenCache) {
+  const privacy = new HttpPrivacyClient({ http, serviceToken });
+  return { subjects: new ProposedSubjectReferences(privacy), privacy };
 }

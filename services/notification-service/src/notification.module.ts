@@ -18,6 +18,7 @@ import {
   DomainError,
   idpJwksSource,
   JwksKeys,
+  privacyBaseUrl,
   SERVICE_DBS,
   subjectRefShape,
   type HttpClient,
@@ -113,9 +114,7 @@ export function notificationModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        ...(config.PRIVACY_SERVICE_URL === undefined
-          ? {}
-          : { 'privacy-service': config.PRIVACY_SERVICE_URL }),
+        ...privacyBaseUrl(config.PRIVACY_SERVICE_URL),
         'sms-simulator': config.SMS_SIMULATOR_URL,
       },
       timeoutMs: config.HTTP_TIMEOUT_MS,

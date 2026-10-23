@@ -6,6 +6,7 @@ import {
   createTokenCache,
   idpJwksSource,
   JwksKeys,
+  privacyBaseUrl,
   subjectRefShape,
   DomainError,
   type HttpClient,
@@ -106,9 +107,7 @@ export function gatewayModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        ...(config.PRIVACY_SERVICE_URL === undefined
-          ? {}
-          : { 'privacy-service': config.PRIVACY_SERVICE_URL }),
+        ...privacyBaseUrl(config.PRIVACY_SERVICE_URL),
         'transaction-service': config.TRANSACTION_SERVICE_URL,
         'reconciliation-service': config.RECONCILIATION_SERVICE_URL,
         'notification-service': config.NOTIFICATION_SERVICE_URL,

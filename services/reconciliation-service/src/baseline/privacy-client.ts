@@ -1,10 +1,5 @@
 import { DomainError } from '@privpay/common';
-import type {
-  Actor,
-  DisclosedAttributes,
-  PrivacyClient,
-  TransactionClient,
-} from '../reconciliation';
+import type { DisclosedAttributes, PrivacyClient, TransactionClient } from '../reconciliation';
 
 /**
  * The baseline adapter of `PrivacyClient` (ADR-0006 no. 6, N-44): there is no Privacy, so the account of a transaction
@@ -25,14 +20,11 @@ export class BaselinePrivacyClient implements PrivacyClient {
     }
   }
 
-  auditToken(_transactionId: string, _actor: Actor): Promise<string> {
+  auditToken(): Promise<string> {
     return Promise.reject(new DomainError('SERVICE_UNAVAILABLE', 'baseline_no_privacy'));
   }
 
-  open(
-    _request: { auditToken: string; disclosureId: string },
-    _actor: Actor,
-  ): Promise<DisclosedAttributes> {
+  open(): Promise<DisclosedAttributes> {
     return Promise.reject(new DomainError('SERVICE_UNAVAILABLE', 'baseline_no_privacy'));
   }
 }

@@ -1,8 +1,6 @@
-import type { Clock } from '@privpay/common';
+import { DAY_MS, type Clock } from '@privpay/common';
 import type { RiskConfig, RiskDecision, RiskEngine, RiskInput } from './engine';
 import type { AssessmentRepository } from './repository';
-
-const DAY_MS = 86_400_000;
 
 export interface AssessRequest extends RiskInput {
   /** The FRAUD_DETECTION token. Fraud does not check it with Privacy; it only keys the history by it. */

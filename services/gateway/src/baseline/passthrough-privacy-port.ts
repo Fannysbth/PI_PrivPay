@@ -1,4 +1,4 @@
-import type { IdentityToStore, PrivacyPort, PseudonymizeRequest } from '../tokenizer/privacy-port';
+import type { PrivacyPort, PseudonymizeRequest } from '../tokenizer/privacy-port';
 
 /**
  * The baseline adapter of `PrivacyPort` (gateway spec 8, ADR-0006 no. 6, FR-23): there is no Privacy Service, so the
@@ -12,11 +12,11 @@ export class PassthroughPrivacyPort implements PrivacyPort {
     return Promise.resolve(request.subjectId);
   }
 
-  storeIdentity(_identity: IdentityToStore): Promise<void> {
+  storeIdentity(): Promise<void> {
     return Promise.resolve();
   }
 
-  revokeCustomer(_customerId: string): Promise<void> {
+  revokeCustomer(): Promise<void> {
     return Promise.resolve();
   }
 }

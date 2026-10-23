@@ -20,6 +20,7 @@ import {
   DomainError,
   idpJwksSource,
   JwksKeys,
+  privacyBaseUrl,
   schedulerProviders,
   SERVICE_DBS,
   subjectRefShape,
@@ -135,9 +136,7 @@ export function reconciliationModules(
     const http: HttpClient = createHttpClient({
       baseUrls: {
         idp: config.IDP_URL,
-        ...(config.PRIVACY_SERVICE_URL === undefined
-          ? {}
-          : { 'privacy-service': config.PRIVACY_SERVICE_URL }),
+        ...privacyBaseUrl(config.PRIVACY_SERVICE_URL),
         'transaction-service': config.TRANSACTION_SERVICE_URL,
       },
       timeoutMs: config.HTTP_TIMEOUT_MS,
@@ -146,10 +145,10 @@ export function reconciliationModules(
     });
     // A test that replaces both neighbours reaches no service, so it needs no secret; a real start always does.
     const mode = config.PRIVACY_MODE;
-    const needsSecret =
-      overrides.transactions === undefined ||
-      (mode === 'proposed' && overrides.privacy === undefined);
-    const clientSecret = needsSecret ? readClientSecret(env) : '';
+    // Only a client that is really built needs the secret: Transaction over HTTP, and Privacy over HTTP in proposed.
+    const privacyOverHttp = mode === 'proposed' && overrides.privacy === undefined;
+    const clientSecret =
+      overrides.transactions === undefined || privacyOverHttp ? readClientSecret(env) : '';
     // One cached service token per service it calls (NFR-21); the secret never leaves this closure.
     const tokenFor = (audience: string): TokenCache =>
       createTokenCache({

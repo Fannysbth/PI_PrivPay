@@ -5,7 +5,6 @@ export interface CompletedTransaction {
   readonly completedAt: string;
 }
 
-/** One transaction as an audit may see it (spec transaction 3.4): no token and no identity. */
 /**
  * One transaction as an audit may see it (spec transaction 3.4): no token and no identity. In baseline Transaction also
  * names the account number (N-46), since there is no Privacy to turn the transaction into an account.
