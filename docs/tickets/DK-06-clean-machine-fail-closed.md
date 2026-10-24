@@ -1,4 +1,4 @@
-# DK-06: NFR-19 mesin bersih dan fail-closed dengan replika
+# DK-06: NFR-19 mesin bersih dan fail-closed dengan Privacy dimatikan
 
 - Milestone: DK (fase Docker, setelah M4 stabil, ADR-0004)
 - Spec: pengujian-dan-pengukuran.md 7

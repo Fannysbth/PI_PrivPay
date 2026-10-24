@@ -57,7 +57,7 @@ Spesifikasi: `platform-dan-ci.md` (PL), `data-dan-migrasi.md` (DM), `privacy-ser
 | DK-03 | Tiga jaringan Docker + TLS (NFR-06) | PL |
 | DK-04 | Keycloak: realm, klien, pemetaan klaim | PL |
 | DK-05 | Ulang tes skema di PostgreSQL 16 | DM |
-| DK-06 | NFR-19 mesin bersih + fail-closed dengan replika | PP |
+| DK-06 | NFR-19 mesin bersih + fail-closed dengan Privacy dimatikan | PP |
 
 ## 2. Functional requirements
 

@@ -13,7 +13,7 @@ Mematikan proses Privacy saat transaksi dan memeriksa 503 serta nol kebocoran.
 
 ## Kriteria penerimaan
 
-- [ ] 503 di Gateway, tidak ada payload berisi data asli ke hilir (kenari di proxy), waktu pemulihan dicatat (TK-16, NFR-11, S-50). Versi replika di compose ditunda (DK-06).
+- [ ] 503 di Gateway, tidak ada payload berisi data asli ke hilir (kenari di proxy), waktu pemulihan dicatat (TK-16, NFR-11, S-50). Versi Compose (Privacy dimatikan, satu instans tanpa replika) ditunda ke DK-06.
 
 ## Tes dulu (tdd)
 

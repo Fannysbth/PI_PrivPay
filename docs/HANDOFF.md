@@ -25,7 +25,7 @@ Tumpukan penuh muat dan stabil di WSL 4 GB, jadi tidak perlu turun ke hibrida; b
 - `NODE_ENV` tidak diset di citra (paritas dengan `dev:up`); hanya dev-idp `development`. dev-idp (`dev_login` tanpa kata sandi) hanya terjangkau dari dalam jaringan `internal`.
 - hadolint dan Trivy **belum dijalankan** (tidak dipasang; tidak menambah dependensi). Pemeriksaan Dockerfile saat ini hanya tes statis `tests/repo/docker.spec.ts` dan `docker history`. Putaran penuh tidak dijalankan (Docker menyala).
 - File rahasia Docker 0644 di folder `secrets/docker/` (dibuat 0700) supaya pengguna non-root kontainer bisa membaca di Linux; Windows mengabaikan mode.
-- Teks "dengan replika" di `DK-06`, `tickets/README.md`, `spec/00-traceability.md` masih usang terhadap Metodologi v9 (belum diubah).
+- Teks "dengan replika" di DK-06, tickets/README.md, spec/00-traceability.md, M6-04, dan pengujian-dan-pengukuran.md sudah dikoreksi (v9: satu instans, tanpa replika).
 
 ## Sisa
 
