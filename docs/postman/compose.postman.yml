@@ -1,0 +1,14 @@
+# Override Compose KHUSUS untuk mencoba lewat Postman (docs/postman/README.md). Bukan bagian tumpukan resmi.
+# Tumpukan resmi hanya mempublikasikan Gateway. Postman berjalan di host, jadi ia butuh dua alamat tambahan, keduanya
+# hanya di loopback host (127.0.0.1), tidak terjangkau dari jaringan lain:
+#   - dev-idp  127.0.0.1:4000  untuk mengambil token (dev_login tanpa kata sandi; HANYA untuk mesin pengembang)
+#   - sms-simulator 127.0.0.1:4007  untuk melihat SMS yang "terkirim"
+# Docker tidak bisa mempublikasikan port dari jaringan internal, jadi keduanya ikut jaringan `edge`.
+# Pakai bersama dua berkas Compose resmi; urutannya: dasar, mode, lalu berkas ini.
+services:
+  idp:
+    networks: [edge]
+    ports: ['127.0.0.1:${IDP_HOST_PORT:-4000}:4000']
+  sms-simulator:
+    networks: [edge]
+    ports: ['127.0.0.1:${SMS_HOST_PORT:-4007}:4007']
