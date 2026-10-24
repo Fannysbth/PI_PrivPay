@@ -41,6 +41,12 @@ Riwayat jujur integrasi. Putaran 1 mati setengah jalan (subshell latar belakang 
 
 Memori bebas sebelum gerbang: ±5 GB dari 14 GB.
 
+### N-51 (24 Okt): DITUTUP sebagai keterbatasan (keputusan Fanny: pilihan 1); B dilewati karena bentrokan, A tidak dikerjakan
+
+Arahan: pilihan B (tolak penerbitan token baru untuk subjek dengan baris `revoked`, `REVOKED` 403, tanpa tabel atau ADR). Pemeriksaan ADR-0005, ADR-0013 butir 3, ADR-0014, K-33 menemukan dua bentrokan dan satu hal yang tidak mungkin; **tidak ada kode yang diubah**: (1) dev-idp memakai ulang `customer_id` setelah dimulai ulang sementara database Privacy bertahan, jadi registrasi baru dapat terblokir `REVOKED` (503); (2) `REVOKE_TOKEN` satu token menghasilkan baris `revoked` yang tak dapat dibedakan dari `revoke_subject`, sehingga memblokir seluruh subjek; membedakannya butuh kolom/tabel/ADR; (3) token ACCOUNT tidak dapat ikut ditolak karena Privacy tidak menyimpan hubungan nasabah-rekening. Rinci dan tiga pilihan ada di `OPEN_QUESTIONS.md` N-51.
+
+**Keterbatasan yang berlaku (rumusan Fanny):** pencabutan memutus akses ke identitas (brankas dan pembukaan bersyarat) dan token yang ada; ia bukan larangan bertransaksi, jadi nasabah yang dicabut masih dapat memperoleh token baru dan membayar. Arah lanjutan bila perlu: nisan dengan batas waktu lewat ADR baru. Temuan 1 diperbaiki terpisah di dev-idp (`fix/dev-idp-customer-id`).
+
 ### Keputusan yang butuh persetujuan Fanny
 
 - **A atau B** (`kesenjangan-baseline.md` bagian 4): A = baseline hanya mengganti pengenal (Tabel IV diubah menjadi 2/6, 1/6, 1/6, 2/6); B = passthrough penuh (G3 sampai G6; menyimpan salinan butuh migrasi baseline, jadi berhenti dan tanya). Email diteruskan atau tidak (G2).
