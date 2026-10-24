@@ -95,3 +95,29 @@ E(s) teramati: 1/6 (rekening). Harapan: 4/6. **Seluruh selisih AMBIGU** dan satu
 2. Email diteruskan di baseline atau tidak (G2).
 
 G1 dikerjakan lebih dulu karena dua sumber (gateway bagian 8 dan Tabel IV) sepakat dan spek Transaction bagian 3.1 hanya diam soal baseline; ia tidak bergantung pada G3 sampai G6. Bila keputusan nomor 1 ternyata A, G1 dibatalkan dengan satu commit (ia berdiri sendiri) dan Tabel IV diubah.
+
+## 5. Pembaruan terhadap Bab Metodologi v9 (2026-10-24; tanpa perubahan kode)
+
+Sumber: `docs/spec/Bab_Metodologi_v9.md` (belum ter-commit). Perbandingan otomatis v8 dengan v9 (kalimat demi kalimat) menunjukkan Tabel II, III, IV, dan V **identik**; v9 hanya mengubah empat hal: rantai hash audit tidak diimplementasikan, fail-closed tanpa "replika", kunci Privacy lewat Docker secret, dan pseudonim statis hanya pembanding konseptual. Karena itu G1 sampai G7 di atas tetap berlaku tanpa perubahan; butir baru ada di tabel berikut (B = baru).
+
+| # | Butir | v9 | Repo / kode | Status |
+| --- | --- | --- | --- | --- |
+| 1 | E(s) baseline Transaction | 4/6 | 4/6 hanya bila klien mengirim NIK dan nama (G1); 2/6 bila tidak | sebagian (G1) |
+| 2 | E(s) baseline Fraud | 4/6 | 1/6 (spek A) | G3, menunggu A/B |
+| 3 | E(s) baseline Notification | 5/6 (`customer_id`, NIK, nama, rekening, HP; tanpa email) | 2/6 (`customer_id`, HP) | G4, menunggu A/B |
+| 4 | E(s) baseline Reconciliation | 4/6 | 1/6 (rekening) | G5, menunggu A/B |
+| 5 | E(s) usulan | 0, 0, 1/6 (HP), 0 | sama menurut desain; belum diukur | sesuai, ukur di M6 |
+| 6 (B) | Turunan P(s) baseline dari Tabel II | P(s) "diturunkan dari aliran Tabel II" | Tabel II hanya melukiskan aliran proposed (DF7 dan DF16 berisi token; DF1 transaksi tanpa NIK/nama). NIK dan nama di Transaction baseline tidak dapat diturunkan dari Tabel II | inkonsistensi internal v9, keputusan Fanny |
+| 7 (B) | Email | Tabel I: NIK, nama, email "disimpan terenkripsi di brankas"; DF5 tidak menyebut email; DF1/DF2 memuat email | email divalidasi lalu dibuang, tidak ada kolom brankas (N-38) | selisih; G2 |
+| 8 (B) | Mekanisme baseline | plugin gerbang "mode passthrough", kode layanan bisnis identik | Gateway passthrough, tetapi semua layanan membaca `PRIVACY_MODE` dan punya repositori dan skema per mode (M5); kesetaraan perilaku dibuktikan suite equivalence | selisih deskripsi; catat sebagai ancaman validitas internal |
+| 9 (B) | Gerbang API | Kong + plugin Lua `privacy-tokenizer` | `gateway-adapter` NestJS (ADR-0004); Kong dan Lua di DK-02, Q-10 terbuka | tertunda |
+| 10 (B) | Autentikasi | Keycloak | `tools/dev-idp` (ADR-0004); Keycloak di DK-04 | tertunda |
+| 11 (B) | Basis data | PostgreSQL 16, satu instans per layanan | PostgreSQL 18 lokal, satu server banyak database (ADR-0004); 16 per layanan di DK-01a/DK-05 | deviasi tercatat |
+| 12 (B) | Docker dan Compose | seluruh layanan citra Docker | belum ada sampai DK-01a | tertunda |
+| 13 (B) | Newman, k6, cAdvisor/Prometheus/Grafana | dipakai | belum ada (M6-01, M7, profil monitoring DK-01a hanya definisi) | tertunda |
+| 14 (B) | Lingkungan eksperimen | satu VPS, pembangkit beban dari mesin terpisah bila ada | tumpukan Compose di laptop; tempat ukur akhir belum diputuskan; tidak ada klaim kinerja sebelum itu | keputusan Fanny |
+| 15 (B) | Fail-closed | Privacy Service dimatikan (tanpa replika) | tiket `DK-06`, `tickets/README.md`, `spec/00-traceability.md` baris DK-06 masih berbunyi "dengan replika" | dokumen repo usang, perbarui bila disetujui |
+| 16 (B) | Kunci Privacy | berkas rahasia (Docker secret) | `<NAME>_FILE`; Docker secret di DK-01a | kompatibel |
+| 17 (B) | Rantai hash audit | tidak diimplementasikan; `audit_log` append-only lewat hak akses | sama (`prev_hash`/`row_hash` nullable, kosong) | sesuai; D-19/Q-12 bisa ditutup |
+| 18 (B) | Uji penautan | baseline vs token usulan, tanpa varian statis | M6-03 dan ADR-0003 sama | sesuai |
+| 19 (B) | Data uji | 1.000 nasabah sintetis, nilai kenari unik | `data-dan-migrasi.md` bagian 11 dan pemindai kenari sama | sesuai |
