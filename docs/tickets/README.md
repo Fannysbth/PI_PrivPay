@@ -112,7 +112,7 @@ Gerbang M5 tetap berlaku: tidak ada pengukuran performa sebelum mode baseline da
 | [DK-03](DK-03-networks-tls.md) | Tiga jaringan Docker dan TLS (NFR-06) | M | DK-01 | /implement |
 | [DK-04](DK-04-keycloak.md) | Keycloak: realm, klien, pemetaan klaim | M | DK-01, M1-02 | /implement |
 | [DK-05](DK-05-postgres-16-rerun.md) | Ulang tes skema di PostgreSQL 16 | S | DK-01 | /implement |
-| [DK-06](DK-06-clean-machine-fail-closed.md) | NFR-19 mesin bersih dan fail-closed dengan replika | M | DK-01, M6-04 | /implement |
+| [DK-06](DK-06-clean-machine-fail-closed.md) | NFR-19 mesin bersih dan fail-closed dengan Privacy dimatikan | M | DK-01, M6-04 | /implement |
 
 ## Rekomendasi cara kerja per milestone
 
