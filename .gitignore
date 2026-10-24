@@ -19,6 +19,9 @@ id_rsa*
 credentials.json
 service-account*.json
 
+# Local state of dev tools (dev-idp customer counter)
+.dev-state/
+
 # Dependencies and build output
 node_modules/
 dist/

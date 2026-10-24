@@ -30,6 +30,8 @@ const baseEnv = {
   DEV_IDP_ENABLED: 'true',
   NODE_ENV: 'test',
   DEV_IDP_SECRETS_DIR: secretsDir,
+  // Inside the removed folder: a test must not leave a counter in the repository (N-51).
+  DEV_IDP_STATE_DIR: join(root, 'state'),
 };
 
 const open: ServiceApp[] = [];

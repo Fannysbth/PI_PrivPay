@@ -14,7 +14,10 @@ NODE_ENV=development DEV_IDP_ENABLED=true PRIVACY_MODE=proposed PORT=<port> node
 
 `make-secrets` writes `secrets/<client>_client_secret` (never overwrites, prints file names only). The secrets directory
 is `DEV_IDP_SECRETS_DIR` (default `./secrets`). The RS256 key is made when the process starts and is never written
-anywhere; every restart publishes a new key and forgets the customers created through the admin API.
+anywhere; every restart publishes a new key and forgets the customers created through the admin API. The one thing
+it remembers is the highest `customer_id` number handed out (`<DEV_IDP_STATE_DIR>/customer-counter`, a number and nothing
+else), so a restart never gives a new customer the id of an earlier or deleted one: the Privacy database outlives this
+process, and a revoked id would be the same subject there (N-51). Delete the folder only together with the databases.
 
 | Variable | Meaning |
 | --- | --- |
@@ -22,6 +25,7 @@ anywhere; every restart publishes a new key and forgets the customers created th
 | `NODE_ENV` | must be `development` or `test`; unset or anything else (including `production`) stops the start |
 | `ACCESS_TOKEN_TTL_SECONDS` | token lifetime, 1 to 300 (default 300) |
 | `DEV_IDP_SECRETS_DIR` | where the client secrets are read from |
+| `DEV_IDP_STATE_DIR` | where the customer counter is kept (default `./.dev-state`, ignored by git) |
 | `PRIVACY_MODE`, `PORT`, `BIND_HOST`, `LOG_LEVEL` | the shared service bootstrap |
 
 ## Endpoints

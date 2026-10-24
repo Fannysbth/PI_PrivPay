@@ -56,7 +56,25 @@ export interface IdentityProviderOptions {
   readonly serviceSecrets: Readonly<Record<ServiceClient, string>>;
   readonly users: readonly SeedUser[];
   readonly registry?: Registry;
+  /** Where the highest customer number handed out is kept; in memory when absent (restart = clean slate). */
+  readonly customerCounter?: CustomerCounter;
 }
+
+/** N-51 finding 1: the highest created customer number survives a restart, so a customer_id is never handed out twice. */
+export interface CustomerCounter {
+  read(): number;
+  write(highest: number): void;
+}
+
+const memoryCounter = (): CustomerCounter => {
+  let highest = 0;
+  return {
+    read: () => highest,
+    write: (value) => {
+      highest = value;
+    },
+  };
+};
 
 const MAX_TTL_SECONDS = 300;
 const CUSTOMER_ID = /^CUST-([0-9]{6})$/;
@@ -89,6 +107,7 @@ export class IdentityProvider {
   private readonly seedCustomerIds = new Set<string>();
   private readonly createdCustomerIds = new Set<string>();
   private nextCustomerNumber: number;
+  private readonly customerCounter: CustomerCounter;
 
   constructor(options: IdentityProviderOptions) {
     const { ttlSeconds } = options;
@@ -128,8 +147,9 @@ export class IdentityProvider {
         highest = Math.max(highest, Number(match[1]));
       }
     }
-    // Numbers continue after the seed (CUST-000101..103), so a created customer never reuses one.
-    this.nextCustomerNumber = Math.max(highest, 100) + 1;
+    // Numbers continue after the seed (CUST-000101..103) and after the highest ever created, so none is reused.
+    this.customerCounter = options.customerCounter ?? memoryCounter();
+    this.nextCustomerNumber = Math.max(highest, 100, this.customerCounter.read()) + 1;
   }
 
   jwks(): { keys: Jwk[] } {
@@ -179,6 +199,8 @@ export class IdentityProvider {
     }
     const number = this.nextCustomerNumber;
     if (number > 999_999) throw new RangeError('customer numbers are used up');
+    // Stored before the user exists: a number that was stored and not used is only skipped.
+    this.customerCounter.write(number);
     this.nextCustomerNumber += 1;
     const customerId = `CUST-${pad(number)}`;
     const user: SeedUser = {

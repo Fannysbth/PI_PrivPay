@@ -14,7 +14,9 @@ import {
 import { DomainError } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import { z } from 'zod';
+import { join } from 'node:path';
 import { loadDevIdpConfig, readServiceSecrets } from './config';
+import { fileCustomerCounter } from './customer-counter';
 import {
   IdentityProvider,
   type CreatedCustomer,
@@ -114,6 +116,7 @@ export function devIdpModules({ env, clock }: ModuleContext): ServiceModules {
     ttlSeconds: config.ACCESS_TOKEN_TTL_SECONDS,
     serviceSecrets: readServiceSecrets(config.DEV_IDP_SECRETS_DIR),
     users: loadSeedUsers(SEED_FILE),
+    customerCounter: fileCustomerCounter(join(config.DEV_IDP_STATE_DIR, 'customer-counter')),
   });
   return [
     {
