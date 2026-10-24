@@ -126,6 +126,22 @@ describe('3c N-47 N-50 baseline is a plan of its own', () => {
     for (const proc of proposed) expect(Object.keys(proc.env)).not.toContain('PG_DATABASE_SUFFIX');
   });
 
+  it('N-51 the dev IdP keeps its customer counter in a folder of its own per mode, and no other process gets one', () => {
+    const idpState = (mode: string): string | undefined =>
+      services.buildPlan(mode, { secretsDir: dir }).find((p) => p.name === 'idp')?.env[
+        'DEV_IDP_STATE_DIR'
+      ];
+    expect(idpState('proposed')).toBeDefined();
+    expect(idpState('baseline')).toBeDefined();
+    expect(idpState('proposed')).not.toBe(idpState('baseline'));
+    expect(idpState('proposed')).toMatch(/proposed$/);
+    expect(idpState('baseline')).toMatch(/baseline$/);
+    for (const mode of ['proposed', 'baseline']) {
+      const others = services.buildPlan(mode, { secretsDir: dir }).filter((p) => p.name !== 'idp');
+      for (const proc of others) expect(Object.keys(proc.env)).not.toContain('DEV_IDP_STATE_DIR');
+    }
+  });
+
   it('3c a mode other than the two is refused', () => {
     expect(() => services.buildPlan('static', { secretsDir: dir })).toThrow(RangeError);
   });

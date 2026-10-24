@@ -1,3 +1,11 @@
+# HANDOFF (2026-10-24): `fix/dev-idp-customer-id` di-merge ke `main` lokal sebagai "merge dengan pengecualian tercatat" (bukan gerbang hijau)
+
+**Dua pengecualian (N-52 di `OPEN_QUESTIONS.md`):** (1) `packages/common/test/test-db-cleanup.integration.spec.ts` merah juga di `main` (Fase B sesi ini menyelidikinya; hasilnya di bagian bawah bila ada); (2) tidak ada putaran integrasi penuh dua kali berturut-turut untuk cabang ini. Dasar merge: unit 1372, smoke 36, lint, typecheck, gitleaks riwayat penuh, pii-scan hijau; equivalence e2e hijau 6/6 sendirian.
+
+**Syarat penutup DK:** butuh dua putaran penuh hijau berturut-turut, dan `test-db-cleanup` WAJIB sudah dijelaskan penyebabnya dan hijau sebelum itu.
+
+---
+
 # HANDOFF (2026-10-23): kesetiaan baseline, bagian jelas SELESAI (G1), gerbang lengkap (dua tes yang merah ternyata gangguan lingkungan sesi lama, kini hijau sendirian), di-merge ke `main` lokal; kesetiaan lanjut sebagai versi B (belum dikerjakan)
 
 ## PENGUKURAN BARU BOLEH DIMULAI SETELAH KEPUTUSAN A/B DAN PERSETUJUANMU

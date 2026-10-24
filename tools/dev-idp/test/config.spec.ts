@@ -56,6 +56,14 @@ describe('M1-01 the dev IdP refuses to start outside the local phase (ADR-0004, 
     }
   });
 
+  it('N-51 the customer counter directory defaults to ./.dev-state and can be set', () => {
+    expect(loadDevIdpConfig(enabled).DEV_IDP_STATE_DIR).toBe('./.dev-state');
+    expect(loadDevIdpConfig({ ...enabled, DEV_IDP_STATE_DIR: '/some/dir' }).DEV_IDP_STATE_DIR).toBe(
+      '/some/dir',
+    );
+    expect(problem({ ...enabled, DEV_IDP_STATE_DIR: '' })).toContain('DEV_IDP_STATE_DIR (empty)');
+  });
+
   it('M1-01 the message names variables only, never their values', () => {
     expect(problem({ DEV_IDP_ENABLED: 'fake-value-do-not-print' })).not.toContain(
       'fake-value-do-not-print',

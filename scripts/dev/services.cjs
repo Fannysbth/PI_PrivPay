@@ -45,7 +45,7 @@ const url = (name) => `http://127.0.0.1:${String(PORTS[name])}`;
 
 /**
  * @param {'proposed' | 'baseline'} mode
- * @param {{ secretsDir: string }} options
+ * @param {{ secretsDir: string, stateDir?: string }} options
  * @returns {{ name: string, port: number, entry: string, env: Record<string, string> }[]}
  */
 function buildPlan(mode, options) {
@@ -64,6 +64,8 @@ function buildPlan(mode, options) {
         NODE_ENV: 'development',
         DEV_IDP_ENABLED: 'true',
         DEV_IDP_SECRETS_DIR: options.secretsDir,
+        // N-51: one customer counter per mode, so a reset of one mode's databases never has to touch the other's.
+        DEV_IDP_STATE_DIR: path.join(options.stateDir ?? '.dev-state', mode),
       },
     },
     ...(proposed

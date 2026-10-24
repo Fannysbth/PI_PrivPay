@@ -273,6 +273,8 @@ Dua catatan hasil yang penting untuk dipahami:
 
 Data yang tertulis di database pengembangan oleh percobaan ini (transaksi fiktif, token, baris audit) tetap ada; itu isi normal `privpay_*` yang boleh diperiksa. Tidak ada tombol "reset" di repo.
 
+**Penghitung `customer_id` dev-idp (N-51).** dev-idp mengingat nomor `customer_id` tertinggi yang pernah dibagikan di folder `.dev-state/<mode>` (`proposed` atau `baseline`; di-ignore git; hanya berisi satu angka), supaya sesudah dimulai ulang ia tidak memberi pengguna baru `customer_id` milik nasabah yang pernah dicabut: database Privacy bertahan lebih lama daripada dev-idp, dan id yang dicabut akan menolak pendaftaran baru. Karena itu penghitung dan database harus sinkron: **bila database Privacy dibuang atau direset, buang juga folder `.dev-state/proposed`, dan sebaliknya** (folder hilang sementara database tetap ada dapat membuat id yang sudah dicabut dibagikan lagi). Mode baseline membuat ulang databasenya setiap `dev:up --mode baseline` dan punya folder sendiri, jadi mode itu tidak memengaruhi penghitung proposed.
+
 ## Mode baseline
 
 Mode ditentukan `PRIVACY_MODE` pada **setiap** proses, dan skema database berbeda per mode. Nama database layanan tetap (`SERVICE_DBS` di [`packages/common/src/db.ts`](../../packages/common/src/db.ts)) dan database pengembangan berisi skema proposed; menjalankan migrasi baseline di sana ditolak:

@@ -217,7 +217,13 @@ export async function startStack(
 
   running['idp.test'] = await createServiceApp(
     { service: 'dev-idp', modules: devIdpModules },
-    { ...base, DEV_IDP_ENABLED: 'true', NODE_ENV: 'test', DEV_IDP_SECRETS_DIR: secretsDir },
+    {
+      ...base,
+      DEV_IDP_ENABLED: 'true',
+      NODE_ENV: 'test',
+      DEV_IDP_SECRETS_DIR: secretsDir,
+      DEV_IDP_STATE_DIR: join(dir, 'state'),
+    },
     appOptions('idp.test'),
   );
   running['sms.test'] = await createServiceApp(

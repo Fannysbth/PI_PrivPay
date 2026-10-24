@@ -23,6 +23,8 @@ export const devIdpConfigSchema = z.object({
     .refine((value) => ['development', 'test'].includes(value.trim().toLowerCase())),
   ACCESS_TOKEN_TTL_SECONDS: z.coerce.number().int().min(1).max(300).default(300),
   DEV_IDP_SECRETS_DIR: z.string().min(1).default('./secrets'),
+  // Holds the highest customer number handed out, so a restart never repeats a customer_id (N-51). Not a secret.
+  DEV_IDP_STATE_DIR: z.string().min(1).default('./.dev-state'),
 });
 export type DevIdpConfig = z.output<typeof devIdpConfigSchema>;
 

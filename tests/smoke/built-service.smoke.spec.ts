@@ -309,6 +309,7 @@ describe('M1-01 the built dev-idp runs as a process, with secrets made by its sc
     DEV_IDP_ENABLED: 'true',
     NODE_ENV: 'development',
     DEV_IDP_SECRETS_DIR: secretsDir,
+    DEV_IDP_STATE_DIR: join(secretsDir, 'state'),
     ...extra,
   });
 
