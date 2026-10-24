@@ -37,6 +37,10 @@ Docker belum tersedia di lingkungan kerja. PRD menetapkan Docker Compose, Kong, 
 - Dampak pada pengujian dan pengukuran: lihat kriteria validitas di atas.
 - Yang harus diubah: `CLAUDE.md` (Stack, Perintah, Pengujian), `.env.example`, `ci.yml`, `qa-checklist.md` (diperbarui bersamaan dengan ADR ini).
 
+## Hasil DK-05 (24 Okt 2026): tes di PostgreSQL 16.15
+
+Satu kontainer `postgres:16.15` (digest sama dengan Compose) dengan peran dan hak yang sama dengan bootstrap lokal (`bootstrap.ps1` dijalankan dua kali, keduanya bersih), tanpa mengubah PostgreSQL 18.6 lokal. Satu putaran penuh: lint, typecheck, `test` (74 suite, 1397 tes, 2 worker), `test:integration` (62 suite, 1140 tes), `test:security`, `test:smoke`, `pii-scan`, `audit --prod` (0 kerentanan), gitleaks `--no-git` dan riwayat penuh: semua hijau. `db:migrate` menerapkan seluruh migrasi kelima layanan di 16. **Tidak ada perubahan kode produksi maupun tes.** Dugaan di `docs/dk/KELAYAKAN.md` bagian 3 yang diuji: tes NFR-04 (tanpa `Seq Scan`) lulus di 16; tes sinyal sesi dan `pg_stat_activity` (`test-db-cleanup`, `DROP DATABASE ... WITH (FORCE)`) lulus; `gen_random_uuid()` ada; semantik `pg_auth_members` (`inherit_option`/`set_option`) lulus. Terukur di 16: `data_checksums=off`, kolasi `en_US.utf8` (penyedia libc), zona waktu `Etc/UTC`. Tidak terukur di 18.6 lokal: kolasi dan `data_checksums` (mengukurnya menuntut membaca rahasia peran; tidak dilakukan). Karena tes tidak bergantung pada urutan teks dan lulus di kedua versi, selisih kolasi tidak memengaruhi hasil. Dua catatan: putaran ini tidak menggantikan dua putaran penutup DK, dan angka waktu (integrasi 338 detik) bukan hasil penelitian.
+
 ## Kapan ditinjau ulang
 
 Saat Docker tersedia, atau bila `gateway-adapter` menyimpang dari perilaku yang dirancang untuk plugin Kong.

@@ -33,6 +33,18 @@ final line says so (`admin membership in the privpay_*_owner roles revoked`). If
 `pnpm test:integration` needs the roles above. Copy `.env.test.example` to `.env.test` (host, port, secrets directory;
 no passwords) or export `PG_HOST`, `PG_PORT`, `PG_SECRETS_DIR`.
 
+## PostgreSQL 16 in a container (DK-05)
+
+`pnpm db:pg16 up` starts `postgres:16.15` (same digest as Compose; 768 MB, 2 CPUs; `127.0.0.1:15432`), makes its
+secrets under `secrets/pg16/` and runs `bootstrap.ps1` against it twice (idempotent). The local PostgreSQL 18 is not
+touched. To run migrations or tests against it, set in the shell that runs them (environment wins over `.env.test`):
+
+```
+$env:PG_HOST='127.0.0.1'; $env:PG_PORT='15432'; $env:PG_SECRETS_DIR='<repo>\secrets\pg16'
+```
+
+`pnpm db:pg16 down` removes the container and its volume (`privpay-dk05-*` only).
+
 ## Test databases left on the server
 
 `createTestDb` recreates `privpay_<service>_test_<suffix>` at the start of each test and **does not drop it afterwards**
