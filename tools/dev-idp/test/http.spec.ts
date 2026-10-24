@@ -192,7 +192,7 @@ describe('M1-01 the dev IdP starts only in the local phase, loopback only, with 
   it.each([
     ['NODE_ENV=production', { NODE_ENV: 'production' }, 'NODE_ENV (invalid)'],
     ['DEV_IDP_ENABLED=false', { DEV_IDP_ENABLED: 'false' }, 'DEV_IDP_ENABLED (invalid)'],
-    ['a non-loopback bind address', { BIND_HOST: '0.0.0.0' }, 'BIND_HOST (invalid)'],
+    ['a non-loopback bind address', { BIND_HOST: '10.0.0.5' }, 'BIND_HOST (invalid)'],
     [
       'a token lifetime above 300 seconds',
       { ACCESS_TOKEN_TTL_SECONDS: '600' },
