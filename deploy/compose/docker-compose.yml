@@ -2,8 +2,8 @@
 # the second file: `-f docker-compose.yml -f mode.proposed.yml` or `-f docker-compose.yml -f mode.baseline.yml` (ADR-0003;
 # `pnpm docker:up`). Without a mode file the services refuse to start (PRIVACY_MODE is required).
 #
-# - Services live on an internal network; only the Gateway is published, and only on the loopback of the host (AZ-43, N-05:
-#   /health and /metrics of the Gateway stay reachable there until Kong takes the edge, DK-02/DK-03).
+# - Services live on internal networks (edge / business / privacy, DK-03); only the Gateway is published, and only on the
+#   loopback of the host (AZ-43, N-05: /health and /metrics of the Gateway stay reachable there until Kong takes the edge, DK-02).
 # - Same CPU and memory limits in both conditions, because the limits are written here once (Metodologi C.3).
 # - Secrets are Docker secrets: files from secrets/docker/ (made by `pnpm docker:secrets`, git-ignored) mounted under
 #   /run/secrets and named in <NAME>_FILE variables. No secret is in an image, an argument or an environment value.
@@ -65,10 +65,15 @@ x-node-env: &node-env
   BIND_HOST: 0.0.0.0
   IDP_URL: http://idp:4000
 
+# Three zones (NFR-06, DK-03). `edge` is the only network with a way out and carries only the Gateway, the one published
+# service (and Grafana, which exists only under the monitoring profile). `business` holds the services that see tokens and their databases. `privacy` holds the Privacy Service, its
+# database and the services that may call it. A network marked internal has no route to the outside and no published port.
 networks:
-  internal:
-    internal: true
   edge: {}
+  business:
+    internal: true
+  privacy:
+    internal: true
 
 secrets:
   pseudonym_hmac_secret: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/pseudonym_hmac_secret' }
@@ -95,6 +100,9 @@ secrets:
   pg_fraud_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/pg_fraud_admin_password' }
   pg_notification_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/pg_notification_admin_password' }
   pg_reconciliation_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/pg_reconciliation_admin_password' }
+  tls_ca_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_ca.crt' }
+  tls_privacy_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_privacy.crt' }
+  tls_privacy_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_privacy.key' }
   grafana_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/grafana_admin_password' }
 
 volumes:
@@ -120,7 +128,7 @@ services:
       - pgdata-transaction:/var/lib/postgresql/data
       - ../postgres/init-service-db.sh:/docker-entrypoint-initdb.d/10-init-service-db.sh:ro
     secrets: [pg_transaction_admin_password, privpay_transaction_owner_password, privpay_transaction_app_password]
-    networks: [internal]
+    networks: [business]
 
   pg-fraud:
     <<: [*pg, *hardening, *limits]
@@ -135,7 +143,7 @@ services:
       - pgdata-fraud:/var/lib/postgresql/data
       - ../postgres/init-service-db.sh:/docker-entrypoint-initdb.d/10-init-service-db.sh:ro
     secrets: [pg_fraud_admin_password, privpay_fraud_owner_password, privpay_fraud_app_password]
-    networks: [internal]
+    networks: [business]
 
   pg-notification:
     <<: [*pg, *hardening, *limits]
@@ -150,7 +158,7 @@ services:
       - pgdata-notification:/var/lib/postgresql/data
       - ../postgres/init-service-db.sh:/docker-entrypoint-initdb.d/10-init-service-db.sh:ro
     secrets: [pg_notification_admin_password, privpay_notification_owner_password, privpay_notification_app_password]
-    networks: [internal]
+    networks: [business]
 
   pg-reconciliation:
     <<: [*pg, *hardening, *limits]
@@ -165,7 +173,7 @@ services:
       - pgdata-reconciliation:/var/lib/postgresql/data
       - ../postgres/init-service-db.sh:/docker-entrypoint-initdb.d/10-init-service-db.sh:ro
     secrets: [pg_reconciliation_admin_password, privpay_reconciliation_owner_password, privpay_reconciliation_app_password]
-    networks: [internal]
+    networks: [business]
 
   # ---- Migrations, run once per database by its schema owner (the runtime role never sees the owner password). ----
   migrate-transaction:
@@ -180,7 +188,7 @@ services:
     command: [node, /app/service/node_modules/@privpay/common/dist/bin/db-migrate.js, transaction]
     environment: { TZ: UTC, PG_HOST: pg-transaction, PG_PORT: '5432', PG_SECRETS_DIR: /run/secrets }
     secrets: [privpay_transaction_owner_password]
-    networks: [internal]
+    networks: [business]
     depends_on: { pg-transaction: { condition: service_healthy } }
 
   migrate-fraud:
@@ -195,7 +203,7 @@ services:
     command: [node, /app/service/node_modules/@privpay/common/dist/bin/db-migrate.js, fraud]
     environment: { TZ: UTC, PG_HOST: pg-fraud, PG_PORT: '5432', PG_SECRETS_DIR: /run/secrets }
     secrets: [privpay_fraud_owner_password]
-    networks: [internal]
+    networks: [business]
     depends_on: { pg-fraud: { condition: service_healthy } }
 
   migrate-notification:
@@ -210,7 +218,7 @@ services:
     command: [node, /app/service/node_modules/@privpay/common/dist/bin/db-migrate.js, notification]
     environment: { TZ: UTC, PG_HOST: pg-notification, PG_PORT: '5432', PG_SECRETS_DIR: /run/secrets }
     secrets: [privpay_notification_owner_password]
-    networks: [internal]
+    networks: [business]
     depends_on: { pg-notification: { condition: service_healthy } }
 
   migrate-reconciliation:
@@ -225,7 +233,7 @@ services:
     command: [node, /app/service/node_modules/@privpay/common/dist/bin/db-migrate.js, reconciliation]
     environment: { TZ: UTC, PG_HOST: pg-reconciliation, PG_PORT: '5432', PG_SECRETS_DIR: /run/secrets }
     secrets: [privpay_reconciliation_owner_password]
-    networks: [internal]
+    networks: [business]
     depends_on: { pg-reconciliation: { condition: service_healthy } }
 
   # ---- The identity provider of the dev phase (Keycloak replaces it in DK-04). Internal only. ----
@@ -245,7 +253,7 @@ services:
       DEV_IDP_STATE_DIR: /state
     volumes: ['idp-state:/state']
     secrets: [api-gateway_client_secret, transaction_client_secret, fraud_client_secret, notification_client_secret, reconciliation_client_secret]
-    networks: [internal]
+    networks: [business]
 
   # ---- Business services ----
   transaction-service:
@@ -265,7 +273,7 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:4004
       TRANSACTION_CLIENT_SECRET_FILE: /run/secrets/transaction_client_secret
     secrets: [privpay_transaction_app_password, transaction_client_secret]
-    networks: [internal]
+    networks: [business]
     depends_on:
       migrate-transaction: { condition: service_completed_successfully }
       idp: { condition: service_healthy }
@@ -287,7 +295,7 @@ services:
       FRAUD_BLOCK_THRESHOLD: '90'
       FRAUD_HISTORY_DAYS: '30'
     secrets: [privpay_fraud_app_password]
-    networks: [internal]
+    networks: [business]
     depends_on:
       migrate-fraud: { condition: service_completed_successfully }
       idp: { condition: service_healthy }
@@ -305,7 +313,7 @@ services:
       SMS_SIMULATOR_URL: http://sms-simulator:4007
       NOTIFICATION_CLIENT_SECRET_FILE: /run/secrets/notification_client_secret
     secrets: [privpay_notification_app_password, notification_client_secret]
-    networks: [internal]
+    networks: [business]
     depends_on:
       migrate-notification: { condition: service_completed_successfully }
       idp: { condition: service_healthy }
@@ -324,7 +332,7 @@ services:
       TRANSACTION_SERVICE_URL: http://transaction-service:4002
       RECONCILIATION_CLIENT_SECRET_FILE: /run/secrets/reconciliation_client_secret
     secrets: [privpay_reconciliation_app_password, reconciliation_client_secret]
-    networks: [internal]
+    networks: [business]
     depends_on:
       migrate-reconciliation: { condition: service_completed_successfully }
       idp: { condition: service_healthy }
@@ -341,7 +349,7 @@ services:
       <<: *node-env
       PORT: '4007'
       SMS_SIMULATOR_TEST_ENDPOINTS: 'true'
-    networks: [internal]
+    networks: [business]
 
   bank-simulator:
     <<: [*hardening, *limits, *node-health]
@@ -356,7 +364,7 @@ services:
       GATEWAY_URL: http://gateway:4010
       BANK_USERNAME: bank.uji.1
       BANK_SIMULATOR_TEST_ENDPOINTS: 'true'
-    networks: [internal]
+    networks: [business]
 
   # ---- The only published service ----
   gateway:
@@ -374,7 +382,7 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification-service:4004
       API_GATEWAY_CLIENT_SECRET_FILE: /run/secrets/api-gateway_client_secret
     secrets: [api-gateway_client_secret]
-    networks: [internal, edge]
+    networks: [business, edge]
     depends_on:
       idp: { condition: service_healthy }
       transaction-service: { condition: service_healthy }
@@ -395,6 +403,6 @@ services:
       IDP_URL: http://idp:4000
       SMS_URL: http://sms-simulator:4007
     volumes: ['../../scripts/docker/smoke.cjs:/smoke/smoke.cjs:ro']
-    networks: [internal]
+    networks: [business]
     depends_on:
       gateway: { condition: service_healthy }

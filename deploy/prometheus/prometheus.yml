@@ -8,7 +8,6 @@ scrape_configs:
     metrics_path: /metrics
     static_configs:
       - targets:
-          - privacy-service:4001
           - transaction-service:4002
           - fraud-service:4003
           - notification-service:4004
@@ -16,6 +15,14 @@ scrape_configs:
           - bank-simulator:4006
           - sms-simulator:4007
           - gateway:4010
+  # The Privacy Service serves TLS (DK-03): the scrape verifies its certificate against the dev CA like any caller.
+  - job_name: privpay-privacy
+    metrics_path: /metrics
+    scheme: https
+    tls_config:
+      ca_file: /run/secrets/tls_ca_crt
+    static_configs:
+      - targets: ['privacy-service:4001']
   - job_name: cadvisor
     static_configs:
       - targets: ['cadvisor:8080']
