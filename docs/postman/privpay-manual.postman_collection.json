@@ -1,0 +1,2541 @@
+{
+  "info": {
+    "_postman_id": "f6a1c0de-5e11-4a7b-9a3c-0b1c2d3e4f51",
+    "name": "PrivPay: coba manual lewat Docker Compose",
+    "description": "Koleksi untuk mencoba PrivPay sendiri, hanya lewat Docker Compose (docs/postman/README.md). Jalankan folder 1 sampai 9 **berurutan** (Runner, atau klik satu per satu); folder 10 hanya mencetak perintah pemeriksaan. Pilih environment `privpay-proposed` atau `privpay-baseline` sesuai mode yang menyala. Semua nilai uji dibangun saat dijalankan dan fiktif; tidak ada rahasia di koleksi ini.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "// Token dev-idp berlaku 300 detik. Setiap request yang memakai header \"Authorization: Bearer {{token_<peran>}}\" otomatis",
+          "// mendapat token segar bila belum ada atau sudah lebih dari 200 detik. Tidak ada rahasia: dev_login hanya butuh nama pengguna seed.",
+          "const auth = pm.request.headers.get('Authorization') || '';",
+          "const m = /\\{\\{token_([a-z0-9]+)\\}\\}/.exec(auth);",
+          "if (m) {",
+          "  const role = m[1];",
+          "  const custName = pm.collectionVariables.get('cust_username');",
+          "  const map = {",
+          "    analis: ['admin-console', 'analis.uji.1'],",
+          "    auditor: ['admin-console', 'auditor.uji.1'],",
+          "    admin: ['admin-console', 'admin.uji.1'],",
+          "    admin2: ['admin-console', 'admin.uji.2'],",
+          "    bank: ['bank-simulator', 'bank.uji.1'],",
+          "    nasabah103: ['customer-app', 'nasabah.uji.103'],",
+          "    customer: ['customer-app', custName],",
+          "  };",
+          "  const who = map[role];",
+          "  if (!who || !who[1]) {",
+          "    throw new Error('Peran token tidak dikenal atau nasabah belum didaftarkan: jalankan folder 2 dulu (' + role + ').');",
+          "  }",
+          "  const fresh = Date.now() - Number(pm.collectionVariables.get('token_' + role + '_at') || 0) < 200000;",
+          "  if (!pm.collectionVariables.get('token_' + role) || !fresh) {",
+          "    pm.sendRequest(",
+          "      {",
+          "        url: pm.variables.get('idp_url') + '/token',",
+          "        method: 'POST',",
+          "        header: { 'Content-Type': 'application/json' },",
+          "        body: { mode: 'raw', raw: JSON.stringify({ grant_type: 'dev_login', client_id: who[0], username: who[1] }) },",
+          "      },",
+          "      (err, res) => {",
+          "        if (err || res.code !== 200) throw new Error('Gagal mengambil token ' + role + ' dari dev-idp (' + pm.variables.get('idp_url') + ').');",
+          "        pm.collectionVariables.set('token_' + role, res.json().access_token);",
+          "        pm.collectionVariables.set('token_' + role + '_at', String(Date.now()));",
+          "      },",
+          "    );",
+          "  }",
+          "}"
+        ]
+      }
+    }
+  ],
+  "variable": [],
+  "item": [
+    {
+      "name": "1) Ambil token dari dev-idp",
+      "description": "Semua pemanggil memakai JWT dari dev-idp (alamat `idp_url`). Klien `customer-app` untuk nasabah, `admin-console` untuk admin/auditor/analis fraud, `bank-simulator` untuk bank. Token nasabah baru diambil di folder 2 setelah ia terdaftar.",
+      "item": [
+        {
+          "name": "1.1 Cek gateway hidup dan mode-nya",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] 200 dan mode gateway sama dengan environment (\"proposed\" atau \"baseline\")');",
+                  "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: mode gateway = environment (' + mode + ')', () => pm.expect(body.mode).to.eql(mode));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Gateway menjawab `/health` dengan mode yang sedang berjalan. Harus sama dengan variabel environment `mode`."
+          }
+        },
+        {
+          "name": "1.2 Token analis fraud",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_analis');",
+                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
+                  "  pm.expect(body && body.access_token).to.be.a('string');",
+                  "  pm.expect(body.access_token.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "if (body && body.access_token) {",
+                  "  pm.collectionVariables.set('token_analis', body.access_token);",
+                  "  pm.collectionVariables.set('token_analis_at', String(Date.now()));",
+                  "}",
+                  "pm.test('Diharapkan: masa berlaku 300 detik', () => pm.expect(body.expires_in).to.eql(300));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"admin-console\",\n  \"username\": \"analis.uji.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{idp_url}}/token",
+              "host": [
+                "{{idp_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "description": "Mengambil JWT dari dev-idp untuk analis fraud. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+          }
+        },
+        {
+          "name": "1.3 Token auditor",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_auditor');",
+                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
+                  "  pm.expect(body && body.access_token).to.be.a('string');",
+                  "  pm.expect(body.access_token.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "if (body && body.access_token) {",
+                  "  pm.collectionVariables.set('token_auditor', body.access_token);",
+                  "  pm.collectionVariables.set('token_auditor_at', String(Date.now()));",
+                  "}",
+                  "pm.test('Diharapkan: masa berlaku 300 detik', () => pm.expect(body.expires_in).to.eql(300));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"admin-console\",\n  \"username\": \"auditor.uji.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{idp_url}}/token",
+              "host": [
+                "{{idp_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "description": "Mengambil JWT dari dev-idp untuk auditor. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+          }
+        },
+        {
+          "name": "1.4 Token admin (penyetuju)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_admin');",
+                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
+                  "  pm.expect(body && body.access_token).to.be.a('string');",
+                  "  pm.expect(body.access_token.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "if (body && body.access_token) {",
+                  "  pm.collectionVariables.set('token_admin', body.access_token);",
+                  "  pm.collectionVariables.set('token_admin_at', String(Date.now()));",
+                  "}",
+                  "pm.test('Diharapkan: masa berlaku 300 detik', () => pm.expect(body.expires_in).to.eql(300));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"admin-console\",\n  \"username\": \"admin.uji.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{idp_url}}/token",
+              "host": [
+                "{{idp_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "description": "Mengambil JWT dari dev-idp untuk admin. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+          }
+        },
+        {
+          "name": "1.5 Token bank",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_bank');",
+                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
+                  "  pm.expect(body && body.access_token).to.be.a('string');",
+                  "  pm.expect(body.access_token.split('.')).to.have.lengthOf(3);",
+                  "});",
+                  "if (body && body.access_token) {",
+                  "  pm.collectionVariables.set('token_bank', body.access_token);",
+                  "  pm.collectionVariables.set('token_bank_at', String(Date.now()));",
+                  "}",
+                  "pm.test('Diharapkan: masa berlaku 300 detik', () => pm.expect(body.expires_in).to.eql(300));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"bank-simulator\",\n  \"username\": \"bank.uji.1\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{idp_url}}/token",
+              "host": [
+                "{{idp_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "description": "Mengambil JWT dari dev-idp untuk bank. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+          }
+        }
+      ]
+    },
+    {
+      "name": "2) Daftar nasabah",
+      "description": "Mendaftarkan nasabah fiktif baru lewat `POST /register` (tanpa token). Semua nilai dibangun saat dijalankan; awalan 9999 menandainya palsu. Formulir berisi data pribadi: Gateway memasukkannya ke Privacy Service (mode usulan) dan tidak pernah mengembalikannya.",
+      "item": [
+        {
+          "name": "2.1 Daftar nasabah baru",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const ts = Number(pm.variables.replaceIn('{{$timestamp}}'));",
+                  "const rnd = Number(pm.variables.replaceIn('{{$randomInt}}'));",
+                  "const n = String((ts % 10000) * 100 + (rnd % 100)).padStart(6, '0');",
+                  "const huruf = [...n].map((d) => 'abcdefghij'[Number(d)]).join('');",
+                  "pm.collectionVariables.set('cust_n', n);",
+                  "pm.collectionVariables.set('cust_nik', ('99995' + n + '00000').slice(0, 16));",
+                  "pm.collectionVariables.set('cust_nama', 'Kenari Uji ' + huruf);",
+                  "pm.collectionVariables.set('cust_hp', '08999' + n + '0');",
+                  "pm.collectionVariables.set('cust_email', 'canary-' + n + '@example.test');",
+                  "pm.collectionVariables.set('cust_rekening', '9999' + n);",
+                  "pm.collectionVariables.set('cust_username', 'uji.pengguna.' + n);"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 201 {\"status\":\"REGISTERED\"}; jawaban tidak memuat satu pun isi formulir');",
+                  "pm.test('Diharapkan: 201', () => pm.response.to.have.status(201));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: status REGISTERED', () => pm.expect(body.status).to.eql('REGISTERED'));",
+                  "pm.test('Diharapkan: jawaban tidak memuat NIK, nama, HP, email, atau rekening', () => {",
+                  "  const text = pm.response.text();",
+                  "  ['cust_nik', 'cust_nama', 'cust_hp', 'cust_email', 'cust_rekening'].forEach((k) =>",
+                  "    pm.expect(text.includes(pm.collectionVariables.get(k))).to.eql(false));",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nik\": \"{{cust_nik}}\",\n  \"nama\": \"{{cust_nama}}\",\n  \"hp\": \"{{cust_hp}}\",\n  \"email\": \"{{cust_email}}\",\n  \"rekening\": \"{{cust_rekening}}\",\n  \"username\": \"{{cust_username}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "register"
+              ]
+            },
+            "description": "Membuat NIK, nama, HP, email, rekening, dan username fiktif dari variabel dinamis Postman (`$timestamp`, `$randomInt`). Jawaban hanya `{\"status\":\"REGISTERED\"}`."
+          }
+        },
+        {
+          "name": "2.2 Masuk sebagai nasabah baru",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200; token nasabah tersimpan di token_customer; customer_id disimpan untuk pencabutan (folder 8)');",
+                  "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: token nasabah memuat klaim customer_id berbentuk CUST-nnnnnn', () => {",
+                  "  pm.expect(body.access_token).to.be.a('string');",
+                  "  const part = body.access_token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');",
+                  "  const claims = JSON.parse(CryptoJS.enc.Base64.parse(part).toString(CryptoJS.enc.Utf8));",
+                  "  pm.expect(claims.customer_id).to.match(/^CUST-[0-9]{6}$/);",
+                  "  pm.collectionVariables.set('cust_id', claims.customer_id);",
+                  "});",
+                  "pm.collectionVariables.set('token_customer', body.access_token);",
+                  "pm.collectionVariables.set('token_customer_at', String(Date.now()));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"customer-app\",\n  \"username\": \"{{cust_username}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{idp_url}}/token",
+              "host": [
+                "{{idp_url}}"
+              ],
+              "path": [
+                "token"
+              ]
+            },
+            "description": "Mengambil token nasabah (klien `customer-app`). Token membawa klaim `customer_id`; Gateway memakai klaim itu, tidak pernah isi body (invarian 7). `customer_id` disimpan untuk folder 8 dan tidak dicetak."
+          }
+        }
+      ]
+    },
+    {
+      "name": "3) Transaksi",
+      "description": "Pembayaran lewat `POST /transaction` dengan token nasabah dan header `Idempotency-Key` (UUID). Gateway menukar nomor rekening dan `customer_id` menjadi token sebelum meneruskan ke Transaction Service.",
+      "item": [
+        {
+          "name": "3.1 Bayar Rp35.000 (normal)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idem_key', pm.variables.replaceIn('{{$guid}}'));",
+                  "pm.collectionVariables.set('idem_body_amount', '35000');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 201 COMPLETED dan transaction_id berbentuk TX-...');",
+                  "pm.test('Diharapkan: 201', () => pm.response.to.have.status(201));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: status COMPLETED', () => pm.expect(body.status).to.eql('COMPLETED'));",
+                  "pm.test('Diharapkan: transaction_id berbentuk TX-<angka>', () => pm.expect(body.transaction_id).to.match(/^TX-[0-9]+$/));",
+                  "pm.collectionVariables.set('tx_normal_id', body.transaction_id);",
+                  "console.log('transaction_id =', body.transaction_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 35000,\n  \"geohash\": \"qqgu4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Di bawah ambang fraud (1.000.000), jadi langsung `COMPLETED`."
+          }
+        },
+        {
+          "name": "3.2 Ulangi kunci idempotensi yang sama",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 (bukan 201) dengan transaction_id yang sama seperti 3.1');",
+                  "pm.test('Diharapkan: 200, bukan 201', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: transaction_id sama dengan 3.1', () => pm.expect(body.transaction_id).to.eql(pm.collectionVariables.get('tx_normal_id')));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 35000,\n  \"geohash\": \"qqgu4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Permintaan yang sama persis dengan kunci yang sama tidak membuat transaksi kedua: jawabannya 200 dengan `transaction_id` yang sama (ADR-0009)."
+          }
+        },
+        {
+          "name": "3.3 Kunci yang sama, isi berbeda",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 409 IDEMPOTENCY_CONFLICT');",
+                  "pm.test('Diharapkan: 409', () => pm.response.to.have.status(409));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code IDEMPOTENCY_CONFLICT', () => pm.expect(body.error.code).to.eql('IDEMPOTENCY_CONFLICT'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 36000,\n  \"geohash\": \"qqgu4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Kunci yang sudah dipakai untuk isi lain ditolak sebagai konflik, bukan diam-diam dianggap sama."
+          }
+        }
+      ]
+    },
+    {
+      "name": "4) Fraud",
+      "description": "Fraud Service menilai transaksi di atas ambang. Transaksi pertama di atas ambang adalah cold start (skor rendah); transaksi besar berikutnya dari lokasi baru mendapat skor 55 dan **ditahan** untuk ditinjau analis. Analis tidak pernah melihat identitas, hanya token dan jumlah.",
+      "item": [
+        {
+          "name": "4.1 Bayar Rp2.000.000 (membentuk riwayat)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idem_key', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 201 COMPLETED (skor rendah karena belum ada riwayat)');",
+                  "pm.test('Diharapkan: 201', () => pm.response.to.have.status(201));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: COMPLETED', () => pm.expect(body.status).to.eql('COMPLETED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 2000000,\n  \"geohash\": \"qqgu7\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Di atas ambang tetapi belum ada riwayat sebelumnya: cold start, tetap `COMPLETED`."
+          }
+        },
+        {
+          "name": "4.2 Bayar Rp8.000.000 dari lokasi baru (ditahan)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idem_key', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 201 HELD; transaction_id disimpan di tx_held_id');",
+                  "pm.test('Diharapkan: 201', () => pm.response.to.have.status(201));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: status HELD', () => pm.expect(body.status).to.eql('HELD'));",
+                  "pm.collectionVariables.set('tx_held_id', body.transaction_id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 8000000,\n  \"geohash\": \"qqt8h\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Jumlah jauh di atas rata-rata riwayat dan geohash baru: skor 55 (>= 50) sehingga status `HELD`."
+          }
+        },
+        {
+          "name": "4.3 Analis: daftar transaksi ditahan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200; transaksi 4.2 ada di daftar dengan risk_score 55; tidak ada PSEU-/CUST-/rekening di jawaban');",
+                  "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "const found = (body.items || []).find((i) => i.transaction_id === pm.collectionVariables.get('tx_held_id'));",
+                  "pm.test('Diharapkan: transaksi 4.2 ada di daftar', () => pm.expect(found).to.be.an('object'));",
+                  "pm.test('Diharapkan: risk_score >= 50 dan keputusan HOLD_FOR_VERIFICATION', () => {",
+                  "  pm.expect(found.risk_score).to.be.at.least(50);",
+                  "  pm.expect(found.fraud_decision).to.eql('HOLD_FOR_VERIFICATION');",
+                  "});",
+                  "pm.test('Diharapkan: daftar tidak memuat token, customer_id, atau rekening', () => {",
+                  "  const t = pm.response.text();",
+                  "  pm.expect(/PSEU-|CUST-/.test(t)).to.eql(false);",
+                  "  pm.expect(t.includes(pm.collectionVariables.get('cust_rekening'))).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_analis}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transaction/held?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction",
+                "held"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            },
+            "description": "Hanya peran `fraud_analyst` yang boleh. Daftar tidak memuat identitas, token pseudonim, atau rekening."
+          }
+        },
+        {
+          "name": "4.4 Analis: setujui transaksi ditahan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 COMPLETED');",
+                  "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: COMPLETED', () => pm.expect(body.status).to.eql('COMPLETED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_analis}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVE\",\n  \"reason_code\": \"CONFIRMED_BY_CUSTOMER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction/{{tx_held_id}}/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction",
+                "{{tx_held_id}}",
+                "review"
+              ]
+            },
+            "description": "Meninjau transaksi `HELD`: `APPROVE` menjadikannya `COMPLETED` (nasabah mendapat SMS \"berhasil\")."
+          }
+        },
+        {
+          "name": "4.5 Analis: tinjau lagi transaksi yang sama",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 409 NOT_HELD (penolakan ini memang diharapkan)');",
+                  "pm.test('Diharapkan: 409', () => pm.response.to.have.status(409));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code NOT_HELD', () => pm.expect(body.error.code).to.eql('NOT_HELD'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_analis}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"decision\": \"APPROVE\",\n  \"reason_code\": \"CONFIRMED_BY_CUSTOMER\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction/{{tx_held_id}}/review",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction",
+                "{{tx_held_id}}",
+                "review"
+              ]
+            },
+            "description": "Transaksi yang sudah ditinjau tidak berstatus ditahan lagi."
+          }
+        }
+      ]
+    },
+    {
+      "name": "5) Rekonsiliasi",
+      "description": "Bank mengirim laporan settlement (nomor rekening mentah) lewat Gateway; Gateway menukarnya menjadi token sebelum sampai ke Reconciliation Service. Admin menjalankan pencocokan; auditor meminta token audit untuk satu transaksi.",
+      "item": [
+        {
+          "name": "5.1 Bank: kirim laporan settlement hari ini",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const today = new Date().toISOString().slice(0, 10);",
+                  "pm.collectionVariables.set('batch_date', today);",
+                  "pm.collectionVariables.set('bank_ref', 'REF-' + pm.collectionVariables.get('cust_n'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 202 dengan item_count 1 (atau 409 bila laporan hari ini sudah pernah dikirim)');",
+                  "pm.test('Diharapkan: 202, atau 409 bila sudah ada laporan hari ini', () => pm.expect(pm.response.code).to.be.oneOf([202, 409]));",
+                  "if (pm.response.code === 409) console.log('Laporan tanggal ini sudah ada (dikirim di putaran sebelumnya); lanjut.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_bank}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batch_date\": \"{{batch_date}}\",\n  \"items\": [\n    { \"account_number\": \"{{cust_rekening}}\", \"amount\": 35000, \"bank_reference\": \"{{bank_ref}}\" }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/settlement/report",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "settlement",
+                "report"
+              ]
+            },
+            "description": "Satu laporan per tanggal (UTC). Bila hari ini sudah ada laporan (menjalankan koleksi dua kali), jawabannya 409 dan itu wajar."
+          }
+        },
+        {
+          "name": "5.2 Admin: jalankan rekonsiliasi hari ini",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 dengan tx_count, matched >= 1, unmatched, status MATCHED atau PARTIAL');",
+                  "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: matched >= 1 (transaksi 3.1 cocok dengan laporan bank)', () => pm.expect(body.matched).to.be.at.least(1));",
+                  "pm.test('Diharapkan: status MATCHED/PARTIAL/MISMATCHED', () => pm.expect(body.status).to.be.oneOf(['MATCHED', 'PARTIAL', 'MISMATCHED']));",
+                  "console.log('tx_count=' + body.tx_count + ' matched=' + body.matched + ' unmatched=' + body.unmatched + ' status=' + body.status);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{batch_date}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/reconciliation/run",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "reconciliation",
+                "run"
+              ]
+            },
+            "description": "Mencocokkan transaksi `COMPLETED` hari itu dengan baris laporan bank (pasangan rekening + jumlah)."
+          }
+        },
+        {
+          "name": "5.3 Auditor: minta token audit untuk transaksi 3.1",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] mode usulan: 200 dengan audit_token berbentuk PSEU-XXXXXXXX; tidak ada identitas');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  pm.test('Diharapkan: audit_token berbentuk PSEU-<8 heks>', () => pm.expect(body.audit_token).to.match(/^PSEU-[0-9A-F]{8}$/));",
+                  "  pm.collectionVariables.set('audit_token', body.audit_token);",
+                  "} else {",
+                  "  console.log('Mode baseline tidak punya Privacy Service; hasil 5.3 dicatat apa adanya: HTTP ' + pm.response.code);",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "  // Nilai pengganti berbentuk valid supaya request 7 dan 8 mengenai rute aslinya (bukan 422 karena variabel kosong).",
+                  "  pm.collectionVariables.set('audit_token', 'PSEU-00000000');",
+                  "  pm.collectionVariables.set('disclosure_id', '00000000-0000-4000-8000-000000000000');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_auditor}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transaction_id\": \"{{tx_normal_id}}\",\n  \"reason_code\": \"DISPUTE\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/reconciliation/audit-request",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "reconciliation",
+                "audit-request"
+              ]
+            },
+            "description": "Auditor mendapat `audit_token` (PSEU-...) untuk transaksi itu, bukan identitasnya. Token audit dipakai di folder 7."
+          }
+        }
+      ]
+    },
+    {
+      "name": "6) Notifikasi",
+      "description": "Nasabah mendaftarkan nomor HP untuk SMS lewat `POST /notification/register`. SMS tidak dikirim sungguhan: sms-simulator mencatatnya dan bisa dilihat di `sms_url` (dibuka oleh `docs/postman/compose.postman.yml`).",
+      "item": [
+        {
+          "name": "6.1 Nasabah: ubah nomor HP notifikasi",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('cust_hp_baru', '08998' + pm.collectionVariables.get('cust_n') + '1');"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200 {\"status\":\"REGISTERED\"}');",
+                  "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: REGISTERED', () => pm.expect(body.status).to.eql('REGISTERED'));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"{{cust_hp_baru}}\",\n  \"channel\": \"SMS\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/notification/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "notification",
+                "register"
+              ]
+            },
+            "description": "Pemilik nomor adalah nasabah dari token (invarian 7); body hanya berisi nomor dan kanal."
+          }
+        },
+        {
+          "name": "6.2 Lihat SMS yang tercatat di simulator",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 200; ada SMS \"berhasil\" dan satu \"sedang diverifikasi\" (transaksi ditahan)');",
+                  "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "const texts = (body.messages || []).map((x) => x.text);",
+                  "pm.test('Diharapkan: ada SMS \"berhasil\"', () => pm.expect(texts.some((t) => /berhasil/.test(t))).to.eql(true));",
+                  "pm.test('Diharapkan: ada SMS \"sedang diverifikasi\"', () => pm.expect(texts.some((t) => /sedang diverifikasi/.test(t))).to.eql(true));",
+                  "console.log('jumlah SMS tercatat = ' + texts.length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{sms_url}}/__test/messages",
+              "host": [
+                "{{sms_url}}"
+              ],
+              "path": [
+                "__test",
+                "messages"
+              ]
+            },
+            "description": "Endpoint uji sms-simulator. Berisi SMS dari transaksi folder 3 dan 4: \"berhasil\" untuk yang selesai, \"sedang diverifikasi\" untuk yang ditahan."
+          }
+        }
+      ]
+    },
+    {
+      "name": "7) Pembukaan identitas (empat-mata)",
+      "description": "Hanya mode usulan. Satu-satunya jalan membuka identitas di balik token: auditor mengajukan (`disclosure_request`), **admin lain** menyetujui, lalu auditor membuka. Persetujuan berlaku 600 detik dan hanya sekali pakai. Nilai yang dibuka tidak dicetak di konsol.",
+      "item": [
+        {
+          "name": "7.1 Auditor: ajukan pembukaan atribut nama",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('case_ref', 'KASUS-UJI-' + pm.collectionVariables.get('cust_n'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] usulan: 201 PENDING dan disclosure_id berbentuk UUID');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 201', () => pm.response.to.have.status(201));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  pm.test('Diharapkan: PENDING', () => pm.expect(body.status).to.eql('PENDING'));",
+                  "  pm.collectionVariables.set('disclosure_id', body.disclosure_id);",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_auditor}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audit_token\": \"{{audit_token}}\",\n  \"basis\": \"DISPUTE\",\n  \"case_ref\": \"{{case_ref}}\",\n  \"attributes\": [\n    \"nama\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/disclosure-requests",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "disclosure-requests"
+              ]
+            },
+            "description": "Pengajuan berstatus `PENDING`. Atribut yang boleh diminta: `customer_id`, `nik`, `nama`."
+          }
+        },
+        {
+          "name": "7.2 Auditor mencoba menyetujui pengajuannya sendiri",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] 403 ACCESS_DENIED (penolakan ini memang diharapkan)');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 403', () => pm.response.to.have.status(403));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  pm.test('Diharapkan: ACCESS_DENIED', () => pm.expect(body.error.code).to.eql('ACCESS_DENIED'));",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_auditor}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/disclosure-requests/{{disclosure_id}}/approve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "disclosure-requests",
+                "{{disclosure_id}}",
+                "approve"
+              ]
+            },
+            "description": "Menyetujui bukan hak auditor (hanya `admin`), dan pemohon tidak boleh menyetujui dirinya sendiri."
+          }
+        },
+        {
+          "name": "7.3 Admin: setujui (berlaku 600 detik)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] usulan: 200 APPROVED dan expires_at = sekarang + 600 detik (toleransi 5 detik)');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  pm.test('Diharapkan: APPROVED', () => pm.expect(body.status).to.eql('APPROVED'));",
+                  "  pm.test('Diharapkan: berlaku 600 detik (+-5 detik)', () => {",
+                  "    const delta = Date.parse(body.expires_at) - Date.parse(pm.response.headers.get('Date'));",
+                  "    console.log('selisih expires_at - waktu respons = ' + Math.round(delta / 1000) + ' detik');",
+                  "    pm.expect(Math.abs(delta - 600000)).to.be.below(5000);",
+                  "  });",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/disclosure-requests/{{disclosure_id}}/approve",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "disclosure-requests",
+                "{{disclosure_id}}",
+                "approve"
+              ]
+            },
+            "description": "Penyetuju adalah orang lain dengan peran `admin`. `expires_at` tepat 600 detik setelah persetujuan."
+          }
+        },
+        {
+          "name": "7.4 Auditor: buka identitas (pemakaian pertama)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] usulan: 200 dengan atribut \"nama\" saja; nilainya cocok dengan yang didaftarkan di 2.1 (diperiksa tanpa dicetak)');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  pm.test('Diharapkan: hanya atribut nama', () => pm.expect(Object.keys(body.attributes)).to.eql(['nama']));",
+                  "  pm.test('Diharapkan: nilai nama sama dengan yang didaftarkan (nilai tidak dicetak)', () => pm.expect(body.attributes.nama).to.eql(pm.collectionVariables.get('cust_nama')));",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_auditor}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audit_token\": \"{{audit_token}}\",\n  \"disclosure_id\": \"{{disclosure_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/reconciliation/disclosure",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "reconciliation",
+                "disclosure"
+              ]
+            },
+            "description": "Mengembalikan hanya atribut yang disetujui (`nama`). Nilainya sengaja tidak dicetak."
+          }
+        },
+        {
+          "name": "7.5 Auditor: buka lagi dengan persetujuan yang sama",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] 403 ACCESS_DENIED (sekali pakai; penolakan ini memang diharapkan)');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 403', () => pm.response.to.have.status(403));",
+                  "  pm.test('Diharapkan: jawaban tidak memuat nama', () => pm.expect(pm.response.text().includes(pm.collectionVariables.get('cust_nama'))).to.eql(false));",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_auditor}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"audit_token\": \"{{audit_token}}\",\n  \"disclosure_id\": \"{{disclosure_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/reconciliation/disclosure",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "reconciliation",
+                "disclosure"
+              ]
+            },
+            "description": "Persetujuan hanya sekali pakai: percobaan kedua ditolak."
+          }
+        },
+        {
+          "name": "7.6 Auditor: jejak audit pembukaan ini",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] usulan: 200; ada satu SUCCESS dan satu DENIED; nilai nama tidak ada di log');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  const st = (body.items || []).map((i) => i.status).sort();",
+                  "  pm.test('Diharapkan: tepat satu SUCCESS dan satu DENIED', () => pm.expect(st).to.eql(['DENIED', 'SUCCESS']));",
+                  "  pm.test('Diharapkan: log tidak memuat nilai nama', () => pm.expect(pm.response.text().includes(pm.collectionVariables.get('cust_nama'))).to.eql(false));",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_auditor}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/audit-log?action=DE_PSEUDONYMIZE&disclosure_id={{disclosure_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "audit-log"
+              ],
+              "query": [
+                {
+                  "key": "action",
+                  "value": "DE_PSEUDONYMIZE"
+                },
+                {
+                  "key": "disclosure_id",
+                  "value": "{{disclosure_id}}"
+                }
+              ]
+            },
+            "description": "Satu baris `SUCCESS` (pembukaan pertama) dan satu `DENIED` (percobaan kedua). Audit log mencatat nama atribut, bukan nilainya."
+          }
+        }
+      ]
+    },
+    {
+      "name": "8) Revoke subject",
+      "description": "Hanya mode usulan. Admin mencabut seluruh pemetaan satu subjek (hak penghapusan): token yang ada tidak bisa lagi dipecahkan, dan brankas identitas dikosongkan. Pencabutan bukan larangan bertransaksi (keterbatasan yang diketahui, N-51).",
+      "item": [
+        {
+          "name": "8.1 Admin: cabut satu token audit",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] usulan: 200 status revoked');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  pm.test('Diharapkan: status revoked', () => pm.expect(body.status).to.eql('revoked'));",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/pseudonym/{{audit_token}}/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "pseudonym",
+                "{{audit_token}}",
+                "revoke"
+              ]
+            },
+            "description": "Mencabut satu token (di sini token audit dari 5.3)."
+          }
+        },
+        {
+          "name": "8.2 Admin: cabut seluruh subjek nasabah",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "console.log('[Diharapkan] usulan: 200 dengan revoked_count >= 1');",
+                  "if (mode === 'proposed') {",
+                  "  pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
+                  "  let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "  pm.test('Diharapkan: revoked_count >= 1', () => pm.expect(body.revoked_count).to.be.at.least(1));",
+                  "  console.log('revoked_count = ' + body.revoked_count);",
+                  "} else {",
+                  "  pm.test('Diharapkan (baseline): rute ini butuh Privacy Service yang tidak ada di baseline, jadi gagal (HTTP ' + pm.response.code + ')', () => pm.expect(pm.response.code).to.be.at.least(400));",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject_type\": \"CUSTOMER\",\n  \"subject_id\": \"{{cust_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/subject/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subject",
+                "revoke"
+              ]
+            },
+            "description": "Mencabut semua token nasabah ini dan menghapus isi brankas identitasnya."
+          }
+        }
+      ]
+    },
+    {
+      "name": "9) Skenario negatif",
+      "description": "Semua request di sini **harus ditolak**; lulus berarti penolakannya benar. Ke klien eksternal hanya delapan kode error (ADR-0008); alasan rinci tidak pernah keluar.",
+      "item": [
+        {
+          "name": "9.1 Tanpa token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 401 UNAUTHENTICATED');",
+                  "pm.test('Diharapkan: 401 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(401));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code UNAUTHENTICATED', () => pm.expect(body.error.code).to.eql('UNAUTHENTICATED'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/transaction/held",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction",
+                "held"
+              ]
+            },
+            "description": "Tanpa header Authorization."
+          }
+        },
+        {
+          "name": "9.2 Token rusak",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 401 UNAUTHENTICATED');",
+                  "pm.test('Diharapkan: 401 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(401));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code UNAUTHENTICATED', () => pm.expect(body.error.code).to.eql('UNAUTHENTICATED'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer bukan.token.sungguhan"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transaction/held",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction",
+                "held"
+              ]
+            },
+            "description": "JWT yang tanda tangannya tidak valid."
+          }
+        },
+        {
+          "name": "9.3 Peran salah: auditor melihat daftar ditahan",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 403 ACCESS_DENIED');",
+                  "pm.test('Diharapkan: 403 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(403));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code ACCESS_DENIED', () => pm.expect(body.error.code).to.eql('ACCESS_DENIED'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_auditor}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transaction/held",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction",
+                "held"
+              ]
+            },
+            "description": "Daftar ditahan hanya untuk `fraud_analyst`."
+          }
+        },
+        {
+          "name": "9.4 Peran salah: nasabah menjalankan rekonsiliasi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 403 ACCESS_DENIED');",
+                  "pm.test('Diharapkan: 403 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(403));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code ACCESS_DENIED', () => pm.expect(body.error.code).to.eql('ACCESS_DENIED'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{batch_date}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/reconciliation/run",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "reconciliation",
+                "run"
+              ]
+            },
+            "description": "Rekonsiliasi hanya untuk `admin`."
+          }
+        },
+        {
+          "name": "9.5 Peran salah: analis mencabut subjek",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 403 ACCESS_DENIED');",
+                  "pm.test('Diharapkan: 403 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(403));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code ACCESS_DENIED', () => pm.expect(body.error.code).to.eql('ACCESS_DENIED'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_analis}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"subject_type\": \"CUSTOMER\",\n  \"subject_id\": \"{{cust_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/subject/revoke",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "subject",
+                "revoke"
+              ]
+            },
+            "description": "Pencabutan hanya untuk `admin`."
+          }
+        },
+        {
+          "name": "9.6 Peran salah: token manusia untuk /transaction",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 403 ACCESS_DENIED');",
+                  "pm.test('Diharapkan: 403 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(403));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code ACCESS_DENIED', () => pm.expect(body.error.code).to.eql('ACCESS_DENIED'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 1000,\n  \"geohash\": \"qqgu4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Pembayaran hanya untuk token nasabah."
+          }
+        },
+        {
+          "name": "9.7 Skema salah: field tak dikenal",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idem_key', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 422 VALIDATION_ERROR');",
+                  "pm.test('Diharapkan: 422 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(422));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code VALIDATION_ERROR', () => pm.expect(body.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 1000,\n  \"geohash\": \"qqgu4\",\n  \"requesting_service\": \"RECONCILIATION\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Skema ketat menolak field tambahan (termasuk usaha memalsukan `requesting_service`, invarian 7)."
+          }
+        },
+        {
+          "name": "9.8 Skema salah: tanpa Idempotency-Key",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 422 VALIDATION_ERROR');",
+                  "pm.test('Diharapkan: 422 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(422));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code VALIDATION_ERROR', () => pm.expect(body.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 1000,\n  \"geohash\": \"qqgu4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Header `Idempotency-Key` wajib."
+          }
+        },
+        {
+          "name": "9.9 Skema salah: jumlah negatif",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idem_key', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 422 VALIDATION_ERROR');",
+                  "pm.test('Diharapkan: 422 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(422));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code VALIDATION_ERROR', () => pm.expect(body.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": -5,\n  \"geohash\": \"qqgu4\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "Jumlah harus bilangan bulat >= 1."
+          }
+        },
+        {
+          "name": "9.10 Skema salah: tanggal rekonsiliasi tidak nyata",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 422 VALIDATION_ERROR');",
+                  "pm.test('Diharapkan: 422 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(422));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code VALIDATION_ERROR', () => pm.expect(body.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-02-31\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/reconciliation/run",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "reconciliation",
+                "run"
+              ]
+            },
+            "description": "31 Februari bukan tanggal."
+          }
+        },
+        {
+          "name": "9.11 Rute yang tidak ada",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 422 VALIDATION_ERROR');",
+                  "pm.test('Diharapkan: 422 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(422));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code VALIDATION_ERROR', () => pm.expect(body.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_admin}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/admin/semua-nasabah",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "admin",
+                "semua-nasabah"
+              ]
+            },
+            "description": "Rute di luar daftar tidak ada (API9)."
+          }
+        },
+        {
+          "name": "9.12 Daftar dengan field tak dikenal",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 422 VALIDATION_ERROR');",
+                  "pm.test('Diharapkan: 422 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(422));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code VALIDATION_ERROR', () => pm.expect(body.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nik\": \"{{cust_nik}}\",\n  \"nama\": \"{{cust_nama}}\",\n  \"hp\": \"{{cust_hp}}\",\n  \"email\": \"{{cust_email}}\",\n  \"rekening\": \"{{cust_rekening}}\",\n  \"username\": \"uji.tambahan.{{cust_n}}\",\n  \"peran\": \"admin\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "register"
+              ]
+            },
+            "description": "Formulir pendaftaran ketat; tidak ada user dibuat."
+          }
+        },
+        {
+          "name": "9.13 Daftar dengan username yang sudah dipakai",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 422 VALIDATION_ERROR');",
+                  "pm.test('Diharapkan: 422 (penolakan ini memang diharapkan)', () => pm.response.to.have.status(422));",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: code VALIDATION_ERROR', () => pm.expect(body.error.code).to.eql('VALIDATION_ERROR'));",
+                  "pm.test('Diharapkan: jawaban error seragam, hanya code, message, request_id', () => pm.expect(Object.keys(body.error).sort()).to.eql(['code', 'message', 'request_id']));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nik\": \"{{cust_nik}}\",\n  \"nama\": \"{{cust_nama}}\",\n  \"hp\": \"{{cust_hp}}\",\n  \"email\": \"{{cust_email}}\",\n  \"rekening\": \"{{cust_rekening}}\",\n  \"username\": \"{{cust_username}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/register",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "register"
+              ]
+            },
+            "description": "Username dari 2.1 sudah ada di dev-idp; Gateway menolak dan tidak menyimpan apa pun."
+          }
+        },
+        {
+          "name": "9.14 Rate limit: banjiri gateway sampai 429",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('flood_429', 'false');",
+                  "pm.collectionVariables.set('flood_count', '0');",
+                  "pm.collectionVariables.set('flood_retry_after', '');",
+                  "const url = pm.variables.get('base_url') + '/transaction/held';",
+                  "let sent = 0;",
+                  "function next() {",
+                  "  const token = pm.collectionVariables.get('token_nasabah103');",
+                  "  pm.sendRequest({ url, method: 'GET', header: { Authorization: 'Bearer ' + token } }, (err, res) => {",
+                  "    sent += 1;",
+                  "    pm.collectionVariables.set('flood_count', String(sent));",
+                  "    if (!err && res.code === 429) {",
+                  "      pm.collectionVariables.set('flood_429', 'true');",
+                  "      pm.collectionVariables.set('flood_retry_after', String(res.headers.get('Retry-After') || ''));",
+                  "      return;",
+                  "    }",
+                  "    if (sent < 130) next();",
+                  "  });",
+                  "}",
+                  "next();"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "console.log('[Diharapkan] 429 RATE_LIMITED sebelum request ke-130, dengan header Retry-After');",
+                  "pm.test('Diharapkan: 429 muncul selama banjir (setelah ' + pm.collectionVariables.get('flood_count') + ' request)', () => pm.expect(pm.collectionVariables.get('flood_429')).to.eql('true'));",
+                  "pm.test('Diharapkan: header Retry-After berisi detik 1..60', () => {",
+                  "  const s = Number(pm.collectionVariables.get('flood_retry_after'));",
+                  "  pm.expect(s).to.be.within(1, 60);",
+                  "});",
+                  "pm.test('Diharapkan: request ini (setelah banjir) juga 429 RATE_LIMITED', () => {",
+                  "  pm.response.to.have.status(429);",
+                  "  pm.expect(pm.response.json().error.code).to.eql('RATE_LIMITED');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_nasabah103}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/transaction/held",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction",
+                "held"
+              ]
+            },
+            "description": "Gateway membatasi 100 request per menit per pemanggil (`RATE_LIMIT_PER_MINUTE`). Pra-skrip mengirim sampai 130 request dengan nasabah seed 103 sampai 429 muncul. **Jalankan terakhir:** setelah ini nasabah 103 diblokir sampai menit berikutnya. Nasabah baru dan peran lain tidak terpengaruh (kuncinya per pemanggil)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "10) Lihat apa yang dilihat layanan",
+      "description": "Postman tidak bisa menjalankan `docker exec`. Request di sini hanya memanggil `/health`; **Tests-nya mencetak perintah siap salin di Console Postman** (View > Show Postman Console). Semua perintah hanya membaca, hanya menyentuh objek `privpay_*`, dan menyamarkan nilai sensitif (dua karakter pertama dan terakhir saja; token `PSEU-` ditampilkan utuh karena bukan data pribadi).",
+      "item": [
+        {
+          "name": "10.1 Transaction Service: apa yang tersimpan di tabel transaksi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "const p = pm.environment.get('compose_project');",
+                  "pm.test('Diharapkan: gateway hidup (request ini hanya mencetak perintah untuk terminal)', () => pm.response.to.have.status(200));",
+                  "console.log('=== Jalankan di terminal (PowerShell atau Git Bash), mode ' + mode + ' ===');",
+                  "",
+                  "const col = mode === 'proposed' ? ['customer_pseudonym', 'account_pseudonym'] : ['customer_id', 'account_number'];",
+                  "const masked = (c) => \"CASE WHEN \" + c + \" ~ '^PSEU-' THEN \" + c + \" WHEN length(\" + c + \")>4 THEN left(\" + c + \",2)||repeat('*',length(\" + c + \")-4)||right(\" + c + \",2) ELSE '****' END\";",
+                  "console.log('docker exec ' + p + '-pg-transaction-1 psql -U postgres -d privpay_transaction -c \"SELECT transaction_id, ' + masked(col[0]) + ' AS pengenal_nasabah, ' + masked(col[1]) + ' AS pengenal_rekening, amount, status FROM transactions ORDER BY created_at DESC LIMIT 5\"');",
+                  "console.log(mode === 'proposed'",
+                  "  ? 'Yang diharapkan: kedua kolom pengenal berbentuk PSEU-XXXXXXXX (nilai asli tidak ada di basis data ini).'",
+                  "  : 'Yang diharapkan: pengenal berbentuk CUST-** dan angka rekening yang disamarkan (data asli tersimpan di basis data layanan hilir).');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Mode usulan: kolom pengenal berisi `PSEU-...`. Mode baseline: `customer_id` dan nomor rekening asli (disamarkan di keluaran). Ini perbedaan inti kedua mode."
+          }
+        },
+        {
+          "name": "10.2 Notification Service: pemilik nomor HP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "const p = pm.environment.get('compose_project');",
+                  "pm.test('Diharapkan: gateway hidup (request ini hanya mencetak perintah untuk terminal)', () => pm.response.to.have.status(200));",
+                  "console.log('=== Jalankan di terminal (PowerShell atau Git Bash), mode ' + mode + ' ===');",
+                  "",
+                  "const col = mode === 'proposed' ? 'pseudonym' : 'customer_id';",
+                  "const mk = (c) => \"CASE WHEN \" + c + \" ~ '^PSEU-' THEN \" + c + \" WHEN length(\" + c + \")>4 THEN left(\" + c + \",2)||repeat('*',length(\" + c + \")-4)||right(\" + c + \",2) ELSE '****' END\";",
+                  "console.log('docker exec ' + p + '-pg-notification-1 psql -U postgres -d privpay_notification -c \"SELECT ' + mk(col) + ' AS pengenal_nasabah, ' + mk('phone') + ' AS hp_samar FROM contact_registry ORDER BY registered_at DESC LIMIT 5\"');",
+                  "console.log(mode === 'proposed' ? 'Yang diharapkan: kolom pseudonym berisi PSEU-... (token domain notifikasi, tidak bisa dihubungkan ke token layanan lain).' : 'Yang diharapkan: pengenal berbentuk CU*******nn (customer_id asli, disamarkan); tidak ada lapisan pseudonim.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Notification menyimpan nomor HP karena perlu mengirim SMS. Perbedaan: mode usulan mengaitkannya ke token domain notifikasi, mode baseline ke `customer_id` asli."
+          }
+        },
+        {
+          "name": "10.3 Fraud dan Reconciliation: pengenal di tabel layanan hilir lain",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "const p = pm.environment.get('compose_project');",
+                  "pm.test('Diharapkan: gateway hidup (request ini hanya mencetak perintah untuk terminal)', () => pm.response.to.have.status(200));",
+                  "console.log('=== Jalankan di terminal (PowerShell atau Git Bash), mode ' + mode + ' ===');",
+                  "",
+                  "const m = (c) => \"CASE WHEN \" + c + \" ~ '^PSEU-' THEN \" + c + \" WHEN length(\" + c + \")>4 THEN left(\" + c + \",2)||repeat('*',length(\" + c + \")-4)||right(\" + c + \",2) ELSE '****' END\";",
+                  "const fraudCol = mode === 'proposed' ? 'pseudonym' : 'customer_id';",
+                  "const acc = mode === 'proposed' ? 'account_pseudonym' : 'account_number';",
+                  "console.log('docker exec ' + p + '-pg-fraud-1 psql -U postgres -d privpay_fraud -c \"SELECT ' + m(fraudCol) + ' AS pengenal_nasabah, amount, risk_score, decision FROM fraud_assessments ORDER BY assessed_at DESC LIMIT 5\"');",
+                  "console.log('docker exec ' + p + '-pg-reconciliation-1 psql -U postgres -d privpay_reconciliation -c \"SELECT ' + m(acc) + ' AS pengenal_rekening, amount, matched FROM settlement_items ORDER BY id LIMIT 5\"');",
+                  "console.log(mode === 'proposed'",
+                  "  ? 'Yang diharapkan: PSEU-XXXXXXXX di kedua tabel, dan token Fraud berbeda dari token Transaction untuk nasabah yang sama (tidak ada join lewat pseudonim).'",
+                  "  : 'Yang diharapkan: CUST-** di Fraud dan angka rekening yang disamarkan di Reconciliation.');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Fraud menyimpan penilaian per nasabah (jumlah, skor, aturan) dan Reconciliation menyimpan baris laporan bank. Di mode usulan pengenalnya token `PSEU-` yang berbeda per layanan; di baseline `customer_id` dan nomor rekening asli (disamarkan di keluaran)."
+          }
+        },
+        {
+          "name": "10.4 Privacy Service (hanya usulan): brankas identitas terenkripsi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "const p = pm.environment.get('compose_project');",
+                  "pm.test('Diharapkan: gateway hidup (request ini hanya mencetak perintah untuk terminal)', () => pm.response.to.have.status(200));",
+                  "console.log('=== Jalankan di terminal (PowerShell atau Git Bash), mode ' + mode + ' ===');",
+                  "",
+                  "if (mode !== 'proposed') {",
+                  "  console.log('Mode baseline tidak punya Privacy Service dan basis data privpay_privacy; lewati langkah ini.');",
+                  "} else {",
+                  "  console.log('docker exec ' + p + '-pg-privacy-1 psql -U postgres -d privpay_privacy -c \"SELECT octet_length(nik_enc) AS byte_nik, octet_length(nama_enc) AS byte_nama, octet_length(hp_enc) AS byte_hp, left(encode(nama_enc,\\'hex\\'),16) AS awal_heks_nama FROM identity_vault ORDER BY 1 DESC LIMIT 3\"');",
+                  "  console.log('Yang diharapkan: kolom berisi byte acak (IV + ciphertext + tag), bukan teks; nama yang Anda daftarkan tidak terbaca.');",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Hanya satu basis data yang menyimpan identitas, dan isinya terenkripsi AES-256-GCM. Perintah ini hanya menunjukkan **panjang** kolom dan awal heks, bukan isinya. Baris dengan kolom kosong adalah nasabah yang identitasnya sudah dihapus oleh revoke (folder 8). Di baseline tidak ada basis data ini."
+          }
+        },
+        {
+          "name": "10.5 Log kontainer: tidak ada data pribadi",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const mode = pm.environment.get('mode');",
+                  "const p = pm.environment.get('compose_project');",
+                  "pm.test('Diharapkan: gateway hidup (request ini hanya mencetak perintah untuk terminal)', () => pm.response.to.have.status(200));",
+                  "console.log('=== Jalankan di terminal (PowerShell atau Git Bash), mode ' + mode + ' ===');",
+                  "",
+                  "const svc = ['gateway', 'transaction-service', 'fraud-service', 'notification-service', 'reconciliation-service'].concat(mode === 'proposed' ? ['privacy-service'] : []);",
+                  "const vals = ['cust_rekening', 'cust_nama', 'cust_hp', 'cust_nik'].map((k) => pm.collectionVariables.get(k)).filter(Boolean);",
+                  "const pat = vals.join('|');",
+                  "console.log('Nilai uji ini fiktif (awalan 9999). Hitung kemunculannya di log tiap layanan (Git Bash):');",
+                  "svc.forEach((s) => console.log(\"docker logs \" + p + \"-\" + s + \"-1 2>&1 | grep -c -E '\" + pat + \"'\"));",
+                  "console.log('PowerShell: docker logs ' + p + '-gateway-1 2>&1 | Select-String -Pattern \"' + pat + '\" | Measure-Object');",
+                  "console.log('Yang diharapkan: 0 di semua baris. Lihat bentuk log yang sebenarnya: docker logs --tail 5 ' + p + '-transaction-service-1');"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
+            },
+            "description": "Log aplikasi hanya memuat id permintaan, rute, status, latensi, dan `transaction_id`. Cari rekening, nama, HP, dan NIK nasabah uji ini: hasilnya harus 0 di kedua mode."
+          }
+        }
+      ]
+    }
+  ]
+}
