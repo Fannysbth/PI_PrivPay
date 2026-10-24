@@ -1,3 +1,16 @@
+# HANDOFF (2026-10-24, sesi lanjutan): DK image-scan, DK-05, DK-03 SELESAI dan di-merge ke `main` lokal; DK-02 (Kong) BERHENTI menunggu keputusan
+
+| Butir | Commit merge | Bukti |
+| --- | --- | --- |
+| Dokumen (Metodologi v9, koreksi "replika") | `223dff1` | lint, typecheck, gitleaks |
+| Pindai citra (hadolint, Trivy) | `0522bc0` | `docs/dk/PINDAI_CITRA.md`; npm dibuang dari citra runtime |
+| DK-05 PostgreSQL 16.15 | `956038a` | satu putaran penuh hijau (unit 1397, integrasi 1140, security, smoke, pii-scan, audit, gitleaks); ADR-0004; `pnpm db:pg16` |
+| DK-03 tiga jaringan + TLS Gateway-Privacy | `a674d19` | `pnpm docker:net-check` 15/15 proposed, 5/5 baseline; smoke 9/9 kedua mode; 14 tes TLS; mutasi terbunuh |
+| Keputusan Fanny (N-53, gerbang secret) | `ed4c9f7`, `fc59edc` | `pnpm secret-scan:tree` + `gitleaks --all` menggantikan `--no-git` mentah |
+
+**DK-02 tidak dikerjakan.** Spek (`gateway-tokenizer.md`) menyatakan plugin Lua berperilaku identik dengan `gateway-adapter`. Adapter bukan hanya tokenizer: ia memeriksa `aud`/`azp`/peran per rute (16 rute, dua jenis token, `X-Actor-Token`), skema zod ketat per rute dan batas ukuran, token layanan per hulu, `ErrorMasker` (delapan kode), pembatas laju, alur pendaftaran dengan kompensasi, dan `transaction_id`. Kong OSS hanya memberi JWT (tanda tangan), pembatas laju, dan batas ukuran; sisanya harus berupa kode Lua kustom (±1000 baris, tanpa kerangka uji Lua di repo). Itu melebihi "plugin tokenizer" pada rancangan, jadi dihentikan untuk ditanyakan. N-05 dan Q-10 tetap terbuka. DK-04 dan DK-06 tidak disentuh.
+
+
 # HANDOFF (2026-10-24): DK-01a SELESAI di `feat/dk-01a` (Compose penuh, kedua mode terbukti jalan); gerbang terarah di bawah
 
 ## Hasil DK-01a
