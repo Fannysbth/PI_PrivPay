@@ -1,3 +1,38 @@
+# HANDOFF (2026-10-24): DK-01a SELESAI di `feat/dk-01a` (Compose penuh, kedua mode terbukti jalan); gerbang terarah di bawah
+
+## Hasil DK-01a
+
+Cabang `feat/dk-01a`: `af85191` (`BIND_HOST` 0.0.0.0 eksplisit), `d95443d` (Dockerfile, Compose, rahasia, smoke), lalu perbaikan smoke dan dokumen. Rancangan dan aturan: `deploy/compose/*.yml`, `deploy/docker/Dockerfile`, `CLAUDE.md` (bagian Perintah dan Catatan keputusan Docker).
+
+| Bukti | Hasil |
+| --- | --- |
+| `docker compose config` kedua mode, dan dengan profil monitoring | valid |
+| `up --wait` proposed | 14 kontainer jalan sehat + 5 migrasi selesai (kode 0) |
+| `up --wait` baseline | 12 sehat (tanpa Privacy Service dan PostgreSQL-nya) |
+| Smoke dari dalam jaringan (register, login, bayar normal, bayar mencurigakan ditahan, analis melihat daftar ditahan, SMS) | 9/9 proposed, 9/9 baseline |
+| `docker history` empat citra dicari secret/password/.env/kunci pribadi | 0 temuan; `Config.Env` citra tidak memuat nama rahasia; pengguna `node` |
+| `down -v` kedua mode | 0 kontainer, 0 volume; citra proyek dibiarkan (dipakai ulang) |
+
+Memori (mesin 14 GB, WSL 4 GB): bebas sebelum `up` ±4,6 GB, setelah proposed penuh 3,97 GB, baseline 4,01 GB. Penggunaan kontainer (idle setelah smoke): total proposed ±600 MiB (dari batas 14 x 192 MiB), baseline ±408 MiB; tiap PostgreSQL 24 sampai 42 MiB, tiap layanan Node 42 sampai 55 MiB, `bank-simulator` 89 MiB. Belum diukur: di bawah beban k6, dan Prometheus/Grafana/cAdvisor (hanya definisi). Angka ini lingkungan lokal, bukan hasil penelitian.
+
+Tumpukan penuh muat dan stabil di WSL 4 GB, jadi tidak perlu turun ke hibrida; batas WSL tidak perlu dinaikkan untuk DK-01a.
+
+## Yang perlu diketahui / diputuskan
+
+- **Insiden disk:** disk C: penuh (0 MB) membuat `docker pull` gagal (`input/output error`), engine Docker macet, dan volume PostgreSQL setengah jadi (`postmaster.pid` kosong, init terlewat). Pulih setelah Fanny memindahkan disk Docker ke D: dan membebaskan C:; volume proyek dihapus (`down -v`) dan dibuat ulang. Pelajaran: sebelum sesi Docker, cek `(Get-PSDrive C).Free` (butuh beberapa GB) dan jangan lanjut `up` bila `docker images` memberi 500.
+- **Satu Dockerfile berparameter** (`SERVICE_PKG`, `SERVICE_DIR`), bukan sembilan: tiket menulis "per layanan"; tiap layanan tetap punya citra sendiri. Ubah bila ingin sembilan berkas.
+- **BIND_HOST 0.0.0.0** (keputusan Fanny): tiga tes AZ-43 diubah contohnya ke `10.0.0.5` (asersi sama). **N-05** (`/health` dan `/metrics` Gateway) ditunda ke DK-02/DK-03, dicatat sebagai keterbatasan: Gateway dipublikasikan hanya ke 127.0.0.1 host.
+- `NODE_ENV` tidak diset di citra (paritas dengan `dev:up`); hanya dev-idp `development`. dev-idp (`dev_login` tanpa kata sandi) hanya terjangkau dari dalam jaringan `internal`.
+- hadolint dan Trivy **belum dijalankan** (tidak dipasang; tidak menambah dependensi). Pemeriksaan Dockerfile saat ini hanya tes statis `tests/repo/docker.spec.ts` dan `docker history`. Putaran penuh tidak dijalankan (Docker menyala).
+- File rahasia Docker 0644 di folder `secrets/docker/` (dibuat 0700) supaya pengguna non-root kontainer bisa membaca di Linux; Windows mengabaikan mode.
+- Teks "dengan replika" di `DK-06`, `tickets/README.md`, `spec/00-traceability.md` masih usang terhadap Metodologi v9 (belum diubah).
+
+## Sisa
+
+DK-05 (PostgreSQL 16 untuk integrasi dan keamanan, satu putaran penuh), DK-03 (tiga jaringan, TLS Gateway-Privacy), DK-02 (plugin Kong Lua, N-05, Q-10), DK-04 (Keycloak), DK-06 (mesin bersih, fail-closed tanpa Privacy di Compose; bergantung M6-04) dan dua putaran penuh penutup DK. Pengukuran kinerja belum boleh diklaim (lingkungan ukur belum diputuskan).
+
+---
+
 # HANDOFF (2026-10-24): `fix/dev-idp-customer-id` di-merge ke `main` lokal sebagai "merge dengan pengecualian tercatat" (bukan gerbang hijau)
 
 **Dua pengecualian (N-52 di `OPEN_QUESTIONS.md`):** (1) `packages/common/test/test-db-cleanup.integration.spec.ts` merah juga di `main` (Fase B sesi ini menyelidikinya; hasilnya di bagian bawah bila ada); (2) tidak ada putaran integrasi penuh dua kali berturut-turut untuk cabang ini. Dasar merge: unit 1372, smoke 36, lint, typecheck, gitleaks riwayat penuh, pii-scan hijau; equivalence e2e hijau 6/6 sendirian.

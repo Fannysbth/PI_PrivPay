@@ -8,7 +8,13 @@ import { FakeClock } from '../src/clock';
 import { ConfigError } from '../src/config';
 import { type Delay } from '../src/delay';
 import { DomainError, RateLimitedError } from '../src/errors';
-import { createServiceApp, SERVICE_IDS, type ServiceApp, type ServiceId } from '../src/nest';
+import {
+  createServiceApp,
+  SERVICE_IDS,
+  serviceConfigSchema,
+  type ServiceApp,
+  type ServiceId,
+} from '../src/nest';
 import { SCHEDULER } from '../src/scheduler';
 import { capture } from './log-capture';
 import { probe, probeAll } from './tcp-probe';
@@ -301,8 +307,21 @@ describe('M0-06 the environment is validated at start (fail fast, NFR-20)', () =
     expect((await failure({ TZ: 'Asia/Jakarta' })).message).toContain('TZ (invalid)');
   });
 
-  it('M0-06 a bind address that is not loopback is refused (AZ-43)', async () => {
-    expect((await failure({ BIND_HOST: '0.0.0.0' })).message).toContain('BIND_HOST (invalid)');
+  it('M0-06 a bind address that is neither loopback nor the container wildcard is refused (AZ-43)', async () => {
+    expect((await failure({ BIND_HOST: '10.0.0.5' })).message).toContain('BIND_HOST (invalid)');
+    expect((await failure({ BIND_HOST: '::' })).message).toContain('BIND_HOST (invalid)');
+  });
+
+  it('DK-01 0.0.0.0 is accepted only when set explicitly (Docker network), and the default stays loopback (AZ-43)', async () => {
+    const env = { ...baseEnv } as Record<string, string>;
+    delete env['BIND_HOST'];
+    const byDefault = await createServiceApp({ service: 'gateway' }, env);
+    await byDefault.close();
+    const wide = await createServiceApp({ service: 'gateway' }, { ...env, BIND_HOST: '0.0.0.0' });
+    await wide.close();
+    expect(serviceConfigSchema.parse({ PRIVACY_MODE: 'proposed', PORT: '1' }).BIND_HOST).toBe(
+      '127.0.0.1',
+    );
   });
 
   it('M0-06 the message names variables only, never their values', async () => {

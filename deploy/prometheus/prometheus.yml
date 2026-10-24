@@ -1,0 +1,21 @@
+# Prometheus scrape configuration for the Compose stack (definition only in DK-01a). /metrics of every service listens on
+# the service port inside the internal network; a service that is not in the chosen condition is simply down.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: privpay
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - privacy-service:4001
+          - transaction-service:4002
+          - fraud-service:4003
+          - notification-service:4004
+          - reconciliation-service:4005
+          - bank-simulator:4006
+          - sms-simulator:4007
+          - gateway:4010
+  - job_name: cadvisor
+    static_configs:
+      - targets: ['cadvisor:8080']

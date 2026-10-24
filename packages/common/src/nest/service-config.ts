@@ -17,13 +17,15 @@ export const TOOL_IDS = ['dev-idp'] as const;
 export type ServiceId = (typeof SERVICE_IDS)[number] | (typeof TOOL_IDS)[number];
 
 /**
- * What every service reads from the environment. The bind address can only be a loopback address in the local phase
- * (AZ-43); the Docker phase widens it through its own decision, not by a flag here. UTC is mandatory (NFR-20).
+ * What every service reads from the environment. The bind address defaults to loopback (AZ-43). `0.0.0.0` is accepted
+ * only when set explicitly: a container must listen on its network interface to be reached by its neighbours (DK-01a,
+ * decision of 2026-10-24); the Compose network is then the boundary, and only the Gateway is published, to the host's
+ * loopback. Any other address is refused. UTC is mandatory (NFR-20).
  */
 export const serviceConfigSchema = z.object({
   PRIVACY_MODE: z.enum(PRIVACY_MODES),
   PORT: z.coerce.number().int().min(0).max(65535),
-  BIND_HOST: z.enum(['127.0.0.1', '::1']).default('127.0.0.1'),
+  BIND_HOST: z.enum(['127.0.0.1', '::1', '0.0.0.0']).default('127.0.0.1'),
   TZ: z.literal('UTC').default('UTC'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),

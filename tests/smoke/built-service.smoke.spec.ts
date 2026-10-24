@@ -356,7 +356,7 @@ describe('M1-01 the built dev-idp runs as a process, with secrets made by its sc
   it.each([
     ['production', { NODE_ENV: 'production' }, 'NODE_ENV (invalid)'],
     ['not enabled', { DEV_IDP_ENABLED: 'false' }, 'DEV_IDP_ENABLED (invalid)'],
-    ['a non-loopback address', { BIND_HOST: '0.0.0.0' }, 'BIND_HOST (invalid)'],
+    ['a non-loopback address', { BIND_HOST: '10.0.0.5' }, 'BIND_HOST (invalid)'],
   ])('M1-01 node dist/main.js refuses to start when %s', async (_name, extra, message) => {
     const running = start(entry, env(0, extra));
     expect(await running.exited).toBe(1);

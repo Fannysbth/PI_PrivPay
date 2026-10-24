@@ -1,0 +1,56 @@
+# Monitoring for M7 (NFR-18): Prometheus, Grafana and cAdvisor. DEFINITION ONLY in DK-01a: every service is in the profile
+# `monitoring`, so nothing here starts with `up` unless `--profile monitoring` is given, and none of it has been run yet.
+# Add it with: docker compose -f docker-compose.yml -f mode.<condition>.yml -f docker-compose.monitoring.yml --profile monitoring up
+# Memory of these three is NOT yet measured (docs/dk/KELAYAKAN.md); measure before relying on them next to the full stack.
+
+services:
+  prometheus:
+    profiles: [monitoring]
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    read_only: true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: '0.50', memory: 256M }
+    volumes:
+      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks: [internal]
+
+  cadvisor:
+    profiles: [monitoring]
+    image: gcr.io/cadvisor/cadvisor:v0.52.1@sha256:f40e65878e25c2e78ea037f73a449527a0fb994e303dc3e34cb6b187b4b91435
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: '0.25', memory: 128M }
+    # cAdvisor reads the cgroups of the host; these read-only mounts are what it needs, and it is the only service here
+    # that cannot run read-only with all capabilities dropped. Decide at M7 whether to keep it.
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+    networks: [internal]
+
+  grafana:
+    profiles: [monitoring]
+    image: grafana/grafana:12.1.0@sha256:6ac590e7cabc2fbe8d7b8fc1ce9c9f0582177b334e0df9c927ebd9670469440f
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits: { cpus: '0.50', memory: 256M }
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+    secrets: [grafana_admin_password]
+    ports: ['127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000']
+    volumes: ['grafana-data:/var/lib/grafana']
+    networks: [internal, edge]
+
+volumes:
+  prometheus-data: {}
+  grafana-data: {}
