@@ -1,0 +1,45 @@
+# Condition `baseline` (ADR-0003): no privacy layer. There is no Privacy Service and no PostgreSQL for it, and no service
+# may be given PRIVACY_SERVICE_URL (N-47). The same images, the same limits (docker-compose.yml), only PRIVACY_MODE differs.
+# The project name is its own, so containers and volumes of the two conditions never meet.
+name: privpay-baseline
+
+services:
+  idp:
+    environment: { PRIVACY_MODE: baseline }
+
+  sms-simulator:
+    environment: { PRIVACY_MODE: baseline }
+
+  bank-simulator:
+    environment: { PRIVACY_MODE: baseline }
+
+  fraud-service:
+    environment: { PRIVACY_MODE: baseline }
+
+  transaction-service:
+    environment: { PRIVACY_MODE: baseline }
+
+  notification-service:
+    environment: { PRIVACY_MODE: baseline }
+
+  reconciliation-service:
+    environment: { PRIVACY_MODE: baseline }
+
+  migrate-transaction:
+    environment: { PRIVACY_MODE: baseline }
+
+  migrate-fraud:
+    environment: { PRIVACY_MODE: baseline }
+
+  migrate-notification:
+    environment: { PRIVACY_MODE: baseline }
+
+  migrate-reconciliation:
+    environment: { PRIVACY_MODE: baseline }
+
+  gateway:
+    environment: { PRIVACY_MODE: baseline }
+    ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4011}:4010']
+
+  smoke:
+    environment: { PRIVACY_MODE: baseline }

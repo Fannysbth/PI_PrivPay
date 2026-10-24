@@ -1,0 +1,21 @@
+# Build context of deploy/docker/Dockerfile: nothing secret and nothing built on the host goes into an image (NFR-22).
+secrets
+**/secrets
+.env
+.env.*
+!.env.example
+.dev-state
+.dev-run
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+coverage
+docs
+prototypes
+tests
+*.pem
+*.key
+*.log
