@@ -4,6 +4,19 @@
 
 **Syarat penutup DK:** butuh dua putaran penuh hijau berturut-turut, dan `test-db-cleanup` WAJIB sudah dijelaskan penyebabnya dan hijau sebelum itu.
 
+## Sesi 24 Okt: `test-db-cleanup` (Fase B) dan audit body-parser/multer (Fase C)
+
+**`test-db-cleanup`:** setelah pgAdmin diputus dan `db:test-databases drop` dijalankan, `packages/common/test/test-db-cleanup.integration.spec.ts` sendirian hijau 5/5 dua kali berturut-turut di `main` (`85ebf10`), tanpa sisa database tes. Kegagalan lama TIDAK direproduksi, jadi penyebabnya belum terbukti (dugaan: sesi klien lain pada database `privpay_*`, yang menurut CLAUDE.md membuat `createTestDb` gagal; belum dibuktikan). Skrip diagnostik tidak dibuat karena tes tidak merah. Syarat penutup DK di atas tetap berlaku: penyebab harus dijelaskan, bukan sekadar hijau sesaat.
+
+**Audit (cabang `fix/audit-body-parser-multer`):** `pnpm audit --prod --audit-level high` semula 2 tinggi, transitif lewat `packages/common > @nestjs/platform-express > express`. Tidak ada `@nestjs/platform-express` 11.x yang memuat versi aman (11.2.8, terbaru di 11.x, mengunci `multer` 2.4.0 dan `express` 5.2.1; yang lebih baru hanya mayor 12), jadi pembaruan langsung tidak ada.
+
+| Paket | Dari | Ke | Cara | Advisory | Lisensi |
+| --- | --- | --- | --- | --- | --- |
+| `body-parser` | 2.3.0 | 2.4.0 | lockfile saja (rentang `express` `^2.2.1` sudah mengizinkan; tanpa override tersisa) | GHSA-27r3-jxmh-p828 | MIT |
+| `multer` | 2.4.0 | 2.5.0 | `overrides: multer: 2.5.0` di `pnpm-workspace.yaml` (pnpm 12 menyimpan override di sana, bukan `package.json`) karena `platform-express` mengunci 2.4.0 persis | GHSA-q7qp-rjg7-q26m | MIT |
+
+Catatan rilis (GitHub) keduanya hanya memuat perbaikan keamanan dan perbaikan kecil; tidak ada perubahan yang merusak. Tanpa dependensi baru; versi 2.4.0 body-parser memakai `qs`, `content-type`, `iconv-lite` yang sudah ada di lockfile. `package.json` tidak berubah. Cara: `pnpm update body-parser -r` ikut mengubah `@types/node` 26.6.5 menjadi 24.19.2 di lockfile (di luar lingkup), jadi dibatalkan; diganti override sementara `body-parser`, lalu dihapus, dan pnpm mempertahankan 2.4.0. Hapus override `multer` begitu `platform-express` 11.x memuat multer >= 2.5.0.
+
 ---
 
 # HANDOFF (2026-10-23): kesetiaan baseline, bagian jelas SELESAI (G1), gerbang lengkap (dua tes yang merah ternyata gangguan lingkungan sesi lama, kini hijau sendirian), di-merge ke `main` lokal; kesetiaan lanjut sebagai versi B (belum dikerjakan)
