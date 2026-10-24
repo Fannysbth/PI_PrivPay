@@ -19,6 +19,14 @@ if (listed.status !== 0) {
   process.exit(2);
 }
 
+// The scan above leaves secrets/ out only because git ignores it: if that stops being true, the check is meaningless
+// and (worse) key files could be committed, so the gate fails.
+const ignored = spawnSync('git', ['check-ignore', '-q', 'secrets/docker/tls_privacy.key', 'secrets/probe'], { cwd: root });
+if (ignored.status !== 0) {
+  process.stderr.write('secrets/ is not git-ignored: refusing to scan\n');
+  process.exit(2);
+}
+
 const work = mkdtempSync(path.join(tmpdir(), 'privpay-tree-'));
 let status = 2;
 try {

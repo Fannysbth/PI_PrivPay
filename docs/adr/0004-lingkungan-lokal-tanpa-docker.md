@@ -43,7 +43,7 @@ Satu kontainer `postgres:16.15` (digest sama dengan Compose) dengan peran dan ha
 
 ## Hasil DK-03 (24 Okt 2026): jaringan dan TLS di Compose
 
-Utang NFR-06 untuk jalur Gateway ke Privacy ditutup di Compose: Privacy melayani TLS 1.2+ dan pemanggil memverifikasi sertifikat dengan CA dev (bukan mTLS: spek hanya menuntut TLS pada jalur itu). Tiga jaringan ditegakkan dan diuji dari dalam kontainer (`pnpm docker:net-check`). **Belum**: TLS klien ke Gateway/Kong (DK-02), `/health` dan `/metrics` Gateway di sisi luar (N-05, DK-02), dan fase lokal tetap HTTP loopback. Keterbatasan: pemanggil Privacy berbagi jaringan `privacy` dengan `pg-privacy`, dan layanan bisnis berbagi `business` dengan database satu sama lain; yang memisahkan database adalah peran dan kata sandi, bukan jaringan (pemisahan per-database butuh jaringan tambahan di luar tiga zona).
+Utang NFR-06 untuk jalur Gateway ke Privacy ditutup di Compose: Privacy melayani TLS 1.2+ dan pemanggil memverifikasi sertifikat dengan CA dev (bukan mTLS: spek hanya menuntut TLS pada jalur itu). Tiga jaringan ditegakkan dan diuji dari dalam kontainer (`pnpm docker:net-check`). **Belum**: TLS klien ke Gateway/Kong (DK-02), `/health` dan `/metrics` Gateway di sisi luar (N-05, DK-02), dan fase lokal tetap HTTP loopback. Keterbatasan: pemanggil Privacy berbagi jaringan `privacy` dengan `pg-privacy`, dan layanan bisnis berbagi `business` dengan database satu sama lain; yang memisahkan database adalah peran dan kata sandi, bukan jaringan (pemisahan per-database butuh jaringan tambahan di luar tiga zona). **Diterima sebagai keterbatasan oleh Fanny (24 Okt 2026): jaringan keempat tidak ditambah** (OPEN_QUESTIONS N-53).
 
 ## Kapan ditinjau ulang
 
