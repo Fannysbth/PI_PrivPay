@@ -1,5 +1,6 @@
+import { Client } from 'pg';
 import { loadConfig } from '../src/config';
-import { pgConfigSchema, SERVICE_DBS } from '../src/db';
+import { pgConfigSchema, readRolePassword, SERVICE_DBS } from '../src/db';
 import {
   createAdminPool,
   createTestDb,
@@ -93,13 +94,28 @@ describe('M0-05 dropping test databases', () => {
 
   it('M0-05 a database held by a session it may not end is reported, the rest is still dropped, and it goes once the session ends', async () => {
     const held = await created('m006d');
-    await held.app.query('SELECT 1');
-    const free = await created('m006e');
-    await free.close();
-    open.splice(open.indexOf(free), 1);
-    const first = await dropTestDatabases(config, [held.database, free.database]);
-    expect(first.dropped).toEqual([free.database]);
-    expect(first.failed).toEqual([{ name: held.database, code: '42501' }]);
+    // A dedicated client, not a pooled connection: pg-pool closes an idle pooled connection after 10 s
+    // (idleTimeoutMillis), which would end the session this test needs to stay open however slow the machine is.
+    const holder = new Client({
+      host: config.PG_HOST,
+      port: config.PG_PORT,
+      user: SERVICE_DBS.privacy.app,
+      password: readRolePassword(config.PG_SECRETS_DIR, SERVICE_DBS.privacy.app),
+      database: held.database,
+    });
+    holder.on('error', () => undefined);
+    await holder.connect();
+    try {
+      await holder.query('SELECT 1');
+      const free = await created('m006e');
+      await free.close();
+      open.splice(open.indexOf(free), 1);
+      const first = await dropTestDatabases(config, [held.database, free.database]);
+      expect(first.dropped).toEqual([free.database]);
+      expect(first.failed).toEqual([{ name: held.database, code: '42501' }]);
+    } finally {
+      await holder.end();
+    }
     await held.close();
     open.length = 0;
     expect(await dropTestDatabases(config, [held.database])).toEqual({

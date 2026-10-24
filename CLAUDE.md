@@ -132,6 +132,7 @@ Subagent mematuhi berkas ini. Satu subagent satu tiket. Tidak menyentuh berkas b
 ## Pelajaran berulang (retro M3, `docs/RETRO_M3.md`)
 
 - Sebelum gerbang: periksa memori bebas; satu proses pada satu waktu; bila proses dihentikan sistem dua kali, berhenti dan laporkan. Kegagalan pool saat memori sempit baru dianggap bug bila terulang saat memori longgar.
+- Memori (keputusan 24 Okt): gerbang penuh dijalankan dengan Docker Desktop dimatikan (`docker desktop stop`, lalu `wsl --shutdown`) dan memori bebas minimal 5 GB; di bawah itu berhenti dan laporkan. Sesi dengan Docker menyala boleh mulai dari 2,5 GB bebas, tanpa putaran penuh (gerbang terarah saja).
 - Tes konkurensi memaksa tumpang tindih tanpa `sleep` (kunci ditahan sesi lain) dan dibuktikan dengan mutasi: pengaman dihapus, tes harus gagal, lalu kode dikembalikan.
 - Commit hanya setelah lint dan typecheck hijau (rangkai dengan `&&`). Baca tanda tangan dan satuan API (mis. `FakeClock.advance` memakai detik) sebelum menulis fixture; fixture salah bukan alasan mengubah kode.
 - Sisa database tes: pengguna menjalankan `! corepack pnpm db:test-databases drop` (butuh terminal interaktif). Jangan menyimpan branch cadangan berisi fixture lama; `gitleaks --all` harus bersih tanpa allowlist.
@@ -141,6 +142,11 @@ Subagent mematuhi berkas ini. Satu subagent satu tiket. Tidak menyentuh berkas b
 - (Retro M4, `docs/RETRO_M4.md`) Skrip penyunting dan mutasi ditulis ke berkas, bukan heredoc Bash berisi tanda kutip tunggal. Setelah Prettier, cocokkan pola dari teks yang sudah diformat; setelah proses mutasi dihentikan paksa, periksa berkas sudah kembali.
 - Tes yang membuka sumber daya nyata (timer, soket, kolam) menutupnya di `finally`: satu asersi gagal tidak boleh meninggalkan handle (Jest menunggu satu jam). Jam palsu satu tumpukan layanan hanya maju (token yang disimpan cache membawa `iat`).
 - Tes habis waktu atau gagal tak stabil: baca stempel waktu log lebih dulu; lompatan jam berarti mesin tidur, bukan bug. Keluaran sebuah skill review bukan balasan akhir: lanjutkan sampai laporan akhir yang diminta.
+
+## Catatan keputusan: lingkungan Docker (24 Okt)
+
+- Tumpukan penuh Docker Compose dijalankan di laptop (pilihan penuh, bukan hibrida). Tempat pengukuran akhir (M6, M7) diputuskan nanti; sebelum itu semua diuji dengan Docker lokal, dan kinerja tidak diklaim sebelum lingkungan ukurnya diputuskan.
+- Aturan Compose untuk DK-01: batas CPU dan memori tiap kontainer sama di kedua mode; PostgreSQL dikecilkan, satu instans per layanan; Prometheus, Grafana, dan cAdvisor sebagai profil terpisah untuk M7; batas WSL dinaikkan bertahap dan diukur. Bila tumpukan penuh tidak stabil, turun ke hibrida berdasarkan angka dan catat sebagai keterbatasan.
 
 ## Menjaga berkas ini tetap berguna
 
