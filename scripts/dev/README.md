@@ -5,7 +5,7 @@ Tiga perintah, tanpa Docker (ADR-0004). Port dan lingkungan tiap proses ditulis 
 | Perintah | Fungsi |
 | --- | --- |
 | `corepack pnpm dev:keys` | membuat tiga kunci Privacy (`pseudonym_hmac_secret`, `blind_index_secret`, `field_encryption_key`; 32 byte acak, heks) di `secrets/` atau `DEV_SECRETS_DIR`. Tidak membaca dan tidak menimpa berkas yang ada; hanya nama berkas yang dicetak. |
-| `corepack pnpm dev:up [--mode proposed\|baseline] [--secrets-dir <dir>] [--log-dir <dir>]` | menyalakan proses mode itu dari hasil build, menunggu `/health`, lalu tetap di latar depan; Ctrl+C menghentikan semuanya. Log dan `pids.json` ada di `.dev-run/logs` (di-ignore git). |
+| `corepack pnpm dev:up [--mode proposed\|baseline] [--secrets-dir <dir>] [--log-dir <dir>]` | menyalakan proses mode itu dari hasil build, menunggu `/health`, lalu tetap di latar depan; Ctrl+C menghentikan semuanya. Log dan `pids.json` ada di `.dev-run/logs` (di-ignore git). Penghitung `customer_id` dev-idp ada di `.dev-state/<mode>` (di-ignore git; buang bersama database Privacy bila database direset, N-51). |
 | `corepack pnpm dev:down [--log-dir <dir>]` | menghentikan proses yang dicatat `dev:up` (di Windows pembunuhan paksa). |
 
 Urutan pertama kali: `corepack pnpm build`, `scripts/db/bootstrap.ps1` (sekali), `corepack pnpm db:migrate` (database proposed), `corepack pnpm --filter @privpay/dev-idp run make-secrets`, `corepack pnpm dev:keys`, lalu `corepack pnpm dev:up`.

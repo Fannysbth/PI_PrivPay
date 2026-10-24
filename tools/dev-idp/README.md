@@ -17,7 +17,10 @@ is `DEV_IDP_SECRETS_DIR` (default `./secrets`). The RS256 key is made when the p
 anywhere; every restart publishes a new key and forgets the customers created through the admin API. The one thing
 it remembers is the highest `customer_id` number handed out (`<DEV_IDP_STATE_DIR>/customer-counter`, a number and nothing
 else), so a restart never gives a new customer the id of an earlier or deleted one: the Privacy database outlives this
-process, and a revoked id would be the same subject there (N-51). Delete the folder only together with the databases.
+process, and a revoked id would be the same subject there (N-51). Keep the folder and the Privacy database in step: if
+the database is dropped or reset, delete the folder too, and the other way round (a folder lost while the database
+stays can hand out a revoked id again). One dev IdP process per folder (the port already says so); a start fails if the
+file is there but not a number. `pnpm dev:up` sets `.dev-state/<mode>` (one folder per mode).
 
 | Variable | Meaning |
 | --- | --- |
@@ -25,7 +28,7 @@ process, and a revoked id would be the same subject there (N-51). Delete the fol
 | `NODE_ENV` | must be `development` or `test`; unset or anything else (including `production`) stops the start |
 | `ACCESS_TOKEN_TTL_SECONDS` | token lifetime, 1 to 300 (default 300) |
 | `DEV_IDP_SECRETS_DIR` | where the client secrets are read from |
-| `DEV_IDP_STATE_DIR` | where the customer counter is kept (default `./.dev-state`, ignored by git) |
+| `DEV_IDP_STATE_DIR` | where the customer counter is kept (default `./.dev-state`, ignored by git; `dev:up` uses `.dev-state/<mode>`) |
 | `PRIVACY_MODE`, `PORT`, `BIND_HOST`, `LOG_LEVEL` | the shared service bootstrap |
 
 ## Endpoints
