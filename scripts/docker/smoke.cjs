@@ -51,7 +51,8 @@ async function main() {
   const n = String(Date.now() % 1_000_000).padStart(6, '0');
   const person = {
     nik: `99995${n}00000`.slice(0, 16),
-    nama: `Kenari Smoke ${n}`,
+    // A name takes letters only (registration.ts): the digits become letters.
+    nama: `Kenari Smoke ${[...n].map((d) => 'abcdefghij'[Number(d)]).join('')}`,
     hp: `08999${n}0`,
     email: `canary-smoke-${n}@example.test`,
     rekening: `9999${n}`,

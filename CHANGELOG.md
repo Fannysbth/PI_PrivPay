@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-01a Docker Compose (feat/dk-01a)
+
+- `deploy/docker/Dockerfile` (satu berkas berparameter, multi-stage, `USER node`, citra dasar `node:24.22.1-bookworm-slim` dengan digest, `pnpm deploy --prod`), `.dockerignore` (secrets, `.env`, `.dev-state`, `node_modules`), Compose di `deploy/compose/` (berkas dasar + `mode.proposed.yml` / `mode.baseline.yml`, jaringan `internal`, hanya Gateway dipublikasikan ke `127.0.0.1`, `cap_drop: [ALL]`, `no-new-privileges`, root read-only, batas 0,5 CPU / 192 MB sama di kedua mode, satu PostgreSQL 16.15 per layanan, migrasi oleh peran pemilik, Docker secret dari `secrets/docker/`), profil monitoring hanya definisi, `pnpm docker:secrets`, `pnpm docker:compose <mode> ...`, skrip smoke di dalam jaringan. Tes statis `tests/repo/docker.spec.ts`.
+- `BIND_HOST` menerima `0.0.0.0` bila di-set eksplisit (default tetap loopback). Keputusan Fanny 24 Okt: kontainer harus mendengar di antarmuka jaringannya. Tiga tes AZ-43 yang memakai `0.0.0.0` sebagai contoh penolakan diganti ke `10.0.0.5` (asersi sama: alamat non-loopback selain pengecualian ditolak); tes baru untuk `0.0.0.0` dan default. N-05 (`/health` dan `/metrics` Gateway) ditunda ke DK-02/DK-03.
+
 ### M5 kesetiaan baseline
 
 - G1 (N-48): pada baseline Gateway meneruskan `nik` dan `nama` dari klien ke Transaction (opsi `forwardClientIdentity`) dan Transaction baseline menerimanya tanpa menyimpannya; proposed tidak berubah. Analisis kesenjangan di `docs/security/kesenjangan-baseline.md`. Tes: unit Gateway, mode Transaction, dan suite kesetaraan kini memindai payload antar-layanan (kontrol positif per atribut dan lokasi); mutasi (NIK dihilangkan dari payload baseline, atribut dibocorkan ke proposed) terbunuh.
