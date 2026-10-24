@@ -1,5 +1,6 @@
 import 'reflect-metadata';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { performance } from 'node:perf_hooks';
@@ -20,7 +21,7 @@ import { NestFactory } from '@nestjs/core';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { ErrorRequestHandler, NextFunction, Request, Response } from 'express';
 import { SystemClock, type Clock } from '../clock';
-import { loadConfig } from '../config';
+import { ConfigError, loadConfig } from '../config';
 import { RealDelay, type Delay } from '../delay';
 import { createLogger, type Logger } from '../logger';
 import { SCHEDULER, type BackgroundWork } from '../scheduler';
@@ -135,6 +136,37 @@ function jobsOf(app: INestApplication): BackgroundWork | undefined {
   }
 }
 
+/** What Nest hands to `https.createServer` (the shape is the subset used here). */
+interface TlsOptions {
+  readonly cert: Buffer;
+  readonly key: Buffer;
+  readonly minVersion: 'TLSv1.2';
+}
+
+/**
+ * DK-03 (NFR-06): with TLS_CERT_FILE and TLS_KEY_FILE the service listens with TLS 1.2 or newer. One without the other
+ * is a mistake that would silently serve plain HTTP, so it stops the service; so does an unreadable file. Only the
+ * variable name is reported (E-09).
+ */
+function tlsOptions(env: Readonly<Record<string, string | undefined>>): TlsOptions | undefined {
+  const certPath = env['TLS_CERT_FILE'];
+  const keyPath = env['TLS_KEY_FILE'];
+  if (certPath === undefined && keyPath === undefined) return undefined;
+  if (certPath === undefined)
+    throw new ConfigError([{ name: 'TLS_CERT_FILE', problem: 'missing' }]);
+  if (keyPath === undefined) throw new ConfigError([{ name: 'TLS_KEY_FILE', problem: 'missing' }]);
+  const read = (path: string, name: string): Buffer => {
+    try {
+      return readFileSync(path);
+    } catch {
+      throw new ConfigError([{ name, problem: 'unreadable' }]);
+    }
+  };
+  const cert = read(certPath, 'TLS_CERT_FILE');
+  const key = read(keyPath, 'TLS_KEY_FILE');
+  return { cert, key, minVersion: 'TLSv1.2' };
+}
+
 /**
  * The shared skeleton of every service: validated environment, health and metrics, uniform errors, one log line per
  * request, loopback binding and graceful shutdown. It does not listen until `listen()` is called.
@@ -155,6 +187,7 @@ export async function createServiceApp(
   });
   const metrics = new HttpMetrics();
   const external = EXTERNAL.has(definition.service);
+  const httpsOptions = tlsOptions(env);
   const serviceModules =
     typeof definition.modules === 'function'
       ? await definition.modules({ env, clock })
@@ -178,6 +211,7 @@ export async function createServiceApp(
   // nesting) into objects. The limit bounds what is read before a caller is proven (the gateway checks the declared
   // size of each route after that).
   const app = await NestFactory.create<NestExpressApplication>(root, {
+    ...(httpsOptions === undefined ? {} : { httpsOptions }),
     logger: false,
     abortOnError: false,
     bodyParser: false,

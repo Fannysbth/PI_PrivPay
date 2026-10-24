@@ -46,7 +46,7 @@ services:
       - pgdata-privacy:/var/lib/postgresql/data
       - ../postgres/init-service-db.sh:/docker-entrypoint-initdb.d/10-init-service-db.sh:ro
     secrets: [pg_privacy_admin_password, privpay_privacy_owner_password, privpay_app_password, privpay_auditor_password]
-    networks: [internal]
+    networks: [privacy]
 
   migrate-privacy:
     image: privpay-privacy-service:dk01a
@@ -73,7 +73,7 @@ services:
       PG_PORT: '5432'
       PG_SECRETS_DIR: /run/secrets
     secrets: [privpay_privacy_owner_password]
-    networks: [internal]
+    networks: [privacy]
     depends_on: { pg-privacy: { condition: service_healthy } }
 
   privacy-service:
@@ -94,7 +94,7 @@ services:
         - CMD
         - node
         - -e
-        - "fetch('http://127.0.0.1:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
+        - "fetch('https://privacy-service:'+process.env.PORT+'/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"
       interval: 10s
       timeout: 3s
       retries: 6
@@ -122,14 +122,22 @@ services:
       PSEUDONYM_HMAC_SECRET_FILE: /run/secrets/pseudonym_hmac_secret
       BLIND_INDEX_SECRET_FILE: /run/secrets/blind_index_secret
       FIELD_ENCRYPTION_KEY_FILE: /run/secrets/field_encryption_key
-    secrets: [pseudonym_hmac_secret, blind_index_secret, field_encryption_key, privpay_app_password, privpay_auditor_password]
-    networks: [internal]
+      # NFR-06: the identity path ends in TLS. The service name is the name on the certificate; its own health check
+      # verifies the certificate like any caller does, with the dev CA as the only extra root.
+      TLS_CERT_FILE: /run/secrets/tls_privacy_crt
+      TLS_KEY_FILE: /run/secrets/tls_privacy_key
+      NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
+    secrets:
+      [pseudonym_hmac_secret, blind_index_secret, field_encryption_key, privpay_app_password, privpay_auditor_password, tls_privacy_crt, tls_privacy_key, tls_ca_crt]
+    networks: [privacy]
     depends_on:
       migrate-privacy: { condition: service_completed_successfully }
       idp: { condition: service_healthy }
 
+  # The Privacy Service checks every JWT against the IdP's keys, so the IdP is on its network too.
   idp:
     environment: { PRIVACY_MODE: proposed }
+    networks: [privacy]
 
   sms-simulator:
     environment: { PRIVACY_MODE: proposed }
@@ -153,27 +161,39 @@ services:
     environment: { PRIVACY_MODE: proposed }
 
   transaction-service:
+    secrets: [tls_ca_crt]
+    networks: [privacy]
     environment:
       PRIVACY_MODE: proposed
-      PRIVACY_SERVICE_URL: http://privacy-service:4001
+      PRIVACY_SERVICE_URL: https://privacy-service:4001
+      NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
     depends_on: { privacy-service: { condition: service_healthy } }
 
   notification-service:
+    secrets: [tls_ca_crt]
+    networks: [privacy]
     environment:
       PRIVACY_MODE: proposed
-      PRIVACY_SERVICE_URL: http://privacy-service:4001
+      PRIVACY_SERVICE_URL: https://privacy-service:4001
+      NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
     depends_on: { privacy-service: { condition: service_healthy } }
 
   reconciliation-service:
+    secrets: [tls_ca_crt]
+    networks: [privacy]
     environment:
       PRIVACY_MODE: proposed
-      PRIVACY_SERVICE_URL: http://privacy-service:4001
+      PRIVACY_SERVICE_URL: https://privacy-service:4001
+      NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
     depends_on: { privacy-service: { condition: service_healthy } }
 
   gateway:
+    secrets: [tls_ca_crt]
+    networks: [privacy]
     environment:
       PRIVACY_MODE: proposed
-      PRIVACY_SERVICE_URL: http://privacy-service:4001
+      PRIVACY_SERVICE_URL: https://privacy-service:4001
+      NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
     ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4010}:4010']
     depends_on: { privacy-service: { condition: service_healthy } }
 

@@ -117,7 +117,7 @@ Spesifikasi: `platform-dan-ci.md` (PL), `data-dan-migrasi.md` (DM), `privacy-ser
 | NFR-03 | PP 8 | M7-01 | ukur langsung `/pseudonymize` (**ditunda**) |
 | NFR-04 | DM 4; PV 12 | M2-01, M2-05 | `EXPLAIN` ≥ 20.000 baris tanpa `Seq Scan` |
 | NFR-05 | PV 5 | M2-02 | inspeksi dump |
-| NFR-06 | PL 16 | DK-03 | **ditunda** (utang NFR-06, ADR-0004) |
+| NFR-06 | PL 16 | DK-03 | Gateway ke Privacy: TLS dan tiga jaringan teruji di Compose (ADR-0004); TLS klien ke Kong **belum** (DK-02) |
 | NFR-07 | PV 5 | M2-02, M2-10 | pencarian pola pada log dan konfigurasi |
 | NFR-08 | GW 7 | M1-03 | TK-11 |
 | NFR-09 | DM 4 | M2-01 | TK-10 |

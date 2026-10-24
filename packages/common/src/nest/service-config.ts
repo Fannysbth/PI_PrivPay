@@ -29,5 +29,14 @@ export const serviceConfigSchema = z.object({
   TZ: z.literal('UTC').default('UTC'),
   LOG_LEVEL: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
   SHUTDOWN_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
+  // DK-03 (NFR-06): both set means the service listens with TLS (the Privacy Service); the key is read like a secret.
+  // Names the files, never their content. Setting only one of the two is refused where they are read (service-app).
+  TLS_CERT_FILE: z.string().min(1).optional(),
+  TLS_KEY_FILE: z.string().min(1).optional(),
+  // Switching certificate verification off for the whole process is forbidden (CLAUDE.md): refused at start-up.
+  NODE_TLS_REJECT_UNAUTHORIZED: z
+    .string()
+    .refine((value) => value !== '0')
+    .optional(),
 });
 export type ServiceConfig = z.output<typeof serviceConfigSchema>;

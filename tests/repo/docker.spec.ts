@@ -18,7 +18,9 @@ interface ComposeService {
   network_mode?: string;
   ports?: string[];
   secrets?: string[];
+  networks?: string[];
   profiles?: string[];
+  healthcheck?: { test?: string[] };
   environment?: Record<string, string>;
   deploy?: { resources?: { limits?: { cpus?: string; memory?: string } } };
 }
@@ -47,7 +49,9 @@ function merged(mode: Mode): Record<string, ComposeService> {
     const into = (out[name] ??= {});
     const environment = { ...(into.environment ?? {}), ...(extra.environment ?? {}) };
     const secrets = [...(into.secrets ?? []), ...(extra.secrets ?? [])];
-    Object.assign(into, extra, { environment, secrets });
+    // Compose merges lists of networks as a union.
+    const networks = [...new Set([...(into.networks ?? []), ...(extra.networks ?? [])])];
+    Object.assign(into, extra, { environment, secrets, networks });
     if (extra.ports !== undefined) into.ports = extra.ports;
   }
   return out;
@@ -110,7 +114,6 @@ describe.each(MODES)(
       const published = Object.entries(services).filter(([, s]) => s.ports !== undefined);
       expect(published.map(([name]) => name)).toEqual(['gateway']);
       for (const port of published[0]?.[1].ports ?? []) expect(port).toMatch(/^127\.0\.0\.1:/);
-      expect(base.networks?.['internal']?.internal).toBe(true);
     });
 
     it('DK-01 every image is pinned (a version, and a digest for the PostgreSQL image) and none is :latest', () => {
@@ -142,7 +145,7 @@ describe.each(MODES)(
         for (const [key, value] of Object.entries(service.environment ?? {})) {
           if (/(PASSWORD|SECRET|KEY)(_FILE)?$/.test(key) && !/_VERSION$/.test(key)) {
             expect({ name, key, file: key.endsWith('_FILE') }).toEqual({ name, key, file: true });
-            expect(value).toMatch(/^\/run\/secrets\/[A-Za-z0-9_-]+$/);
+            expect(value).toMatch(/^\/run\/secrets\/[A-Za-z0-9_.-]+$/);
           }
         }
       }
@@ -162,7 +165,7 @@ describe.each(MODES)(
       }
       for (const entry of Object.values(base.secrets ?? {}))
         expect(entry.file).toMatch(
-          /^\$\{PRIVPAY_SECRETS_DIR:-\.\.\/\.\.\/secrets\/docker\}\/[A-Za-z0-9_-]+$/,
+          /^\$\{PRIVPAY_SECRETS_DIR:-\.\.\/\.\.\/secrets\/docker\}\/[A-Za-z0-9_.-]+$/,
         );
     });
 
@@ -185,7 +188,16 @@ describe.each(MODES)(
         sms: 'sms-simulator',
         gateway: 'gateway',
       };
-      const dockerOnly = new Set(['BIND_HOST', 'PG_HOST', 'PG_PORT', 'PG_SECRETS_DIR']);
+      // TLS exists only in Docker (DK-03): the local phase stays on loopback HTTP (ADR-0004).
+      const dockerOnly = new Set([
+        'BIND_HOST',
+        'PG_HOST',
+        'PG_PORT',
+        'PG_SECRETS_DIR',
+        'TLS_CERT_FILE',
+        'TLS_KEY_FILE',
+        'NODE_EXTRA_CA_CERTS',
+      ]);
       const localOnly = new Set(['PG_DATABASE_SUFFIX']);
       for (const planned of buildPlan(mode, { secretsDir: 'secrets' })) {
         const service = services[composeName[planned.name] ?? ''];
@@ -262,8 +274,130 @@ describe('DK-01 the PostgreSQL init script and the secret maker (S-60)', () => {
     const { plan } = require('../../scripts/docker/make-secrets.cjs') as {
       plan: () => Map<string, unknown>;
     };
-    const made = new Set(plan().keys());
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { TLS_SECRETS } = require('../../scripts/docker/tls.cjs') as {
+      TLS_SECRETS: Record<string, string>;
+    };
+    const made = new Set([...plan().keys(), ...Object.keys(TLS_SECRETS)]);
     for (const name of Object.keys(base.secrets ?? {}))
       expect({ name, ok: made.has(name) }).toEqual({ name, ok: true });
+  });
+});
+
+describe.each(MODES)('DK-03 the three networks and TLS in the %s condition (NFR-06)', (mode) => {
+  const services = merged(mode);
+  const on = (network: string): string[] =>
+    Object.entries(services)
+      .filter(([, service]) => (service.networks ?? []).includes(network))
+      .map(([name]) => name)
+      .sort();
+  const proposed = mode === 'proposed';
+
+  it('DK-03 has exactly edge, business and privacy; only edge can leave, the others are internal', () => {
+    expect(Object.keys(base.networks ?? {}).sort()).toEqual(['business', 'edge', 'privacy']);
+    expect(base.networks?.['edge']?.internal).not.toBe(true);
+    expect(base.networks?.['business']?.internal).toBe(true);
+    expect(base.networks?.['privacy']?.internal).toBe(true);
+  });
+
+  it('DK-03 only the Gateway is on the edge, and it is the only published service', () => {
+    expect(on('edge')).toEqual(['gateway']);
+    expect(
+      Object.entries(services)
+        .filter(([, service]) => service.ports !== undefined)
+        .map(([name]) => name),
+    ).toEqual(['gateway']);
+  });
+
+  it('DK-03 every service is on a network, and none is on the default or a host network', () => {
+    for (const [name, service] of Object.entries(services))
+      expect({ name, networks: (service.networks ?? []).length > 0 }).toEqual({
+        name,
+        networks: true,
+      });
+  });
+
+  it('DK-03 the databases of the business services are on business only, not reachable from privacy or the edge', () => {
+    for (const name of ['pg-transaction', 'pg-fraud', 'pg-notification', 'pg-reconciliation'])
+      expect({ name, networks: services[name]?.networks }).toEqual({
+        name,
+        networks: ['business'],
+      });
+  });
+
+  if (proposed) {
+    it('DK-03 Privacy Service, its database and its migration are on privacy only', () => {
+      for (const name of ['privacy-service', 'pg-privacy', 'migrate-privacy'])
+        expect({ name, networks: services[name]?.networks }).toEqual({
+          name,
+          networks: ['privacy'],
+        });
+    });
+
+    it('DK-03 only the Gateway, the three callers and the IdP (keys for the JWT check) share the privacy network', () => {
+      expect(on('privacy')).toEqual(
+        [
+          'gateway',
+          'idp',
+          'migrate-privacy',
+          'notification-service',
+          'pg-privacy',
+          'privacy-service',
+          'reconciliation-service',
+          'transaction-service',
+        ].sort(),
+      );
+      // Fraud never calls Privacy (invariant 2, decision 3a): it has no way in.
+      expect(services['fraud-service']?.networks).toEqual(['business']);
+    });
+
+    it('DK-03 the Privacy Service serves TLS, with the certificate and key as Docker secrets', () => {
+      const privacy = services['privacy-service'];
+      expect(privacy?.environment?.['TLS_CERT_FILE']).toBe('/run/secrets/tls_privacy_crt');
+      expect(privacy?.environment?.['TLS_KEY_FILE']).toBe('/run/secrets/tls_privacy_key');
+      expect(privacy?.secrets).toEqual(
+        expect.arrayContaining(['tls_privacy_crt', 'tls_privacy_key']),
+      );
+      // Its own health check goes through TLS too, by the name the certificate carries.
+      expect((privacy?.healthcheck?.test ?? []).join(' ')).toContain('https://privacy-service:');
+    });
+
+    it('DK-03 every caller reaches Privacy over https and trusts only the dev CA file', () => {
+      for (const name of [
+        'gateway',
+        'transaction-service',
+        'notification-service',
+        'reconciliation-service',
+      ]) {
+        const service = services[name];
+        expect({ name, url: service?.environment?.['PRIVACY_SERVICE_URL'] }).toEqual({
+          name,
+          url: 'https://privacy-service:4001',
+        });
+        expect({ name, ca: service?.environment?.['NODE_EXTRA_CA_CERTS'] }).toEqual({
+          name,
+          ca: '/run/secrets/tls_ca_crt',
+        });
+        expect(service?.secrets).toContain('tls_ca_crt');
+      }
+    });
+  } else {
+    it('DK-03 nobody is on the privacy network without the Privacy Service', () => {
+      expect(on('privacy')).toEqual([]);
+    });
+  }
+
+  it('DK-03 nothing switches certificate verification off', () => {
+    for (const [name, service] of Object.entries(services))
+      expect({ name, off: service.environment?.['NODE_TLS_REJECT_UNAUTHORIZED'] }).toEqual({
+        name,
+        off: undefined,
+      });
+    for (const file of [
+      'deploy/compose/docker-compose.yml',
+      'deploy/compose/mode.proposed.yml',
+      'deploy/docker/Dockerfile',
+    ])
+      expect(text(file)).not.toContain('NODE_TLS_REJECT_UNAUTHORIZED');
   });
 });

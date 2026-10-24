@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-03 tiga jaringan dan TLS Gateway ke Privacy (feat/dk-03)
+
+- Compose: jaringan `edge` (satu-satunya yang punya jalan keluar; hanya Gateway), `business` dan `privacy` (keduanya `internal`). Privacy Service, `pg-privacy`, dan migrasinya hanya di `privacy`; Gateway, Transaction, Notification, Reconciliation, dan IdP (kunci JWT) juga di `privacy` pada kondisi proposed; Fraud, simulator, dan database layanan bisnis hanya di `business`. Baseline tidak memakai `privacy`.
+- TLS: Privacy Service mendengar HTTPS (`TLS_CERT_FILE`, `TLS_KEY_FILE`; TLS 1.2 ke atas) dan semua pemanggil memverifikasi sertifikat dengan CA dev lewat `NODE_EXTRA_CA_CERTS` (tanpa kode klien baru, tanpa dependensi). Layanan menolak start bila hanya salah satu berkas diset, berkas tak terbaca, atau `NODE_TLS_REJECT_UNAUTHORIZED=0`. Tes `packages/common/test/tls-server.spec.ts` (14): tanpa TLS ditolak, CA salah, kedaluwarsa, nama tak cocok, TLS 1.1; jalur `fetch` nyata dites di proses anak; mutasi (pagar verifikasi dihapus, opsi TLS diabaikan) terbunuh.
+- `scripts/docker/tls.cjs` (CA dan sertifikat dev lewat program `openssl`, ke `secrets/docker/`, tidak menimpa; dijalankan oleh `pnpm docker:secrets`), `pnpm docker:net-check <mode>` (probe dari dalam kontainer: jangkauan antarjaringan, tidak ada jalan ke Internet, TLS: HTTP polos, tanpa CA, nama lain), `pnpm secret-scan:tree` (gitleaks atas berkas yang akan di-commit; berkas `secrets/` yang di-ignore, mis. kunci PEM TLS, tidak ikut). Tes statis `tests/repo/docker.spec.ts` diperluas (topologi jaringan, kabel TLS, tak ada verifikasi mati). Prometheus: job terpisah berskema https untuk Privacy.
+- Bukti: net-check 15/15 (proposed) dan 5/5 (baseline), smoke 9/9 di kedua mode; mutasi `pg-privacy` ke `business` membuat tes statis dan dua cek jaringan gagal. N-05 tidak dikerjakan (dibiarkan ke DK-02).
+
 ### DK-05 PostgreSQL 16 untuk tes (feat/dk-05)
 
 - `scripts/db/pg16.ps1` (`pnpm db:pg16 up|status|down`): satu kontainer PostgreSQL 16.15 dengan bootstrap yang sama; rahasia di `secrets/pg16/`. Tanpa perubahan kode produksi atau tes; hasil satu putaran penuh di 16 tercatat di ADR-0004. Pindai citra (hadolint, Trivy): `docs/dk/PINDAI_CITRA.md`; npm dibuang dari citra runtime.

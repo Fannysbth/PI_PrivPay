@@ -17,7 +17,9 @@ services:
     volumes:
       - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
-    networks: [internal]
+    # It scrapes the business zone and, in the proposed condition, the Privacy Service over TLS (job `privpay-privacy`).
+    secrets: [tls_ca_crt]
+    networks: [business, privacy]
 
   cadvisor:
     profiles: [monitoring]
@@ -33,7 +35,7 @@ services:
       - /var/run:/var/run:ro
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
-    networks: [internal]
+    networks: [business]
 
   grafana:
     profiles: [monitoring]
@@ -49,7 +51,7 @@ services:
     secrets: [grafana_admin_password]
     ports: ['127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000']
     volumes: ['grafana-data:/var/lib/grafana']
-    networks: [internal, edge]
+    networks: [business, edge]
 
 volumes:
   prometheus-data: {}
