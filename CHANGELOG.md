@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-05 PostgreSQL 16 untuk tes (feat/dk-05)
+
+- `scripts/db/pg16.ps1` (`pnpm db:pg16 up|status|down`): satu kontainer PostgreSQL 16.15 dengan bootstrap yang sama; rahasia di `secrets/pg16/`. Tanpa perubahan kode produksi atau tes; hasil satu putaran penuh di 16 tercatat di ADR-0004. Pindai citra (hadolint, Trivy): `docs/dk/PINDAI_CITRA.md`; npm dibuang dari citra runtime.
+
 ### DK-01a Docker Compose (feat/dk-01a)
 
 - `deploy/docker/Dockerfile` (satu berkas berparameter, multi-stage, `USER node`, citra dasar `node:24.22.1-bookworm-slim` dengan digest, `pnpm deploy --prod`), `.dockerignore` (secrets, `.env`, `.dev-state`, `node_modules`), Compose di `deploy/compose/` (berkas dasar + `mode.proposed.yml` / `mode.baseline.yml`, jaringan `internal`, hanya Gateway dipublikasikan ke `127.0.0.1`, `cap_drop: [ALL]`, `no-new-privileges`, root read-only, batas 0,5 CPU / 192 MB sama di kedua mode, satu PostgreSQL 16.15 per layanan, migrasi oleh peran pemilik, Docker secret dari `secrets/docker/`), profil monitoring hanya definisi, `pnpm docker:secrets`, `pnpm docker:compose <mode> ...`, skrip smoke di dalam jaringan. Tes statis `tests/repo/docker.spec.ts`.
