@@ -1,12 +1,22 @@
-# HANDOFF (2026-10-31): DK-04 sesi B BERHENTI di pintu keluar memori (`feat/dk-04-b`, tanpa kode); Keycloak bukan IdP default
+# HANDOFF (2026-11-01): DK-04 SELESAI di `main` (Keycloak adalah IdP tumpukan Compose, registrasi lewat Admin API)
 
 | Butir | Bukti |
 | --- | --- |
-| Pengukuran | Awal sesi: memori bebas 1,53 GB (Docker nyala; satu kontainer proyek lain, `samar-prototype-db-1`, tidak disentuh). Tumpukan penuh mode usulan naik sehat dengan dev-idp, lalu `--profile keycloak up keycloak` dan dev-idp dihentikan (setara tumpukan Keycloak tanpa dev-idp): **memori bebas 0,59 GB** (< 0,9 GB). Keycloak 538,7 MiB dari 768 MiB; kontainer lain 19 sampai 98 MiB. Tidak ada proses dibunuh sistem. Setelah `down`: 3,64 GB |
-| Keputusan | Sesuai instruksi Fanny: berhenti, turunkan tumpukan, tiket 3 tidak dikerjakan. Keycloak terbukti klaimnya (15 tes) tetapi tidak dijadikan IdP default karena batas memori; dev-idp tetap IdP Compose dan `dev:up`. Profil `keycloak` tetap tersedia sebagai pembuktian terpisah |
-| Catatan | WSL dibatasi 4 GB (`.wslconfig`); menaikkan batas atau menutup proyek lain tidak dicoba tanpa izin. Pengukuran ulang layak bila RAM bertambah atau batas Keycloak/heap diturunkan |
+| Memori | WSL 4 GB: 0,59 GB bebas dengan tumpukan penuh + Keycloak (berhenti). WSL 6 GB: 2,98 GB sesudah naik, 1,01 sampai 1,13 GB setelah suite uji; Keycloak 540 sampai 560 MiB dari 768 MiB |
+| Tiket 3 | port `UserDirectory` (dev-idp dan Keycloak), plugin Kong meminta token sebagai form, Compose Keycloak bawaan, Postman password grant, smoke, edge-check (fase `claims`, `expiry` 305 detik) |
+| Newman lewat Kong | usulan 149 request / 115 asersi / 0 gagal; baseline 149 / 103 / 0 |
+| Mutasi (edge-check) | base dan claims di kedua mode; expiry di usulan. aud salah 403, azp salah 401, peran salah 403, kunci lain 401 (Kong), peran ganda 401 |
+| Payload scan, fail-closed | usulan hanya PSEU- (3 tes); baseline kontrol positif (2); Privacy dimatikan: 503 |
+| Gerbang | lint, typecheck, test 1509, secret-scan:tree, gitleaks --all, audit --prod hijau; test:integration tidak dijalankan |
 
-Skill: tidak ada yang dijalankan (/tdd, /simplify, /code-review, /security-review, /run tidak dipakai karena tidak ada kode). Tidak dikerjakan: tiket 3, DK-06, M6, M7. Belum teruji: Newman, mutasi, payload scan di atas Keycloak.
+## Terbuka (keputusan Fanny)
+1. Audiens akun layanan lebih lebar: token gateway yang dikirim ke layanan hilir juga berlaku di Privacy (`/security-review`, Medium). Usul: scope opsional per audiens.
+2. Satu kata sandi uji dipasang di `gateway` dan `bank-simulator`: membuka token admin/auditor (menembus empat-mata); `idp-admin` bisa memberi peran auditor dan analis. Usul: kata sandi per kelas pengguna, `idp-admin` dibatasi ke peran `customer`.
+3. Pencarian atribut Admin API menaruh kandidat `customer_id` di query ke IdP (tafsiran larangan CLAUDE.md).
+
+Belum teruji: edge-check setelah `/simplify` (hanya sintaks), expiry baseline, limits, empat-mata lewat tumpukan, rotasi kunci, test:integration/test:security penuh, kinerja. Keterbatasan lain di ADR-0017.
+
+Skill: /tdd (pola), /simplify, /code-review (hanya merge 6eef220), /security-review, /run. Tidak dikerjakan: DK-06, M6, M7.
 
 # HANDOFF (2026-10-31): DK-04 sesi A SELESAI di `feat/dk-04-a` (pengambil token/JWKS bersama + profil Compose Keycloak); tiket 3 (sesi B) menunggu
 
