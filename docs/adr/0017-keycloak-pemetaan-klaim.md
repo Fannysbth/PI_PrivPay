@@ -31,6 +31,15 @@ Catatan desain: di Keycloak audiens token akun layanan berasal dari peran akun i
 
 **Dulu dijadwalkan untuk sesi B:** port registrasi Admin API di adapter (customer_id acak + pemeriksaan atribut, kompensasi), memindahkan tumpukan ke Keycloak (IDP_KIND di Compose, bank-simulator dengan `BANK_PASSWORD_FILE`), koleksi Postman (password grant) dan README, Newman dan mutasi lewat Kong, payload scan ulang, dan memori tumpukan penuh.
 
+## Keterbatasan tambahan (tinjauan kode DK-04, 2026-11-01)
+
+- Transportasi ke Keycloak adalah HTTP biasa di jaringan Docker internal (`sslRequired: none`): rahasia klien dan kata sandi uji tidak terenkripsi di jaringan itu. TLS DK-03 hanya menutup jalur Gateway ke Privacy. Dapat diterima untuk prototipe dev; TLS ke IdP perlu keputusan sebelum dipakai di luar laptop.
+- Berkas realm hasil render memuat semua rahasia klien dan kata sandi uji dalam teks biasa di volume `keycloak-import` (hanya dipasang pada renderer dan Keycloak, jaringan internal); izin berkas 0644 dibiarkan karena uid Keycloak berbeda dari renderer.
+- `accessTokenLifespan: 300` adalah literal di renderer realm, bukan dari env TTL (aturan CLAUDE.md). Fase `expiry` pada edge-check menunggu token asli 305 detik karena itu.
+- Tabel klien, peran, dan pengguna di `scripts/docker/keycloak-realm.cjs` disalin dari registri dev-idp tanpa tes yang membandingkan keduanya; perubahan satu sisi tidak terdeteksi. Utang: tes perbandingan.
+- Tes klaim di `keycloak-claims.docker.spec.ts` untuk penolakan hanya menegaskan "bukan accepted" pada beberapa kasus (tidak mengunci alasan). Edge-check `claims` mengunci kode dan bentuk jawaban lewat Kong.
+- `idp-admin` dapat memberi peran `auditor` dan `fraud_analyst`, tidak `admin` (403, diukur di edge-check `claims`). Rahasianya hanya di Gateway.
+
 ## Konsekuensi
 
 - Positif: kontrak klaim tidak berubah; bukti pemetaan ada sebelum penyambungan; tidak ada validator yang berubah.
