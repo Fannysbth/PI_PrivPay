@@ -117,6 +117,8 @@ export async function renderKongConfig(
             action: 'tokenize',
             privacyUrl: config.PRIVACY_SERVICE_URL,
             idpUrl: config.IDP_URL,
+            idpTokenPath: idpEndpoints(idp).token,
+            idpForm: idp.kind === 'keycloak',
             clientSecretFile: mounted(config.TOKENIZER_CLIENT_SECRET_NAME),
             edgeSecretFile: mounted(config.TOKENIZER_EDGE_SECRET_NAME),
           },

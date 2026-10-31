@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-04 sesi B: Keycloak menjadi IdP tumpukan Compose, registrasi lewat Admin API (feat/dk-04-b, ADR-0017)
+
+- `services/gateway/src/user-directory.ts`: port `UserDirectory` (`create`, `remove`) dengan dua adapter, dev-idp dan Keycloak. Keycloak: `CUST-` + 6 digit acak, diperiksa unik lewat pencarian atribut Admin API sebelum dan sesudah membuat pengguna, kata sandi uji dari berkas, peran `customer` lewat `idp-admin`; pengguna diambil kembali bila peran gagal; hapus idempoten (404 bukan galat). `RegistrationFlow` memakai port itu; satu cache token bersama untuk semua upstream di Keycloak (audiens diabaikan).
+- Kong: plugin `privacy-tokenizer` meminta token Privacy sebagai form di jalur realm (`idp_token_path`, `idp_form`); `kong-config` memakai kunci `sig` saja.
+- Compose: `keycloak` dan `keycloak-realm` bukan lagi profil dan menjadi IdP kedua mode (juga di jaringan `privacy` untuk mode usulan); `idp` (dev-idp) hanya `--profile dev-idp`; gateway dan bank-simulator membaca kata sandi uji dari berkas; smoke memakai password grant. Koleksi Postman: token pertama lewat password grant, variabel `dev_password` (dari `secrets/docker/keycloak_dev_user_password`, tidak di berkas); `docker:newman` mengirim kata sandi lewat berkas globals sementara, bukan argumen. `docker:edge-check`: token dari Keycloak, id permintaan UUID acak per run (log adapter bertahan antar-run), fase `expiry` dengan token asli (305 detik) dan fase baru `claims`.
+- Bukti (Docker, Keycloak 26.4.0): Newman lewat Kong 149 request, usulan 115 asersi dan baseline 103, 0 gagal; edge-check `base`, `claims` di kedua mode, `expiry` di usulan; payload scan (usulan hanya PSEU-, baseline kontrol positif); fail-closed Privacy dimatikan (usulan); smoke baseline 9 PASS. Memori: batas WSL 6 GB, tumpukan penuh usulan dengan Keycloak, memori bebas laptop 2,98 GB sesudah naik (1,01 sampai 1,13 GB setelah suite uji); dengan 4 GB hanya 0,59 GB.
+
 ### DK-04 sesi A: pengambil token/JWKS bersama dan profil Compose Keycloak (feat/dk-04-a, ADR-0017)
 
 - `packages/common/src/idp.ts`: `createIdpTokenCache` (satu pengambil token untuk gateway, transaction, notification, reconciliation, bank-simulator; `IDP_KIND`=`dev-idp` bawaan, jadi perilaku tidak berubah), `idpEndpoints`, `signingKeysOf`; `idpJwksSource(http, idp)`; `HttpRequest.form`. Bank-simulator: `BANK_PASSWORD_FILE` hanya bila `IDP_KIND=keycloak`.

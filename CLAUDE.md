@@ -41,8 +41,8 @@ pnpm audit --prod --audit-level high
 gitleaks detect --log-opts="--all" --redact -v --config .gitleaks.toml   # secret scan; v8.30.1, sama dengan CI dan pre-commit
 pnpm docker:secrets               # sekali: semua rahasia Compose ke secrets/docker/, termasuk CA dan sertifikat TLS dev (butuh `openssl`; tidak menimpa, tidak membaca, hanya nama berkas dicetak)
 pnpm test:edge                    # DK-02b: spec *.docker.spec.ts (butuh Docker): vektor kontrak Lua + luacheck di kontainer sekali pakai; payload scan hilir dan fail-closed Privacy dimatikan butuh tumpukan menyala (PRIVPAY_STACK_MODE=proposed|baseline, dengan docs/postman/compose.postman.yml)
-pnpm docker:edge-check <mode> [base|expiry|limits]   # DK-02a: mutasi atas tepi Kong dari host (token rusak/kedaluwarsa, ukuran, laju, TLS); butuh Compose + docs/postman/compose.postman.yml; fase expiry/limits butuh tumpukan dinyalakan dengan ACCESS_TOKEN_TTL_SECONDS=2 / KONG_RATE_LIMIT_PER_MINUTE=20 dan idp, gateway, kong-config, kong dibuat ulang bersama
-pnpm docker:keycloak-check         # DK-04: Keycloak profil `keycloak` (`docker compose ... --profile keycloak up -d --wait keycloak`, jangan bersama `idp` di tumpukan penuh): JWKS satu kunci sig, klaim akun layanan dan nasabah, rahasia salah ditolak
+pnpm docker:edge-check <mode> [base|expiry|claims|limits]   # DK-02a/DK-04: mutasi atas tepi Kong dari host (token rusak/kedaluwarsa, ukuran, laju, TLS; `claims`: aud/azp/peran salah, kunci lain, peran ganda); butuh Compose + docs/postman/compose.postman.yml (token dari Keycloak, kata sandi uji dibaca dari berkas, tidak dicetak); `expiry` menunggu 305 detik (token Keycloak 300 detik); `limits` butuh tumpukan dinyalakan dengan KONG_RATE_LIMIT_PER_MINUTE=20 dan keycloak, gateway, kong-config, kong dibuat ulang bersama
+pnpm docker:keycloak-check         # DK-04: Keycloak (IdP bawaan tumpukan Compose; sendirian: `docker compose ... up -d --wait keycloak`): JWKS satu kunci sig, klaim akun layanan dan nasabah, rahasia salah ditolak. `idp` (dev-idp) hanya dengan `--profile dev-idp`
 pnpm docker:newman <mode>         # koleksi Postman lewat Kong (kontainer Newman terpin di jaringan edge, TLS diverifikasi dengan CA dev)
 pnpm docker:net-check <mode>      # tumpukan menyala: jangkauan antarjaringan dan jalur TLS Gateway-Privacy dari dalam kontainer (DK-03)
 pnpm secret-scan:tree             # gitleaks atas berkas yang akan di-commit (tanpa secrets/ yang di-ignore, tempat kunci PEM TLS dev); `gitleaks ... --all` tetap untuk riwayat
@@ -62,7 +62,7 @@ Gerbang lokal sebelum menyatakan tiket selesai: lint, typecheck, test, test:inte
 ```
 services/{gateway,auth,privacy-service,transaction-service,fraud-service,
           notification-service,reconciliation-service,bank-simulator,sms-simulator}
-tools/dev-idp           # penerbit JWT tiruan fase lokal (ADR-0004); diganti Keycloak di fase Docker
+tools/dev-idp           # penerbit JWT tiruan fase lokal (ADR-0004; dev:up dan tes cepat); Keycloak adalah IdP tumpukan Compose (ADR-0017)
 packages/common        # tipe, error, logger berredaksi, klien HTTP (timeout/retry), zod schema bersama
 tests/{functional,security,pii-scan,performance}
 deploy/                # compose, konfigurasi Kong/Keycloak/Prometheus
@@ -143,7 +143,7 @@ Subagent mematuhi berkas ini. Satu subagent satu tiket. Tidak menyentuh berkas b
 - Memori (keputusan 24 Okt): gerbang penuh dijalankan dengan Docker Desktop dimatikan (`docker desktop stop`, lalu `wsl --shutdown`) dan memori bebas minimal 5 GB; di bawah itu berhenti dan laporkan. Sesi dengan Docker menyala boleh mulai dari 2,5 GB bebas, tanpa putaran penuh (gerbang terarah saja).
 - Tes konkurensi memaksa tumpang tindih tanpa `sleep` (kunci ditahan sesi lain) dan dibuktikan dengan mutasi: pengaman dihapus, tes harus gagal, lalu kode dikembalikan.
 - Commit hanya setelah lint dan typecheck hijau (rangkai dengan `&&`). Baca tanda tangan dan satuan API (mis. `FakeClock.advance` memakai detik) sebelum menulis fixture; fixture salah bukan alasan mengubah kode.
-- Compose (DK-02a): bila `idp` dibuat ulang, buat ulang `gateway`, `kong-config`, dan `kong` bersamanya (`up -d --force-recreate idp gateway kong-config kong`): dev-idp membuat kunci baru tiap start, Kong membaca kuncinya hanya saat `kong-config` jalan, dan adapter menyimpan JWKS lama sampai cooldown 30 detik.
+- Compose (DK-02a, DK-04): bila `keycloak` (atau dev-idp `idp`) dibuat ulang, buat ulang `gateway`, `kong-config`, dan `kong` bersamanya (`up -d --force-recreate keycloak gateway kong-config kong`): realm diimpor ulang dan membuat kunci baru, Kong membaca kuncinya hanya saat `kong-config` jalan, dan adapter menyimpan JWKS lama sampai cooldown 30 detik. Compose juga membuat ulang `keycloak` bila dijalankan dengan set berkas `-f` yang berbeda dari yang menyalakan tumpukan (mis. `run smoke` tanpa `compose.postman.yml`): pakai set yang sama.
 - Spek yang butuh Docker (tumpukan menyala atau kontainer sekali pakai) memakai nama `*.docker.spec.ts` (dijalankan `pnpm test:edge`, bukan `pnpm test`) dan data unik per run (UUID acak, indeks kanari dari waktu): data tumpukan dan log bertahan antar-run, nilai literal membuat run kedua 409/422 atau lulus palsu dari log lama.
 - Sisa database tes: pengguna menjalankan `! corepack pnpm db:test-databases drop` (butuh terminal interaktif). Jangan menyimpan branch cadangan berisi fixture lama; `gitleaks --all` harus bersih tanpa allowlist.
 

@@ -53,13 +53,28 @@ export const gatewayConfigSchema = z
   });
 export type GatewayConfig = z.output<typeof gatewayConfigSchema>;
 
-export function loadGatewayConfig(
-  env: EnvSource,
-): GatewayConfig & { clientSecret: string; edgeSecret: string | undefined } {
+export interface KeycloakAdminSecrets {
+  readonly adminClientSecret: string;
+  readonly userPassword: string;
+}
+
+export function loadGatewayConfig(env: EnvSource): GatewayConfig & {
+  clientSecret: string;
+  edgeSecret: string | undefined;
+  keycloakAdmin: KeycloakAdminSecrets | undefined;
+} {
   const config = loadConfig(gatewayConfigSchema, env);
   return {
     ...config,
     clientSecret: readSecret(env, 'API_GATEWAY_CLIENT_SECRET'),
+    // ADR-0017 items 5 and 6: only the registration at Keycloak needs the Admin API client and the one test password.
+    keycloakAdmin:
+      config.IDP_KIND === 'keycloak'
+        ? {
+            adminClientSecret: readSecret(env, 'IDP_ADMIN_CLIENT_SECRET'),
+            userPassword: readSecret(env, 'IDP_USER_PASSWORD'),
+          }
+        : undefined,
     edgeSecret: config.EDGE_TOKENIZATION ? readSecret(env, 'EDGE_ADAPTER_SECRET') : undefined,
   };
 }

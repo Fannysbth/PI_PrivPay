@@ -1,29 +1,34 @@
 'use strict';
-// `pnpm docker:edge-check <proposed|baseline> [base|expiry|limits]`: attacks the RUNNING edge (Kong, DK-02a) from the host over
+// `pnpm docker:edge-check <proposed|baseline> [base|expiry|limits|claims]`: attacks the RUNNING edge (Kong, DK-02a) from the host over
 // TLS and expects Kong to refuse in the one ADR-0008 shape. It needs the stack started with docs/postman/compose.postman.yml
-// (the dev IdP published on 127.0.0.1:4000, only to mint tokens). Nothing here prints a token, a key or a certificate;
+// (Keycloak, the IdP of the stack since DK-04, published on 127.0.0.1:8080, only to mint tokens by password grant with the
+// invented test password of secrets/docker; it is read here and never printed). Nothing here prints a token, a key or a certificate;
 // the CA file is only the public certificate of the development CA.
 //
 //   base    TLS, token and size mutations, N-05 and header checks.        (stack as started by the Postman override)
-//   expiry  an expired token. Start the stack with ACCESS_TOKEN_TTL_SECONDS=2 first (the adapter's own service tokens
-//           live that short too, so only this one check is made with it).
+//   expiry  an expired token: a real token of Keycloak (300 s) is used after it ended, so this phase waits 305 s.
+//   claims  tokens that Kong accepts but the adapter must not: wrong audience, wrong client (azp), wrong role, a key that is
+//           not the IdP's, and a user with two roles (made through the Admin API, removed again).
 //   limits  the request rate. Start the stack with KONG_RATE_LIMIT_PER_MINUTE=20 first, so the check needs 21 requests.
 // Exit code 0 only if every check came out as expected.
 const https = require('node:https');
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
 const { MODES, composeArgs, caFile } = require('./compose.cjs');
 
 const HOST = '127.0.0.1';
 const PORTS = { proposed: 4010, baseline: 4011 };
-const IDP = { host: HOST, port: Number(process.env['IDP_HOST_PORT'] ?? 4000) };
+const IDP = { host: HOST, port: Number(process.env['IDP_HOST_PORT'] ?? 8080) };
+const REALM_PATH = '/realms/privpay/protocol/openid-connect/token';
+const readSecretFile = (name) => fs.readFileSync(path.join(path.dirname(caFile()), name), 'utf8').trim();
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** One HTTPS request to the edge. Resolves to { status, headers, body } or { error: code }. */
-let counter = 0;
-const nextId = () => `00000000-0000-4000-8000-${String((counter += 1)).padStart(12, '0')}`;
+// Random per run: the log of the adapter outlives a run, so a repeated id would make "the adapter saw it" true from an older run.
+const nextId = () => crypto.randomUUID();
 const AT_EDGE = [];
 /** Marks an answer as one the edge must give alone: the adapter must never log its request id. */
 const edgeOnly = (answer) => {
@@ -51,19 +56,46 @@ function call(port, { method = 'GET', url = '/', headers = {}, body, tls = {} })
   });
 }
 
-function mintToken(username = 'analis.uji.1', clientId = 'admin-console') {
+/** A request to the IdP; resolves to { status, json }. The body is never printed. */
+function idpCall(method, urlPath, { form, json, token } = {}) {
   return new Promise((resolve, reject) => {
-    const payload = Buffer.from(JSON.stringify({ grant_type: 'dev_login', client_id: clientId, username }));
-    const request = http.request({ ...IDP, method: 'POST', path: '/token', headers: { 'content-type': 'application/json', 'content-length': payload.length }, timeout: 5000 }, (response) => {
+    const payload = form ? Buffer.from(new URLSearchParams(form).toString()) : json === undefined ? undefined : Buffer.from(JSON.stringify(json));
+    const headers = {
+      ...(payload ? { 'content-type': form ? 'application/x-www-form-urlencoded' : 'application/json', 'content-length': payload.length } : {}),
+      ...(token ? { authorization: `Bearer ${token}` } : {}),
+    };
+    const request = http.request({ ...IDP, method, path: urlPath, headers, timeout: 8000 }, (response) => {
       const chunks = [];
       response.on('data', (chunk) => chunks.push(chunk));
       response.on('end', () => {
-        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')).access_token); } catch { reject(new Error('the dev IdP gave no token')); }
+        const text = Buffer.concat(chunks).toString('utf8');
+        let parsed;
+        try { parsed = text === '' ? undefined : JSON.parse(text); } catch { parsed = undefined; }
+        resolve({ status: response.statusCode, json: parsed });
       });
     });
-    request.on('error', () => reject(new Error('the dev IdP is not reachable on 127.0.0.1 (start the stack with docs/postman/compose.postman.yml)')));
+    request.on('timeout', () => request.destroy(new Error('timeout')));
+    request.on('error', () => reject(new Error('Keycloak is not reachable on 127.0.0.1 (start the stack with docs/postman/compose.postman.yml)')));
     request.end(payload);
   });
+}
+
+async function mintToken(username = 'analis.uji.1', clientId = 'admin-console') {
+  const answer = await idpCall('POST', REALM_PATH, { form: { grant_type: 'password', client_id: clientId, username, password: readSecretFile('keycloak_dev_user_password') } });
+  if (typeof answer.json?.access_token !== 'string') throw new Error('Keycloak gave no token');
+  return answer.json.access_token;
+}
+
+/** The audience and the client of a token, for a label: names of services only, never the token. */
+const claimSummary = (token) => {
+  const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
+  return `aud=${JSON.stringify(claims.aud)} azp=${String(claims.azp)} roles=${JSON.stringify(claims.roles ?? null)}`;
+};
+
+async function serviceToken(client) {
+  const answer = await idpCall('POST', REALM_PATH, { form: { grant_type: 'client_credentials', client_id: client, client_secret: readSecretFile(`${client}_client_secret`) } });
+  if (typeof answer.json?.access_token !== 'string') throw new Error('Keycloak gave no service token');
+  return answer.json.access_token;
 }
 
 const bearer = (token) => ({ authorization: `Bearer ${token}` });
@@ -78,8 +110,8 @@ function adapterLog(mode) {
   const result = spawnSync('docker', composeArgs(mode, ['logs', '--no-log-prefix', 'gateway']), { encoding: 'utf8', timeout: 30000 });
   return `${result.stdout}${result.stderr}`;
 }
-const BIG_ID = '00000000-0000-4000-8000-0000000000b1';
-const MID_ID = '00000000-0000-4000-8000-0000000000b2';
+const BIG_ID = crypto.randomUUID();
+const MID_ID = crypto.randomUUID();
 
 async function baseChecks(mode, port, ca) {
   const token = await mintToken();
@@ -105,7 +137,7 @@ async function baseChecks(mode, port, ca) {
   add('no token', refused(edgeOnly(await call(port, open()))), '401 UNAUTHENTICATED');
   add('garbage token', refused(edgeOnly(await call(port, open({ headers: bearer('abc.def.ghi') })))), '401 UNAUTHENTICATED');
   add('token with a changed payload (signature no longer fits)', refused(edgeOnly(await call(port, open({ headers: bearer(tamper(token)) })))), '401 UNAUTHENTICATED');
-  add('alg=none token', refused(edgeOnly(await call(port, open({ headers: bearer(`${b64({ alg: 'none', typ: 'JWT' })}.${b64({ iss: 'privpay-dev-idp', exp: 4102444800 })}.`) })))), '401 UNAUTHENTICATED');
+  add('alg=none token', refused(edgeOnly(await call(port, open({ headers: bearer(`${b64({ alg: 'none', typ: 'JWT' })}.${b64({ iss: 'http://keycloak:8080/realms/privpay', exp: 4102444800 })}.`) })))), '401 UNAUTHENTICATED');
   add('a valid token in the URL (?jwt=) is not read', refused(edgeOnly(await call(port, { url: `/transaction/held?jwt=${token}`, tls: verified }))), '401 UNAUTHENTICATED');
 
   const big = await call(port, { method: 'POST', url: '/transaction/TX-1/review', headers: { ...bearer(token), 'x-request-id': BIG_ID }, body: padding(100 * 1024), tls: verified });
@@ -133,12 +165,61 @@ async function baseChecks(mode, port, ca) {
 
 async function expiryChecks(mode, port, ca) {
   const short = await mintToken();
-  await new Promise((resolve) => setTimeout(resolve, 3500));
+  // The lifetime of a Keycloak token is the realm's 300 s; the check waits for it to end, with 5 s over. EXPIRY_WAIT_MS is
+  // only for a stack whose realm was changed.
+  await new Promise((resolve) => setTimeout(resolve, Number(process.env['EXPIRY_WAIT_MS'] ?? 305000)));
   const answer = await call(port, { url: '/transaction/held', headers: bearer(short), tls: { ca } });
   return [
-    ['expired token (lifetime 2 s, used after 3.5 s)', refused(answer), '401 UNAUTHENTICATED'],
+    ['expired token (a real token of Keycloak, used after its 300 s)', refused(answer), '401 UNAUTHENTICATED'],
     ['the expired token was stopped by Kong: the adapter never saw its request', adapterLog(mode).includes(answer.id), false],
   ];
+}
+
+/** The claims Kong cannot judge (audience, client, role, number of roles) and a signature by a key that is not the IdP's. */
+async function claimChecks(mode, port, ca) {
+  const verified = { ca };
+  const results = [];
+  const add = (label, got, expected) => results.push([label, got, expected]);
+  const held = (token) => call(port, { url: '/transaction/held', headers: bearer(token), tls: verified });
+
+  add('control: an analyst of the console is let in', (await held(await mintToken())).status, 200);
+  const reconciliation = await serviceToken('reconciliation');
+  add(`a service account whose audience does not include api-gateway (reconciliation: ${claimSummary(reconciliation)})`, refused(await held(reconciliation)), '403 ACCESS_DENIED');
+  add('a customer asking for a token at the admin client (azp admin-console) gets no usable role', refused(await held(await mintToken('nasabah.uji.103', 'admin-console'))), '401 UNAUTHENTICATED');
+  add('an administrator asking for a token at the customer client (azp customer-app) gets no usable role', refused(await held(await mintToken('admin.uji.1', 'customer-app'))), '401 UNAUTHENTICATED');
+  add('a customer on a route of the console (wrong role)', refused(await held(await mintToken('nasabah.uji.102', 'customer-app'))), '403 ACCESS_DENIED');
+
+  // Same claims, another key: re-sign a valid payload with a key that Kong does not know. Kong must refuse it itself.
+  const [h, p] = (await mintToken()).split('.');
+  const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const signed = crypto.sign('RSA-SHA256', Buffer.from(`${h}.${p}`), privateKey).toString('base64url');
+  const foreign = edgeOnly(await held(`${h}.${p}.${signed}`));
+  add('a token signed by another key, with the claims of a valid one', refused(foreign), '401 UNAUTHENTICATED');
+
+  // A person with two roles, made through the Admin API with the client idp-admin (the path the registration uses) and removed
+  // again. Which pair of roles idp-admin may give is part of what is checked: a role of a person who approves or audits is a
+  // privilege it should not have.
+  const admin = await serviceToken('idp-admin');
+  const base = '/admin/realms/privpay';
+  const name = `ganda.uji.${String(Date.now()).slice(-8)}`;
+  let userId;
+  try {
+    const made = await idpCall('POST', `${base}/users`, { token: admin, json: { username: name, enabled: true, credentials: [{ type: 'password', value: readSecretFile('keycloak_dev_user_password'), temporary: false }] } });
+    const found = await idpCall('GET', `${base}/users?username=${name}&exact=true`, { token: admin });
+    userId = Array.isArray(found.json) ? found.json[0]?.id : undefined;
+    const statuses = [];
+    for (const role of ['fraud_analyst', 'auditor', 'admin']) {
+      const rep = await idpCall('GET', `${base}/roles/${role}`, { token: admin });
+      const mapped = await idpCall('POST', `${base}/users/${userId}/role-mappings/realm`, { token: admin, json: [rep.json] });
+      statuses.push(`${role}:${mapped.status}`);
+    }
+    add('idp-admin may give fraud_analyst and auditor but not admin (made: ' + made.status + ')', statuses.join(' '), 'fraud_analyst:204 auditor:204 admin:403');
+    add('a person with two or more roles is refused by the adapter', refused(await held(await mintToken(name, 'admin-console'))), '401 UNAUTHENTICATED');
+  } finally {
+    if (userId) await idpCall('DELETE', `${base}/users/${userId}`, { token: admin });
+  }
+  add('the token of the other key never reached the adapter (Kong stopped it)', adapterLog(mode).includes(foreign.id), false);
+  return results;
 }
 
 async function limitChecks(port, ca) {
@@ -166,13 +247,13 @@ async function limitChecks(port, ca) {
 
 async function main() {
   const [mode, phase = 'base'] = process.argv.slice(2);
-  if (!MODES.includes(mode) || !['base', 'expiry', 'limits'].includes(phase)) {
-    process.stderr.write('usage: edge-check.cjs <proposed|baseline> [base|expiry|limits]\n');
+  if (!MODES.includes(mode) || !['base', 'expiry', 'limits', 'claims'].includes(phase)) {
+    process.stderr.write('usage: edge-check.cjs <proposed|baseline> [base|expiry|limits|claims]\n');
     return 2;
   }
   const ca = fs.readFileSync(caFile());
   const port = PORTS[mode];
-  const run = { base: () => baseChecks(mode, port, ca), expiry: () => expiryChecks(mode, port, ca), limits: () => limitChecks(port, ca) };
+  const run = { base: () => baseChecks(mode, port, ca), expiry: () => expiryChecks(mode, port, ca), claims: () => claimChecks(mode, port, ca), limits: () => limitChecks(port, ca) };
   const results = await run[phase]();
   let failed = 0;
   for (const [label, got, expected] of results) {

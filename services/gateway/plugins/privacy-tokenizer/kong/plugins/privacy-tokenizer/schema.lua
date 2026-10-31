@@ -13,6 +13,9 @@ return {
           { action = { type = "string", required = true, one_of = { "tokenize", "passthrough" } } },
           { privacy_url = { type = "string" } },
           { idp_url = { type = "string" } },
+          -- The dev IdP takes JSON at /token; Keycloak takes a form at the token path of its realm (DK-04).
+          { idp_token_path = { type = "string", default = "/token" } },
+          { idp_form = { type = "boolean", default = false } },
           { client_id = { type = "string", default = "api-gateway" } },
           { client_secret_file = { type = "string" } },
           { edge_secret_file = { type = "string" } },

@@ -1,5 +1,5 @@
 'use strict';
-// `pnpm docker:keycloak-check`: checks the RUNNING Keycloak of the Compose profile `keycloak` from inside the business
+// `pnpm docker:keycloak-check`: checks the RUNNING Keycloak of the Compose stack (or alone: `up -d --wait keycloak`) from inside the business
 // network (DK-04, ADR-0017): the JWKS has one RS256 signing key (and the encryption key Kong and the services must not
 // use), a service account and a customer get tokens whose claims have the shape the services expect, and a wrong secret is
 // refused. It runs in a throwaway container of the keycloak-realm service (it has the secrets mounted). Nothing printed
