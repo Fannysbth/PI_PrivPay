@@ -162,6 +162,24 @@ describe('DK-04 renderKongConfig with Keycloak', () => {
     expect(config.consumers[0]?.jwt_secrets[0]?.key).toBe('http://keycloak:8080/realms/privpay');
   });
 
+  it('DK-04 the tokenizing plugin asks Keycloak for its service token at the realm path, as a form (the dev IdP takes JSON at /token)', async () => {
+    const plugin = async (env: Record<string, string>, keys: unknown) =>
+      (
+        JSON.parse(await renderKongConfig(env, answer(keys))) as {
+          plugins: { name: string; config: Record<string, unknown> }[];
+        }
+      ).plugins.find((candidate) => candidate.name === 'privacy-tokenizer')?.config;
+    expect(await plugin(keycloak, keycloakKeys)).toMatchObject({
+      idp_url: 'http://keycloak:8080',
+      idp_token_path: '/realms/privpay/protocol/openid-connect/token',
+      idp_form: true,
+    });
+    expect(await plugin({ ...ENV, IDP_URL: 'http://idp:4000' }, { keys: [jwk()] })).toMatchObject({
+      idp_token_path: '/token',
+      idp_form: false,
+    });
+  });
+
   it('DK-04 two signing keys, or none, stop the start', async () => {
     const second = { ...jwk(), kid: 'sig-2' };
     await expect(

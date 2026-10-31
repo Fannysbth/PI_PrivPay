@@ -61,10 +61,17 @@ x-pg: &pg
     retries: 20
     start_period: 20s
 
+# DK-04 (ADR-0017): Keycloak is the IdP of the stack. The dev IdP (`idp`, profile `dev-idp`) is for `pnpm dev:up` and fast tests.
+x-idp-env: &idp-env
+  IDP_URL: http://keycloak:8080
+  IDP_KIND: keycloak
+  IDP_REALM: privpay
+  IDP_ISSUER: http://keycloak:8080/realms/privpay
+
 x-node-env: &node-env
+  <<: *idp-env
   TZ: UTC
   BIND_HOST: 0.0.0.0
-  IDP_URL: http://idp:4000
 
 # Three zones (NFR-06, DK-03). `edge` is the only network with a way out and carries only Kong, the one published
 # service (and Grafana, which exists only under the monitoring profile). `business` holds the services that see tokens and their databases. `privacy` holds the Privacy Service, its
@@ -244,8 +251,10 @@ services:
     networks: [business]
     depends_on: { pg-reconciliation: { condition: service_healthy } }
 
-  # ---- The identity provider of the dev phase (Keycloak replaces it in DK-04). Internal only. ----
+  # ---- The dev IdP (ADR-0004): only with `--profile dev-idp`; Keycloak is the IdP of the stack (DK-04). Internal only. ----
+  # The services are configured for Keycloak; to run the stack on the dev IdP, set IDP_URL, IDP_KIND=dev-idp and IDP_ISSUER yourself.
   idp:
+    profiles: [dev-idp]
     <<: [*hardening, *limits, *node-health]
     image: privpay-idp:dk01a
     build:
@@ -286,7 +295,7 @@ services:
     networks: [business]
     depends_on:
       migrate-transaction: { condition: service_completed_successfully }
-      idp: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
 
   fraud-service:
     <<: [*hardening, *limits, *node-health]
@@ -308,7 +317,7 @@ services:
     networks: [business]
     depends_on:
       migrate-fraud: { condition: service_completed_successfully }
-      idp: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
 
   notification-service:
     <<: [*hardening, *limits, *node-health]
@@ -326,7 +335,7 @@ services:
     networks: [business]
     depends_on:
       migrate-notification: { condition: service_completed_successfully }
-      idp: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
 
   reconciliation-service:
     <<: [*hardening, *limits, *node-health]
@@ -345,7 +354,7 @@ services:
     networks: [business]
     depends_on:
       migrate-reconciliation: { condition: service_completed_successfully }
-      idp: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
 
   # ---- Simulators ----
   sms-simulator:
@@ -373,7 +382,9 @@ services:
       PORT: '4006'
       GATEWAY_URL: http://gateway:4010
       BANK_USERNAME: bank.uji.1
+      BANK_PASSWORD_FILE: /run/secrets/keycloak_dev_user_password
       BANK_SIMULATOR_TEST_ENDPOINTS: 'true'
+    secrets: [keycloak_dev_user_password]
     networks: [business]
 
   # ---- The gateway adapter: reached through Kong only, not published ----
@@ -391,12 +402,15 @@ services:
       RECONCILIATION_SERVICE_URL: http://reconciliation-service:4005
       NOTIFICATION_SERVICE_URL: http://notification-service:4004
       API_GATEWAY_CLIENT_SECRET_FILE: /run/secrets/api-gateway_client_secret
+      # ADR-0017 items 5 and 6: registration at Keycloak uses the client idp-admin and the one test password of the users.
+      IDP_ADMIN_CLIENT_SECRET_FILE: /run/secrets/idp-admin_client_secret
+      IDP_USER_PASSWORD_FILE: /run/secrets/keycloak_dev_user_password
       # DK-02a: Kong is the one proxy in front; the address it appended to X-Forwarded-For is the client (K-14).
       EDGE_PROXY_HOPS: '1'
-    secrets: [api-gateway_client_secret]
+    secrets: [api-gateway_client_secret, idp-admin_client_secret, keycloak_dev_user_password]
     networks: [business]
     depends_on:
-      idp: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
       transaction-service: { condition: service_healthy }
       reconciliation-service: { condition: service_healthy }
       notification-service: { condition: service_healthy }
@@ -411,7 +425,7 @@ services:
     command: ['node', '/app/service/dist/edge/render-main.js']
     environment:
       TZ: UTC
-      IDP_URL: http://idp:4000
+      <<: *idp-env
       KONG_UPSTREAM_URL: http://gateway:4010
       KONG_CONFIG_OUT: /state/kong.json
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
@@ -419,7 +433,7 @@ services:
     volumes: ['kong-config:/state']
     networks: [business]
     depends_on:
-      idp: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
 
   kong:
     <<: *hardening
@@ -472,14 +486,13 @@ services:
       kong-config: { condition: service_completed_successfully }
       gateway: { condition: service_healthy }
 
-  # ---- Keycloak (DK-04, ADR-0017): a profile, NOT part of the default stack ----
-  # `docker compose --profile keycloak up -d keycloak` starts Keycloak alone (the realm is rendered first, from secret files).
-  # It is not the IdP of the stack yet (the services still use `idp`), and the two must not run together in the full
-  # stack; ticket 3 of DK-04 moves the stack over. There is no bootstrap administrator: nobody can sign in to the console,
-  # and the realm is managed by the client `idp-admin` only.
+  # ---- Keycloak (DK-04, ADR-0017): the IdP of the stack, in both conditions ----
+  # The realm is rendered first, from secret files. There is no bootstrap administrator: nobody can sign in to the console,
+  # and the realm is managed by the client `idp-admin` only. The realm is imported again whenever the container is made again
+  # (H2 lives in the container), and an import makes new signing keys: recreate `gateway`, `kong-config` and `kong` with it
+  # (`up -d --force-recreate keycloak gateway kong-config kong`; Kong reads the key only when `kong-config` runs).
   keycloak-realm:
     <<: [*hardening, *limits]
-    profiles: [keycloak]
     restart: 'no'
     image: privpay-gateway:dk01a
     build: *build-gateway-image
@@ -492,7 +505,6 @@ services:
     networks: [business]
 
   keycloak:
-    profiles: [keycloak]
     cap_drop: [ALL]
     security_opt: ['no-new-privileges:true']
     # Not read-only: `start-dev` builds its runtime (lib/quarkus) and keeps an H2 file at start. The user is the image's own (keycloak).
@@ -538,8 +550,12 @@ services:
     environment:
       TZ: UTC
       GATEWAY_URL: http://gateway:4010
-      IDP_URL: http://idp:4000
+      IDP_URL: http://keycloak:8080
+      IDP_KIND: keycloak
+      IDP_REALM: privpay
+      IDP_USER_PASSWORD_FILE: /run/secrets/keycloak_dev_user_password
       SMS_URL: http://sms-simulator:4007
+    secrets: [keycloak_dev_user_password]
     volumes: ['../../scripts/docker/smoke.cjs:/smoke/smoke.cjs:ro']
     networks: [business]
     depends_on:

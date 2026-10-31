@@ -33,6 +33,9 @@ export type TokenizerInput =
       readonly action: 'tokenize';
       readonly privacyUrl?: string | undefined;
       readonly idpUrl?: string | undefined;
+      /** Where and how the IdP wants the token request (DK-04): the dev IdP takes JSON at /token, Keycloak a form at its realm. */
+      readonly idpTokenPath?: string | undefined;
+      readonly idpForm?: boolean | undefined;
       readonly clientSecretFile?: string | undefined;
       readonly edgeSecretFile?: string | undefined;
     };
@@ -149,6 +152,8 @@ function tokenizerPlugin(input: TokenizerInput): Plugin {
       // No trailing slash: the plugin appends /pseudonymize.
       privacy_url: input.privacyUrl.replace(/\/+$/, ''),
       idp_url: input.idpUrl,
+      idp_token_path: input.idpTokenPath ?? '/token',
+      idp_form: input.idpForm ?? false,
       client_secret_file: input.clientSecretFile,
       edge_secret_file: input.edgeSecretFile,
       reasons: reasonStatuses(),

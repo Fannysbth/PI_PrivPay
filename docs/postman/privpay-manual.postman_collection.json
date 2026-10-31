@@ -11,8 +11,8 @@
       "script": {
         "type": "text/javascript",
         "exec": [
-          "// Token dev-idp berlaku 300 detik. Setiap request yang memakai header \"Authorization: Bearer {{token_<peran>}}\" otomatis",
-          "// mendapat token segar bila belum ada atau sudah lebih dari 200 detik. Tidak ada rahasia: dev_login hanya butuh nama pengguna seed.",
+          "// Token Keycloak berlaku 300 detik. Setiap request yang memakai header \"Authorization: Bearer {{token_<peran>}}\" otomatis",
+          "// mendapat token segar bila belum ada atau sudah lebih dari 200 detik. Kata sandi uji (fiktif) ada di variabel dev_password, tidak ada di berkas ini.",
           "const auth = pm.request.headers.get('Authorization') || '';",
           "const m = /\\{\\{token_([a-z0-9]+)\\}\\}/.exec(auth);",
           "if (m) {",
@@ -35,13 +35,13 @@
           "  if (!pm.collectionVariables.get('token_' + role) || !fresh) {",
           "    pm.sendRequest(",
           "      {",
-          "        url: pm.variables.get('idp_url') + '/token',",
+          "        url: pm.variables.get('idp_url') + '/realms/privpay/protocol/openid-connect/token',",
           "        method: 'POST',",
-          "        header: { 'Content-Type': 'application/json' },",
-          "        body: { mode: 'raw', raw: JSON.stringify({ grant_type: 'dev_login', client_id: who[0], username: who[1] }) },",
+          "        header: { 'Content-Type': 'application/x-www-form-urlencoded' },",
+          "        body: { mode: 'urlencoded', urlencoded: [{ key: 'grant_type', value: 'password' }, { key: 'client_id', value: who[0] }, { key: 'username', value: who[1] }, { key: 'password', value: pm.variables.get('dev_password') }] },",
           "      },",
           "      (err, res) => {",
-          "        if (err || res.code !== 200) throw new Error('Gagal mengambil token ' + role + ' dari dev-idp (' + pm.variables.get('idp_url') + ').');",
+          "        if (err || res.code !== 200) throw new Error('Gagal mengambil token ' + role + ' dari Keycloak (' + pm.variables.get('idp_url') + ').');",
           "        pm.collectionVariables.set('token_' + role, res.json().access_token);",
           "        pm.collectionVariables.set('token_' + role + '_at', String(Date.now()));",
           "      },",
@@ -55,8 +55,8 @@
   "variable": [],
   "item": [
     {
-      "name": "1) Ambil token dari dev-idp",
-      "description": "Semua pemanggil memakai JWT dari dev-idp (alamat `idp_url`). Klien `customer-app` untuk nasabah, `admin-console` untuk admin/auditor/analis fraud, `bank-simulator` untuk bank. Token nasabah baru diambil di folder 2 setelah ia terdaftar.",
+      "name": "1) Ambil token dari Keycloak",
+      "description": "Semua pemanggil memakai JWT dari Keycloak (alamat `idp_url`). Klien `customer-app` untuk nasabah, `admin-console` untuk admin/auditor/analis fraud, `bank-simulator` untuk bank. Token nasabah baru diambil di folder 2 setelah ia terdaftar.",
       "item": [
         {
           "name": "1.1 Cek tepi (Kong) hidup",
@@ -99,7 +99,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_analis');",
-                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "pm.test('Diharapkan: 200 dari Keycloak', () => pm.response.to.have.status(200));",
                   "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
                   "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
                   "  pm.expect(body && body.access_token).to.be.a('string');",
@@ -119,28 +119,48 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/x-www-form-urlencoded"
               }
             ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"admin-console\",\n  \"username\": \"analis.uji.1\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "admin-console",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "analis.uji.1",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{dev_password}}",
+                  "type": "text"
                 }
-              }
+              ]
             },
             "url": {
-              "raw": "{{idp_url}}/token",
+              "raw": "{{idp_url}}/realms/privpay/protocol/openid-connect/token",
               "host": [
                 "{{idp_url}}"
               ],
               "path": [
+                "realms",
+                "privpay",
+                "protocol",
+                "openid-connect",
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari dev-idp untuk analis fraud. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk analis fraud. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         },
         {
@@ -152,7 +172,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_auditor');",
-                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "pm.test('Diharapkan: 200 dari Keycloak', () => pm.response.to.have.status(200));",
                   "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
                   "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
                   "  pm.expect(body && body.access_token).to.be.a('string');",
@@ -172,28 +192,48 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/x-www-form-urlencoded"
               }
             ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"admin-console\",\n  \"username\": \"auditor.uji.1\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "admin-console",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "auditor.uji.1",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{dev_password}}",
+                  "type": "text"
                 }
-              }
+              ]
             },
             "url": {
-              "raw": "{{idp_url}}/token",
+              "raw": "{{idp_url}}/realms/privpay/protocol/openid-connect/token",
               "host": [
                 "{{idp_url}}"
               ],
               "path": [
+                "realms",
+                "privpay",
+                "protocol",
+                "openid-connect",
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari dev-idp untuk auditor. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk auditor. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         },
         {
@@ -205,7 +245,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_admin');",
-                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "pm.test('Diharapkan: 200 dari Keycloak', () => pm.response.to.have.status(200));",
                   "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
                   "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
                   "  pm.expect(body && body.access_token).to.be.a('string');",
@@ -225,28 +265,48 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/x-www-form-urlencoded"
               }
             ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"admin-console\",\n  \"username\": \"admin.uji.1\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "admin-console",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "admin.uji.1",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{dev_password}}",
+                  "type": "text"
                 }
-              }
+              ]
             },
             "url": {
-              "raw": "{{idp_url}}/token",
+              "raw": "{{idp_url}}/realms/privpay/protocol/openid-connect/token",
               "host": [
                 "{{idp_url}}"
               ],
               "path": [
+                "realms",
+                "privpay",
+                "protocol",
+                "openid-connect",
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari dev-idp untuk admin. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk admin. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         },
         {
@@ -258,7 +318,7 @@
                 "type": "text/javascript",
                 "exec": [
                   "console.log('[Diharapkan] 200 dan access_token tersimpan di variabel token_bank');",
-                  "pm.test('Diharapkan: 200 dari dev-idp', () => pm.response.to.have.status(200));",
+                  "pm.test('Diharapkan: 200 dari Keycloak', () => pm.response.to.have.status(200));",
                   "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
                   "pm.test('Diharapkan: ada access_token berbentuk JWT (tiga bagian)', () => {",
                   "  pm.expect(body && body.access_token).to.be.a('string');",
@@ -278,28 +338,48 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/x-www-form-urlencoded"
               }
             ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"bank-simulator\",\n  \"username\": \"bank.uji.1\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "bank-simulator",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "bank.uji.1",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{dev_password}}",
+                  "type": "text"
                 }
-              }
+              ]
             },
             "url": {
-              "raw": "{{idp_url}}/token",
+              "raw": "{{idp_url}}/realms/privpay/protocol/openid-connect/token",
               "host": [
                 "{{idp_url}}"
               ],
               "path": [
+                "realms",
+                "privpay",
+                "protocol",
+                "openid-connect",
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari dev-idp untuk bank. dev-idp hanya ada di fase pengembangan: tidak meminta kata sandi. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk bank. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         }
       ]
@@ -406,24 +486,44 @@
             "header": [
               {
                 "key": "Content-Type",
-                "value": "application/json"
+                "value": "application/x-www-form-urlencoded"
               }
             ],
             "body": {
-              "mode": "raw",
-              "raw": "{\n  \"grant_type\": \"dev_login\",\n  \"client_id\": \"customer-app\",\n  \"username\": \"{{cust_username}}\"\n}",
-              "options": {
-                "raw": {
-                  "language": "json"
+              "mode": "urlencoded",
+              "urlencoded": [
+                {
+                  "key": "grant_type",
+                  "value": "password",
+                  "type": "text"
+                },
+                {
+                  "key": "client_id",
+                  "value": "customer-app",
+                  "type": "text"
+                },
+                {
+                  "key": "username",
+                  "value": "{{cust_username}}",
+                  "type": "text"
+                },
+                {
+                  "key": "password",
+                  "value": "{{dev_password}}",
+                  "type": "text"
                 }
-              }
+              ]
             },
             "url": {
-              "raw": "{{idp_url}}/token",
+              "raw": "{{idp_url}}/realms/privpay/protocol/openid-connect/token",
               "host": [
                 "{{idp_url}}"
               ],
               "path": [
+                "realms",
+                "privpay",
+                "protocol",
+                "openid-connect",
                 "token"
               ]
             },
@@ -2265,7 +2365,7 @@
                 "register"
               ]
             },
-            "description": "Username dari 2.1 sudah ada di dev-idp; Gateway menolak dan tidak menyimpan apa pun."
+            "description": "Username dari 2.1 sudah ada di Keycloak; Gateway menolak dan tidak menyimpan apa pun."
           }
         },
         {

@@ -38,9 +38,21 @@ async function call(method, url, { token, body, headers } = {}) {
   return { status: response.status, json, text };
 }
 
-const login = async (client, username) =>
-  (await call('POST', `${IDP}/token`, { body: { grant_type: 'dev_login', client_id: client, username } })).json
-    ?.access_token;
+// DK-04: Keycloak signs a user in by password grant (the one test password is read from a file, never printed); the dev IdP by name.
+const KEYCLOAK = process.env.IDP_KIND === 'keycloak';
+const userPassword = KEYCLOAK ? require('node:fs').readFileSync(process.env.IDP_USER_PASSWORD_FILE, 'utf8').trim() : undefined;
+const login = async (client, username) => {
+  if (!KEYCLOAK) {
+    return (await call('POST', `${IDP}/token`, { body: { grant_type: 'dev_login', client_id: client, username } })).json
+      ?.access_token;
+  }
+  const response = await fetch(`${IDP}/realms/${process.env.IDP_REALM}/protocol/openid-connect/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ grant_type: 'password', client_id: client, username, password: userPassword }).toString(),
+  });
+  return (await response.json().catch(() => undefined))?.access_token;
+};
 
 async function main() {
   // The mode the Gateway reports must be the one Compose chose (E-08).

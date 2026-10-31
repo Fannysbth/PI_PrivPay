@@ -8,6 +8,7 @@ import {
 import { z } from 'zod';
 import type { ErrorMasker } from './error-masker';
 import type { PrivacyPort } from './tokenizer/privacy-port';
+import type { UserDirectory } from './user-directory';
 import { PHONE } from './tokenizer/schemas';
 
 // The form of A1 (gateway spec 6). Everything in it is real data and none of it is logged, answered or kept here: it goes
@@ -21,16 +22,15 @@ const registrationBody = z.strictObject({
   username: z.string().regex(/^[a-z0-9][a-z0-9._-]{2,31}$/),
 });
 
-const created = z.object({ customer_id: z.string().regex(/^CUST-[0-9]{6}$/) });
-
 export interface RegistrationDeps {
   readonly http: HttpClient;
   readonly privacy: PrivacyPort;
   readonly masker: ErrorMasker;
   /** The form of the domain reference of a customer in this mode (N-44): a token, or the customer id in baseline. */
   readonly domainRef: RegExp;
-  /** The gateway's own token for the dev IdP admin API (`aud` dev-idp) and for Notification. */
-  readonly idpAdminToken: Pick<TokenCache, 'get'>;
+  /** Step A2 and its compensation at the IdP in use (the dev IdP or Keycloak, DK-04). */
+  readonly users: UserDirectory;
+  /** The gateway's own token for Notification. */
   readonly notificationToken: Pick<TokenCache, 'get'>;
   /** Only a request id and a reason are ever logged (invariant 6). */
   readonly logger?: Pick<Logger, 'warn'>;
@@ -56,7 +56,7 @@ export class RegistrationFlow {
     const form = parsed.data;
 
     // A2: the user at the IdP. Not repeated by the client (a second call would be a second user).
-    const customerId = await this.createUser(form.username);
+    const { customerId, handle } = await this.deps.users.create(form.username);
 
     // From here on, any failure takes back what was done.
     try {
@@ -75,28 +75,12 @@ export class RegistrationFlow {
       });
       await this.registerPhone(domain, form.hp);
     } catch (error) {
-      await this.compensate(customerId, requestId);
+      await this.compensate(customerId, handle, requestId);
       throw error instanceof DomainError
         ? error
         : new DomainError('SERVICE_UNAVAILABLE', 'registration');
     }
     return { status: 201, body: { status: 'REGISTERED' } };
-  }
-
-  private async createUser(username: string): Promise<string> {
-    const response = await this.deps.http.request({
-      service: 'idp',
-      method: 'POST',
-      path: '/admin/users',
-      body: { username },
-      idempotent: false,
-      authorization: `Bearer ${await this.deps.idpAdminToken.get()}`,
-    });
-    const parsed = created.safeParse(response.body);
-    if (response.status === 201 && parsed.success) return parsed.data.customer_id;
-    // A username that is taken is the caller's to change; anything else is the IdP being away or refusing us.
-    if (response.status === 422) throw new DomainError('VALIDATION_ERROR', 'username');
-    throw new DomainError('SERVICE_UNAVAILABLE', 'idp');
   }
 
   private async registerPhone(domain: string, phone: string): Promise<void> {
@@ -123,7 +107,7 @@ export class RegistrationFlow {
    * emptied even when A5 reported a failure: an answer lost on the way may still have stored the identity, and emptying a
    * vault that has nothing is only an audited "nothing there" (privacy spec 4.6).
    */
-  private async compensate(customerId: string, requestId: string): Promise<void> {
+  private async compensate(customerId: string, handle: string, requestId: string): Promise<void> {
     const attempt = async (step: string, work: () => Promise<unknown>): Promise<void> => {
       try {
         await work();
@@ -132,16 +116,6 @@ export class RegistrationFlow {
       }
     };
     await attempt('vault', () => this.deps.privacy.revokeCustomer(customerId));
-    await attempt('user', async () => {
-      const response = await this.deps.http.request({
-        service: 'idp',
-        method: 'DELETE',
-        path: `/admin/users/${customerId}`,
-        idempotent: true,
-        authorization: `Bearer ${await this.deps.idpAdminToken.get()}`,
-      });
-      if (response.status < 200 || response.status > 299)
-        throw new DomainError('SERVICE_UNAVAILABLE');
-    });
+    await attempt('user', () => this.deps.users.remove(handle));
   }
 }

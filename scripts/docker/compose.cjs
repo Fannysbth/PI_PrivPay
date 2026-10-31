@@ -27,7 +27,7 @@ function composeArgs(mode, rest) {
 const secretsDir = () => process.env['DOCKER_SECRETS_DIR'] ?? path.join(__dirname, '..', '..', 'secrets', 'docker');
 const caFile = () => path.join(secretsDir(), 'tls_ca.crt');
 
-module.exports = { composeArgs, MODES, caFile };
+module.exports = { composeArgs, MODES, caFile, secretsDir };
 
 if (require.main === module) {
   const [mode, ...rest] = process.argv.slice(2);

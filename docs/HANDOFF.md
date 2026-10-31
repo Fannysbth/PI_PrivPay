@@ -1,3 +1,23 @@
+# HANDOFF (2026-11-01): DK-04 SELESAI di `main` (Keycloak adalah IdP tumpukan Compose, registrasi lewat Admin API)
+
+| Butir | Bukti |
+| --- | --- |
+| Memori | WSL 4 GB: 0,59 GB bebas dengan tumpukan penuh + Keycloak (berhenti). WSL 6 GB: 2,98 GB sesudah naik, 1,01 sampai 1,13 GB setelah suite uji; Keycloak 540 sampai 560 MiB dari 768 MiB |
+| Tiket 3 | port `UserDirectory` (dev-idp dan Keycloak), plugin Kong meminta token sebagai form, Compose Keycloak bawaan, Postman password grant, smoke, edge-check (fase `claims`, `expiry` 305 detik) |
+| Newman lewat Kong | usulan 149 request / 115 asersi / 0 gagal; baseline 149 / 103 / 0 |
+| Mutasi (edge-check) | base dan claims di kedua mode; expiry di usulan. aud salah 403, azp salah 401, peran salah 403, kunci lain 401 (Kong), peran ganda 401 |
+| Payload scan, fail-closed | usulan hanya PSEU- (3 tes); baseline kontrol positif (2); Privacy dimatikan: 503 |
+| Gerbang | lint, typecheck, test 1509, secret-scan:tree, gitleaks --all, audit --prod hijau; test:integration tidak dijalankan |
+
+## Terbuka (keputusan Fanny)
+1. Audiens akun layanan lebih lebar: token gateway yang dikirim ke layanan hilir juga berlaku di Privacy (`/security-review`, Medium). Usul: scope opsional per audiens.
+2. Satu kata sandi uji dipasang di `gateway` dan `bank-simulator`: membuka token admin/auditor (menembus empat-mata); `idp-admin` bisa memberi peran auditor dan analis. Usul: kata sandi per kelas pengguna, `idp-admin` dibatasi ke peran `customer`.
+3. Pencarian atribut Admin API menaruh kandidat `customer_id` di query ke IdP (tafsiran larangan CLAUDE.md).
+
+Belum teruji: edge-check setelah `/simplify` (hanya sintaks), expiry baseline, limits, empat-mata lewat tumpukan, rotasi kunci, test:integration/test:security penuh, kinerja. Keterbatasan lain di ADR-0017.
+
+Skill: /tdd (pola), /simplify, /code-review (hanya merge 6eef220), /security-review, /run. Tidak dikerjakan: DK-06, M6, M7.
+
 # HANDOFF (2026-10-31): DK-04 sesi A SELESAI di `feat/dk-04-a` (pengambil token/JWKS bersama + profil Compose Keycloak); tiket 3 (sesi B) menunggu
 
 | Butir | Bukti |

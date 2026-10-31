@@ -7,11 +7,11 @@ Koleksi ini untuk **mencoba sistem sendiri**: mendaftar nasabah, membayar, melih
 | `privpay-manual.postman_collection.json` | koleksi: 10 folder, 47 request, tiap request punya Tests yang mencetak yang diharapkan |
 | `privpay-proposed.postman_environment.json` | environment mode usulan (Kong di `https://127.0.0.1:4010`) |
 | `privpay-baseline.postman_environment.json` | environment mode baseline (Kong di `https://127.0.0.1:4011`) |
-| `compose.postman.yml` | override Compose agar Postman (di host) bisa menjangkau dev-idp dan sms-simulator |
+| `compose.postman.yml` | override Compose agar Postman (di host) bisa menjangkau Keycloak dan sms-simulator |
 
 ## 1. Prasyarat
 
-- Docker Desktop menyala (`docker info` menjawab). Tumpukan penuh memakai sekitar 4 GB RAM untuk WSL; tutup aplikasi berat lain.
+- Docker Desktop menyala (`docker info` menjawab). Tumpukan penuh (dengan Keycloak, DK-04) butuh batas memori WSL sekitar 6 GB (`.wslconfig`, `memory=6GB`, lalu `wsl --shutdown`); tutup aplikasi berat lain. Dengan batas 4 GB memori bebas laptop turun di bawah 0,6 GB.
 - Disk C: dan tempat Docker punya ruang beberapa GB (disk penuh pernah merusak volume PostgreSQL, lihat `docs/HANDOFF.md`).
 - Sekali saja, dari akar repo: `corepack pnpm docker:secrets` (membuat rahasia Compose di `secrets/docker/`, tidak menimpa; butuh `openssl`). Jika folder itu sudah ada, lewati.
 - Postman (aplikasi desktop atau web dengan agen lokal; **Postman web murni tidak bisa menjangkau 127.0.0.1**).
@@ -24,11 +24,11 @@ Kong melayani TLS dengan sertifikat dari CA pengembangan. Jangan mematikan "SSL 
 2. Postman: **Settings > Certificates > CA certificates**, nyalakan, pilih `secrets/docker/tls_ca.crt`.
 3. Sertifikat Kong sah untuk `127.0.0.1`, `localhost`, dan `kong`.
 
-Bila dev-idp dibuat ulang (mis. `docker compose ... up -d --force-recreate idp`), ia membuat kunci baru. Ulangi juga tiga layanan di depannya: `up -d --force-recreate idp gateway kong-config kong`.
+Bila Keycloak dibuat ulang (mis. `--force-recreate keycloak`, atau Compose menilai konfigurasinya berubah karena dijalankan dengan set berkas `-f` yang berbeda), ia mengimpor realm lagi dan membuat kunci baru. Ulangi juga tiga layanan di depannya: `up -d --force-recreate keycloak gateway kong-config kong`. Selalu pakai set `-f` yang sama untuk satu tumpukan.
 
 ## 2. Menyalakan dan mematikan Compose
 
-Jalankan dari akar repo. **Satu mode pada satu waktu** (keduanya memakai port 4000 dan 4007).
+Jalankan dari akar repo. **Satu mode pada satu waktu** (keduanya memakai port 8080 dan 4007).
 
 Mode usulan (dengan Privacy Service), Kong (tepi, TLS) di `https://127.0.0.1:4010`:
 
@@ -49,7 +49,7 @@ docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.basel
 - Sebelum berpindah mode, matikan dulu mode yang menyala.
 - Cek cepat: `curl.exe --ssl-no-revoke --cacert secrets/docker/tls_ca.crt https://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline; `--ssl-no-revoke` hanya karena Windows menanyakan pencabutan sertifikat CA lokal) harus menjawab `"mode":"proposed"` atau `"mode":"baseline"`.
 
-**Tentang `compose.postman.yml`.** Tumpukan resmi hanya mempublikasikan Gateway; dev-idp (penerbit token tiruan) dan sms-simulator sengaja tertutup di jaringan internal. Postman berjalan di host, jadi berkas ini membuka keduanya **hanya di loopback host**: dev-idp di `127.0.0.1:4000` (login tanpa kata sandi, hanya untuk mesin pengembang) dan sms-simulator di `127.0.0.1:4007`. Karena itu keduanya ikut jaringan `edge`. Jangan pakai berkas ini di luar laptop pengembangan, dan jangan dibawa ke fase Keycloak.
+**Tentang `compose.postman.yml`.** Tumpukan resmi hanya mempublikasikan Gateway; Keycloak (penerbit token, DK-04) dan sms-simulator sengaja tertutup di jaringan internal. Postman berjalan di host, jadi berkas ini membuka keduanya **hanya di loopback host**: Keycloak di `127.0.0.1:8080` (password grant dengan kata sandi uji fiktif, hanya untuk mesin pengembang; konsol administrasi tidak punya akun) dan sms-simulator di `127.0.0.1:4007`. Karena itu keduanya ikut jaringan `edge`. Jangan pakai berkas ini di luar laptop pengembangan.
 
 ## 3. Impor dan pilih environment
 
@@ -57,7 +57,7 @@ docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.basel
 2. Pojok kanan atas, pilih environment **privpay-proposed** atau **privpay-baseline** sesuai mode yang menyala. Salah pilih membuat request 1.1 gagal (mode tidak cocok), itu disengaja.
 3. Buka **View > Show Postman Console** (Ctrl+Alt+C). Tests mencetak `[Diharapkan] ...` dan angka penting di sana.
 
-Environment hanya berisi `base_url`, `idp_url`, `sms_url`, `mode`, `compose_project`. Token, nilai uji, dan id disimpan otomatis sebagai variabel koleksi (fiktif; token dev-idp berlaku 300 detik dan diperbarui sendiri).
+Environment berisi `base_url`, `idp_url`, `sms_url`, `mode`, `compose_project`. **Tambahkan sendiri variabel `dev_password` (tipe secret)** di environment: isinya kata sandi uji fiktif yang dibuat `pnpm docker:secrets` di `secrets/docker/keycloak_dev_user_password` (satu kata sandi untuk semua pengguna uji; berkas itu tidak pernah di-commit dan tidak disalin ke koleksi). Token, nilai uji, dan id disimpan otomatis sebagai variabel koleksi (fiktif; token Keycloak berlaku 300 detik dan diperbarui sendiri). Folder 1 (token pertama) memakai password grant ke `{{idp_url}}/realms/privpay/protocol/openid-connect/token`.
 
 ## 4. Urutan klik
 
@@ -126,18 +126,18 @@ npx --yes newman@6.2.1 run docs/postman/privpay-manual.postman_collection.json -
 | Gejala | Penyebab dan jalan keluar |
 | --- | --- |
 | `Could not send request` / ECONNREFUSED | tumpukan belum menyala atau salah mode; cek `curl.exe --ssl-no-revoke --cacert secrets/docker/tls_ca.crt https://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline) |
-| 1.2 gagal `Gagal mengambil token ... dev-idp` | Compose dijalankan tanpa `compose.postman.yml`, sehingga port 4000 tidak terbuka; matikan lalu naikkan lagi dengan tiga `-f` |
-| port 4000 atau 4007 sudah dipakai | mode lain masih menyala, atau proses lokal `pnpm dev:up`; matikan dulu (`dev:down`) |
+| 1.2 gagal 401 atau `Gagal mengambil token ... Keycloak` | variabel `dev_password` kosong atau salah (isi dari `secrets/docker/keycloak_dev_user_password`), atau Compose dijalankan tanpa `compose.postman.yml` sehingga port 8080 tidak terbuka; matikan lalu naikkan lagi dengan tiga `-f` |
+| port 8080 atau 4007 sudah dipakai | mode lain masih menyala, atau proses lokal `pnpm dev:up`; matikan dulu (`dev:down`) |
 | 1.1 gagal "mode gateway = environment" | environment yang dipilih tidak sama dengan mode yang menyala |
 | "Peran token tidak dikenal atau nasabah belum didaftarkan" | folder 3 atau 4 dijalankan sebelum 2.1 dan 2.2 |
 | 5.1 menjawab 409 | normal: satu laporan bank per tanggal; `5.2` tetap memakai laporan yang sudah ada |
 | `up --wait` gagal atau `input/output error` saat pull | disk penuh; bebaskan C: dan disk Docker, lihat `docs/HANDOFF.md` (insiden disk) |
 | 429 muncul di request biasa | batas 100 per menit per pemanggil terlewati (mis. setelah 9.14 untuk nasabah 103); tunggu menit berikutnya |
-| Docker lambat atau kontainer mati sendiri | memori WSL 4 GB hampir habis; matikan mode lain dan aplikasi berat |
+| Docker lambat atau kontainer mati sendiri | memori WSL hampir habis (batas 6 GB; tumpukan penuh dengan Keycloak memakai sekitar 3,5 GB); matikan mode lain dan aplikasi berat |
 | `docker exec` "No such container" | nama kontainer mengikuti mode (`privpay-proposed-...` atau `privpay-baseline-...`); `docker ps` untuk daftarnya |
 
 ## 9. Yang tidak dicakup
 
 - Kinerja (latensi, throughput) tidak diukur dan tidak boleh diklaim dari koleksi ini.
 - Fail-closed Privacy Service dengan kontainer dimatikan (NFR-19) tidak ada di koleksi; itu pekerjaan M7.
-- Keycloak belum ada (dev-idp). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status (tanpa mode); pastikan environment sama dengan mode yang dinyalakan.
+- Keycloak 26.4.0 mode dev (H2, bukan konfigurasi produksi) adalah IdP tumpukan (ADR-0017). Audiens token akun layanan lebih lebar daripada dev-idp (satu token memuat semua layanan yang boleh dipanggil akun itu; keputusan Fanny, keterbatasan dicatat). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status (tanpa mode); pastikan environment sama dengan mode yang dinyalakan.

@@ -102,7 +102,10 @@ services:
     environment:
       TZ: UTC
       BIND_HOST: 0.0.0.0
-      IDP_URL: http://idp:4000
+      IDP_URL: http://keycloak:8080
+      IDP_KIND: keycloak
+      IDP_REALM: privpay
+      IDP_ISSUER: http://keycloak:8080/realms/privpay
       PRIVACY_MODE: proposed
       PORT: '4001'
       PG_HOST: pg-privacy
@@ -132,9 +135,11 @@ services:
     networks: [privacy]
     depends_on:
       migrate-privacy: { condition: service_completed_successfully }
-      idp: { condition: service_healthy }
+      keycloak: { condition: service_healthy }
 
   # The Privacy Service checks every JWT against the IdP's keys, so the IdP is on its network too.
+  keycloak:
+    networks: [business, privacy]
   idp:
     environment: { PRIVACY_MODE: proposed }
     networks: [privacy]

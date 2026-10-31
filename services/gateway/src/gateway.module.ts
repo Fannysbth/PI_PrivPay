@@ -10,12 +10,15 @@ import {
   privacyBaseUrl,
   subjectRefShape,
   DomainError,
+  type Clock,
   type HttpClient,
+  type IdpChoice,
   type TokenCache,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import { loadGatewayConfig } from './config';
+import { devIdpUserDirectory, keycloakUserDirectory, type UserDirectory } from './user-directory';
 import { clientAddress } from './edge/client-address';
 import { baselinePrivacyPort } from './baseline';
 import { ErrorMasker } from './error-masker';
@@ -38,6 +41,34 @@ const UPSTREAMS: readonly Upstream[] = [
   'reconciliation-service',
   'notification-service',
 ];
+
+/** Step A2 of the registration at the IdP in use: Keycloak through its Admin API (client idp-admin), else the dev IdP. */
+function userDirectoryFor(
+  config: ReturnType<typeof loadGatewayConfig>,
+  idp: IdpChoice,
+  http: HttpClient,
+  clock: Clock,
+  devAdminToken: () => TokenCache,
+): UserDirectory {
+  if (config.keycloakAdmin === undefined) {
+    return devIdpUserDirectory({ http, token: devAdminToken() });
+  }
+  return keycloakUserDirectory({
+    http,
+    realm: idp.realm,
+    userPassword: config.keycloakAdmin.userPassword,
+    token: createIdpTokenCache({
+      http,
+      clock,
+      idp,
+      grant: {
+        type: 'client-credentials',
+        clientId: 'idp-admin',
+        clientSecret: config.keycloakAdmin.adminClientSecret,
+      },
+    }),
+  });
+}
 
 @Controller()
 class GatewayController {
@@ -122,11 +153,12 @@ export function gatewayModules(
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
     });
 
+    const idp = idpOf(config);
     const tokenFor = (upstream: Upstream | typeof DEV_IDP): TokenCache =>
       createIdpTokenCache({
         http,
         clock,
-        idp: idpOf(config),
+        idp,
         grant: {
           type: 'client-credentials',
           clientId: CLIENT_ID,
@@ -135,9 +167,13 @@ export function gatewayModules(
         },
       });
 
+    // Keycloak ignores the audience asked for (ADR-0017): one token names every service the account may call, so one cache
+    // serves all upstreams instead of five identical token requests.
+    const sharedKeycloakToken = idp.kind === 'keycloak' ? tokenFor('privacy-service') : undefined;
     const serviceTokens = Object.fromEntries(
-      UPSTREAMS.map((upstream) => [upstream, tokenFor(upstream)]),
+      UPSTREAMS.map((upstream) => [upstream, sharedKeycloakToken ?? tokenFor(upstream)]),
     ) as Record<Upstream, TokenCache>;
+    const users = userDirectoryFor(config, idp, http, clock, () => tokenFor(DEV_IDP));
     const masker = new ErrorMasker();
     const ids = new TransactionIdGenerator(clock);
 
@@ -159,7 +195,7 @@ export function gatewayModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: idpJwksSource(http, idpOf(config)),
+        source: idpJwksSource(http, idp),
       }),
       http,
       masker,
@@ -173,7 +209,7 @@ export function gatewayModules(
         privacy,
         masker,
         domainRef: subjectRefShape(config.PRIVACY_MODE).customer,
-        idpAdminToken: tokenFor(DEV_IDP),
+        users,
         notificationToken: serviceTokens['notification-service'],
         logger: createLogger({ service: 'gateway', destination: overrides.logDestination }),
       }),

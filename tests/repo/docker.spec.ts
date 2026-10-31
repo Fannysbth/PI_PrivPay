@@ -119,19 +119,22 @@ describe.each(MODES)(
       }
     });
 
-    it('DK-04 Keycloak is a profile, never in the default stack, within 768 MiB with a capped heap, not published, no bootstrap secret', () => {
+    it('DK-04 Keycloak is the IdP of the stack (the dev IdP only by its profile), within 768 MiB with a capped heap, not published, no bootstrap secret', () => {
       const keycloak = services['keycloak'];
-      expect(keycloak?.profiles).toEqual(['keycloak']);
-      expect(services['keycloak-realm']?.profiles).toEqual(['keycloak']);
-      // The dev IdP is not in that profile: the two cannot be started together by the profile alone.
-      expect(services['idp']?.profiles).toBeUndefined();
+      expect(keycloak?.profiles).toBeUndefined();
+      expect(services['keycloak-realm']?.profiles).toBeUndefined();
+      // The dev IdP is for dev:up and fast tests: Compose starts it only when asked, so the two never run together.
+      expect(services['idp']?.profiles).toEqual(['dev-idp']);
       expect(keycloak?.image).toMatch(
         /^quay\.io\/keycloak\/keycloak:26\.4\.0@sha256:[0-9a-f]{64}$/,
       );
       expect(keycloak?.deploy?.resources?.limits?.memory).toBe('768M');
       expect(keycloak?.environment?.['JAVA_OPTS_KC_HEAP']).toMatch(/-Xmx320m/);
       expect(keycloak?.ports).toBeUndefined();
-      expect(keycloak?.networks).toEqual(['business']);
+      // The Privacy Service checks its tokens against the keys of the IdP, so in the proposed condition Keycloak is on privacy too.
+      expect(keycloak?.networks).toEqual(
+        mode === 'proposed' ? ['business', 'privacy'] : ['business'],
+      );
       expect(keycloak?.user).toBeUndefined();
       const environment = Object.keys(keycloak?.environment ?? {});
       expect(environment.filter((key) => /BOOTSTRAP|PASSWORD|SECRET/.test(key))).toEqual([]);
@@ -164,6 +167,10 @@ describe.each(MODES)(
           expect(service.image).toMatch(/^postgres:16\.\d+@sha256:[0-9a-f]{64}$/);
         else if (name === 'kong')
           expect(service.image).toMatch(/^kong:3\.9\.4@sha256:[0-9a-f]{64}$/);
+        else if (name === 'keycloak')
+          expect(service.image).toMatch(
+            /^quay\.io\/keycloak\/keycloak:26\.4\.0@sha256:[0-9a-f]{64}$/,
+          );
         else expect(service.image).toMatch(/^privpay-[a-z-]+:dk01a$/);
       }
     });
@@ -242,6 +249,13 @@ describe.each(MODES)(
         'EDGE_TOKENIZATION',
         'EDGE_ADAPTER_SECRET_FILE',
         'ACCESS_TOKEN_TTL_SECONDS',
+        // DK-04: Keycloak is the IdP only in Docker (dev:up keeps the dev IdP); the registration and the bank sign in with files.
+        'IDP_KIND',
+        'IDP_REALM',
+        'IDP_ISSUER',
+        'IDP_ADMIN_CLIENT_SECRET_FILE',
+        'IDP_USER_PASSWORD_FILE',
+        'BANK_PASSWORD_FILE',
       ]);
       const localOnly = new Set(['PG_DATABASE_SUFFIX']);
       for (const planned of buildPlan(mode, { secretsDir: 'secrets' })) {
@@ -295,7 +309,12 @@ describe('DK-01 the two conditions differ only by the privacy layer (ADR-0003, N
     for (const mode of MODES) {
       for (const [name, service] of Object.entries(merged(mode))) {
         // Kong and its config step read no PRIVACY_MODE: the edge is the same in both conditions (DK-02a).
-        if (service.profiles !== undefined || name.startsWith('pg-') || name === 'kong') continue;
+        if (
+          service.profiles !== undefined ||
+          name.startsWith('pg-') ||
+          ['kong', 'keycloak', 'keycloak-realm'].includes(name)
+        )
+          continue;
         expect({ name, mode: service.environment?.['PRIVACY_MODE'] }).toEqual({ name, mode });
       }
       expect(base.services['gateway']?.environment?.['PRIVACY_MODE']).toBeUndefined();
@@ -418,6 +437,7 @@ describe.each(MODES)('DK-03 the three networks and TLS in the %s condition (NFR-
           'gateway',
           'idp',
           'kong',
+          'keycloak',
           'migrate-privacy',
           'notification-service',
           'pg-privacy',

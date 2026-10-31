@@ -29,13 +29,22 @@ local function fetch_service_token(conf)
   end
   local client = http.new()
   client:set_timeout(conf.timeout_ms)
-  local answer = client:request_uri(conf.idp_url .. "/token", {
-    method = "POST",
-    headers = { ["Content-Type"] = "application/json" },
+  local headers, body
+  if conf.idp_form then
+    -- Keycloak ignores the audience: the audiences of the account come from its roles (ADR-0017).
+    headers = { ["Content-Type"] = "application/x-www-form-urlencoded" }
+    body = ngx.encode_args({ grant_type = "client_credentials", client_id = conf.client_id, client_secret = secret })
+  else
+    headers = { ["Content-Type"] = "application/json" }
     body = cjson.encode({
       grant_type = "client_credentials", client_id = conf.client_id, client_secret = secret,
       audience = { "privacy-service" },
-    }),
+    })
+  end
+  local answer = client:request_uri(conf.idp_url .. (conf.idp_token_path or "/token"), {
+    method = "POST",
+    headers = headers,
+    body = body,
   })
   if not answer or answer.status ~= 200 then
     return nil, "token request failed"
