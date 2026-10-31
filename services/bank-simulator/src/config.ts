@@ -1,4 +1,10 @@
-import { httpConfigSchema, idpConfigShape, loadConfig, type EnvSource } from '@privpay/common';
+import {
+  httpConfigSchema,
+  idpConfigShape,
+  loadConfig,
+  readSecret,
+  type EnvSource,
+} from '@privpay/common';
 import { z } from 'zod';
 
 // Addresses of the other processes come from configuration only (API7): no caller names a URL.
@@ -22,7 +28,15 @@ export const bankSimulatorConfigSchema = z.object({
   BANK_USERNAME: z.string().regex(/^[a-z0-9._-]{1,64}$/),
   BANK_SIMULATOR_TEST_ENDPOINTS: flag,
 });
-export type BankSimulatorConfig = z.output<typeof bankSimulatorConfigSchema>;
+export type BankSimulatorConfig = z.output<typeof bankSimulatorConfigSchema> & {
+  /** DK-04: Keycloak signs the bank user in by password (a file, never a value); the dev IdP needs none. */
+  readonly BANK_PASSWORD: string | undefined;
+};
 
-export const loadBankSimulatorConfig = (env: EnvSource): BankSimulatorConfig =>
-  loadConfig(bankSimulatorConfigSchema, env);
+export function loadBankSimulatorConfig(env: EnvSource): BankSimulatorConfig {
+  const config = loadConfig(bankSimulatorConfigSchema, env);
+  return {
+    ...config,
+    BANK_PASSWORD: config.IDP_KIND === 'keycloak' ? readSecret(env, 'BANK_PASSWORD') : undefined,
+  };
+}

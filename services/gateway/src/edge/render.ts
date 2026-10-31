@@ -1,5 +1,9 @@
 import {
+  idpChoiceShape,
   idpConfigShape,
+  idpEndpoints,
+  idpOf,
+  jwksBodyFor,
   loadConfig,
   modeConfigShape,
   privacyUrlMatchesMode,
@@ -27,6 +31,7 @@ const schema = z
     TOKENIZER_EDGE_SECRET_NAME: secretName.optional(),
     IDP_URL: idpConfigShape.IDP_URL,
     IDP_ISSUER: idpConfigShape.IDP_ISSUER,
+    ...idpChoiceShape,
     KONG_UPSTREAM_URL: serviceUrl,
     RATE_LIMIT_ENABLED: z
       .enum(['true', 'false'])
@@ -39,15 +44,25 @@ const schema = z
     // ADR-0007 item 7.
     ACCESS_TOKEN_MAX_LIFETIME_SECONDS: z.coerce.number().int().min(1).max(3600).default(300),
   })
-  .superRefine(privacyUrlMatchesMode);
+  .superRefine(privacyUrlMatchesMode)
+  .superRefine((config, ctx) => {
+    // The issuer of Keycloak is the address of its realm; the default belongs to the dev IdP and would reject every token.
+    if (config.IDP_KIND === 'keycloak' && config.IDP_ISSUER === 'privpay-dev-idp') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['IDP_ISSUER'],
+        message: 'set it to the issuer of the realm',
+      });
+    }
+  });
 
 const jwks = z.object({ keys: z.array(z.record(z.string(), z.unknown())) });
 const FETCH_TIMEOUT_MS = 3000;
 
-async function fetchJwks(idpUrl: string, fetchImpl: typeof fetch): Promise<unknown> {
+async function fetchJwks(idpUrl: string, path: string, fetchImpl: typeof fetch): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetchImpl(new URL('/.well-known/jwks.json', idpUrl).toString(), {
+    response = await fetchImpl(new URL(path, idpUrl).toString(), {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch {
@@ -69,7 +84,15 @@ export async function renderKongConfig(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const config = loadConfig(schema, env);
-  const parsed = jwks.safeParse(await fetchJwks(config.IDP_URL, fetchImpl));
+  const idp = idpOf(config);
+  const answer = await fetchJwks(config.IDP_URL, idpEndpoints(idp).jwks, fetchImpl);
+  let body: unknown;
+  try {
+    body = jwksBodyFor(idp, answer);
+  } catch {
+    throw new Error('the IdP must publish exactly one signing key');
+  }
+  const parsed = jwks.safeParse(body);
   if (!parsed.success) throw new Error('the IdP answer is not a JWKS');
   const [key, ...rest] = parsed.data.keys;
   if (key === undefined || rest.length > 0) {

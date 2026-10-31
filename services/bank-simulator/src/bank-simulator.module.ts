@@ -2,7 +2,8 @@ import 'reflect-metadata';
 import { Body, Controller, HttpCode, Inject, Module, Post, type Type } from '@nestjs/common';
 import {
   createHttpClient,
-  createTokenCache,
+  createIdpTokenCache,
+  idpOf,
   DomainError,
   type HttpClient,
   type TokenCache,
@@ -37,11 +38,6 @@ const simulateBody = z.strictObject({
     .regex(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/)
     .refine(isRealDate),
   inject: z.array(z.enum(INJECTIONS)).max(INJECTIONS.length).optional(),
-});
-
-const tokenAnswer = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().int().min(1).max(300),
 });
 
 interface ReportItem {
@@ -135,24 +131,15 @@ export function bankSimulatorModules(
       maxRetries: config.HTTP_MAX_RETRY,
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
     });
-    const bankToken = createTokenCache({
+    const bankToken = createIdpTokenCache({
+      http,
       clock,
-      fetchToken: async () => {
-        const answer = await http.request({
-          service: 'idp',
-          method: 'POST',
-          path: '/token',
-          body: { grant_type: 'dev_login', client_id: CLIENT_ID, username: config.BANK_USERNAME },
-          idempotent: true,
-        });
-        const parsed = tokenAnswer.safeParse(answer.body);
-        if (answer.status !== 200 || !parsed.success) {
-          throw new DomainError('SERVICE_UNAVAILABLE', 'token');
-        }
-        return {
-          token: parsed.data.access_token,
-          expiresAt: new Date(clock.now().getTime() + parsed.data.expires_in * 1000),
-        };
+      idp: idpOf(config),
+      grant: {
+        type: 'login',
+        clientId: CLIENT_ID,
+        username: config.BANK_USERNAME,
+        ...(config.BANK_PASSWORD === undefined ? {} : { password: config.BANK_PASSWORD }),
       },
     });
     const controllers: Type[] = config.BANK_SIMULATOR_TEST_ENDPOINTS ? [SimulateController] : [];

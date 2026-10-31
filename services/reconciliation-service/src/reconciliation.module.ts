@@ -16,9 +16,9 @@ import {
   createHttpClient,
   createLogger,
   createServicePool,
-  createTokenCache,
-  DomainError,
+  createIdpTokenCache,
   idpJwksSource,
+  idpOf,
   JwksKeys,
   privacyBaseUrl,
   schedulerProviders,
@@ -30,7 +30,6 @@ import {
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
-import { z } from 'zod';
 import { loadReconciliationConfig, readClientSecret } from './config';
 import {
   ReconciliationService,
@@ -48,11 +47,6 @@ const CLIENT_ID = 'reconciliation';
 
 const RECONCILIATION_HTTP = Symbol('RECONCILIATION_HTTP');
 const OWNED_POOLS = Symbol('OWNED_POOLS');
-
-const tokenAnswer = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().int().min(1).max(300),
-});
 
 @Controller()
 class ReconciliationController {
@@ -149,30 +143,11 @@ export function reconciliationModules(
       overrides.transactions === undefined || privacyOverHttp ? readClientSecret(env) : '';
     // One cached service token per service it calls (NFR-21); the secret never leaves this closure.
     const tokenFor = (audience: string): TokenCache =>
-      createTokenCache({
+      createIdpTokenCache({
+        http,
         clock,
-        fetchToken: async () => {
-          const answer = await http.request({
-            service: 'idp',
-            method: 'POST',
-            path: '/token',
-            body: {
-              grant_type: 'client_credentials',
-              client_id: CLIENT_ID,
-              client_secret: clientSecret,
-              audience: [audience],
-            },
-            idempotent: true,
-          });
-          const parsed = tokenAnswer.safeParse(answer.body);
-          if (answer.status !== 200 || !parsed.success) {
-            throw new DomainError('SERVICE_UNAVAILABLE', 'token');
-          }
-          return {
-            token: parsed.data.access_token,
-            expiresAt: new Date(clock.now().getTime() + parsed.data.expires_in * 1000),
-          };
-        },
+        idp: idpOf(config),
+        grant: { type: 'client-credentials', clientId: CLIENT_ID, clientSecret, audience },
       });
     const logger = createLogger({
       service: 'reconciliation-service',
@@ -204,7 +179,7 @@ export function reconciliationModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: idpJwksSource(http),
+        source: idpJwksSource(http, idpOf(config)),
       }),
       reconciliation: service,
       accountRef: subjectRefShape(mode).account,

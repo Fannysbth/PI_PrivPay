@@ -1,3 +1,17 @@
+# HANDOFF (2026-10-31): DK-04 sesi A SELESAI di `feat/dk-04-a` (pengambil token/JWKS bersama + profil Compose Keycloak); tiket 3 (sesi B) menunggu
+
+| Butir | Bukti |
+| --- | --- |
+| Tiket 1: `createIdpTokenCache`, `idpJwksSource(http, idp)`, `HttpRequest.form`, `IDP_KIND`/`IDP_REALM` | unit 1497 hijau (default dev-idp, perilaku tidak berubah); integrasi gateway + bank-simulator 62, http-integrasi lima layanan 231; tes pengambil token terhadap fake dev-idp dan Keycloak, dan terhadap Keycloak asli (spek Docker) |
+| Tiket 2: profil `keycloak` di Compose | `--profile keycloak up -d --wait keycloak` sehat; `pnpm docker:keycloak-check` 5/5 dari dalam jaringan; tes statis profil |
+| Memori | Keycloak 455 MiB (idle) sampai 498 MiB (setelah token) dari batas 768 MiB, heap 320 MiB; memori bebas laptop 0,78 sampai 0,91 GB dengan Docker menyala (hanya Keycloak, BUKAN tumpukan penuh) |
+| Spek Keycloak sekali pakai | `pnpm test:edge tests/docker/keycloak-claims`: 15 lulus |
+
+## Tiket 3 (sesi B)
+Port registrasi Admin API di adapter (customer_id `CUST-` + 6 digit acak, periksa atribut, kompensasi), pindahkan tumpukan ke Keycloak (`IDP_KIND=keycloak`, `IDP_URL`, `IDP_ISSUER`, bank-simulator `BANK_PASSWORD_FILE`; hanya salah satu dari `idp` dan Keycloak), Postman (password grant, variabel `dev_password`) dan README, Newman dua mode (target 149 request, 115 dan 103 asersi, 0 gagal), mutasi lewat Kong, payload scan ulang, memori tumpukan penuh (berhenti bila bebas < 0,9 GB; restart Docker/WSL dulu). Catatan desain di ADR-0017: `aud` token akun layanan di Keycloak memuat semua audiens akun itu.
+
+Skill: /simplify, /code-review atas diff sesi ini, /run (Keycloak nyata). Tidak dikerjakan: tiket 3, DK-06, M6, M7.
+
 # HANDOFF (2026-10-31): DK-04 SEBAGIAN di `feat/dk-04` (Keycloak: realm dan pemetaan klaim terbukti; belum disambung ke Compose/layanan)
 
 Tiga keputusan Fanny dikerjakan sebagai komit kecil: DK-02c ditutup tanpa kode (ADR-0016, OPEN_QUESTIONS), aturan spek Docker di CLAUDE.md, `/simplify` DK-02b (payload scan mengambil dump sekali; temuan lain dilewati karena mengubah perilaku atau marginal). Dua keputusan DK-04: customer_id tetap `CUST-nnnnnn` (adapter membangkitkan acak dan memeriksa atribut lewat Admin API), satu kata sandi uji dari secrets.

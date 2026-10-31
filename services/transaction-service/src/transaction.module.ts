@@ -18,9 +18,10 @@ import {
   createHttpClient,
   createLogger,
   createServicePool,
+  createIdpTokenCache,
   createTokenCache,
-  DomainError,
   idpJwksSource,
+  idpOf,
   JwksKeys,
   privacyBaseUrl,
   readSecret,
@@ -29,6 +30,7 @@ import {
   subjectRefShape,
   type Delay,
   type HttpClient,
+  type IdpChoice,
   type PrivacyMode,
   type Timers,
   type TokenCache,
@@ -37,7 +39,6 @@ import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
 import { loadTransactionConfig } from './config';
-import { z } from 'zod';
 import { HttpFraudClient, HttpNotificationClient, HttpPrivacyClient } from './transaction/clients';
 import {
   baselinePrivacyStatus,
@@ -62,11 +63,6 @@ const OWNED_POOLS = Symbol('OWNED_POOLS');
 const PENDING_SWEEPER = Symbol('PENDING_SWEEPER');
 /** The service account of Transaction at the IdP (tools/dev-idp registry). */
 const CLIENT_ID = 'transaction';
-const tokenAnswer = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().positive(),
-});
-
 @Controller()
 class TransactionController {
   constructor(@Inject(TRANSACTION_HTTP) private readonly transactions: TransactionHttp) {}
@@ -173,7 +169,8 @@ export function transactionModules(
       mode === 'baseline'
         ? baselineTransactionRepository(mode, app)
         : proposedTransactionRepository(app);
-    const neighbours = overrides.neighbours ?? httpNeighbours(http, env, clock, mode);
+    const neighbours =
+      overrides.neighbours ?? httpNeighbours(http, env, clock, mode, idpOf(config));
     const transactions = new TransactionHttp({
       clock,
       issuer: config.IDP_ISSUER,
@@ -181,7 +178,7 @@ export function transactionModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: idpJwksSource(http),
+        source: idpJwksSource(http, idpOf(config)),
       }),
       processor: new TransactionProcessor({
         repository,
@@ -238,33 +235,15 @@ function httpNeighbours(
   env: Readonly<Record<string, string | undefined>>,
   clock: Parameters<typeof createTokenCache>[0]['clock'],
   mode: PrivacyMode,
+  idp: IdpChoice,
 ) {
   const clientSecret = readSecret(env, 'TRANSACTION_CLIENT_SECRET');
   const tokenFor = (audience: string): TokenCache =>
-    createTokenCache({
+    createIdpTokenCache({
+      http,
       clock,
-      fetchToken: async () => {
-        const answer = await http.request({
-          service: 'idp',
-          method: 'POST',
-          path: '/token',
-          body: {
-            grant_type: 'client_credentials',
-            client_id: CLIENT_ID,
-            client_secret: clientSecret,
-            audience: [audience],
-          },
-          idempotent: true,
-        });
-        const parsed = tokenAnswer.safeParse(answer.body);
-        if (answer.status !== 200 || !parsed.success) {
-          throw new DomainError('SERVICE_UNAVAILABLE', 'token');
-        }
-        return {
-          token: parsed.data.access_token,
-          expiresAt: new Date(clock.now().getTime() + parsed.data.expires_in * 1000),
-        };
-      },
+      idp,
+      grant: { type: 'client-credentials', clientId: CLIENT_ID, clientSecret, audience },
     });
   // Baseline has no Privacy: no client, no service token for it, and the identity goes on as it is (ADR-0006 no. 6).
   const toward =

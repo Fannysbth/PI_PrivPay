@@ -17,6 +17,12 @@ const ENV = {
   IDP_URL: 'http://idp:4000',
   KONG_UPSTREAM_URL: 'http://gateway:4010',
 };
+const keycloakKeys = {
+  keys: [
+    { kty: 'RSA', kid: 'enc-1', alg: 'RSA-OAEP', use: 'enc', n: 'AQAB', e: 'AQAB', x5c: ['cert'] },
+    { ...jwk(), x5c: ['cert'], 'x5t#S256': 'thumb' },
+  ],
+};
 const answer =
   (body: unknown, status = 200): typeof fetch =>
   () =>
@@ -132,5 +138,44 @@ describe('DK-02b renderKongConfig tells the tokenizing plugin the mode', () => {
     await expect(renderKongConfig(noSecret, answer({ keys: [jwk()] }))).rejects.toThrow(
       /edgeSecretFile/,
     );
+  });
+});
+
+describe('DK-04 renderKongConfig with Keycloak', () => {
+  const keycloak = {
+    ...ENV,
+    IDP_KIND: 'keycloak',
+    IDP_URL: 'http://keycloak:8080',
+    IDP_ISSUER: 'http://keycloak:8080/realms/privpay',
+  };
+
+  it('DK-04 asks the certs path of the realm, keeps the signing key only, and uses the issuer of the realm', async () => {
+    const urls: string[] = [];
+    const fake = ((url: string) => {
+      urls.push(url);
+      return Promise.resolve(new Response(JSON.stringify(keycloakKeys)));
+    }) as unknown as typeof fetch;
+    const config = JSON.parse(await renderKongConfig(keycloak, fake)) as {
+      consumers: { jwt_secrets: { key: string }[] }[];
+    };
+    expect(urls).toEqual(['http://keycloak:8080/realms/privpay/protocol/openid-connect/certs']);
+    expect(config.consumers[0]?.jwt_secrets[0]?.key).toBe('http://keycloak:8080/realms/privpay');
+  });
+
+  it('DK-04 two signing keys, or none, stop the start', async () => {
+    const second = { ...jwk(), kid: 'sig-2' };
+    await expect(
+      renderKongConfig(keycloak, answer({ keys: [...keycloakKeys.keys, second] })),
+    ).rejects.toThrow(/exactly one/);
+    await expect(
+      renderKongConfig(keycloak, answer({ keys: [keycloakKeys.keys[0]] })),
+    ).rejects.toThrow(/exactly one/);
+  });
+});
+
+describe('DK-04 review fixes for the render step', () => {
+  it('DK-04 Keycloak without the issuer of the realm stops the start (the dev IdP default would reject every token)', async () => {
+    const keycloak = { ...ENV, IDP_KIND: 'keycloak', IDP_URL: 'http://keycloak:8080' };
+    await expect(renderKongConfig(keycloak, answer(keycloakKeys))).rejects.toThrow(/IDP_ISSUER/);
   });
 });

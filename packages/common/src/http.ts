@@ -20,6 +20,8 @@ export interface HttpRequest {
   /** Absolute path on that service, optionally with a query string. */
   readonly path: string;
   readonly body?: unknown;
+  /** A form-urlencoded body instead of JSON (the token endpoint of Keycloak). Not together with `body`. */
+  readonly form?: Readonly<Record<string, string>>;
   /**
    * Only idempotent requests are retried (NFR-12). Idempotent: POST /pseudonymize, POST /resolve-domain,
    * POST /re-issue, PATCH /transaction-status, POST /notification/register, and every GET.
@@ -184,14 +186,26 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   return {
     async request(request: HttpRequest): Promise<HttpResponse> {
       const url = urlFor(request);
-      const body = serialise(request.body);
+      if (request.form !== undefined && request.body !== undefined)
+        throw callerBug('body_and_form');
+      if (request.form !== undefined && Object.keys(request.form).length === 0)
+        throw callerBug('empty_form');
+      const body =
+        request.form === undefined
+          ? serialise(request.body)
+          : new URLSearchParams(request.form).toString();
       const authorization = await authorizationFor(request);
       if (request.actorToken !== undefined && !TOKEN_CHARS.test(request.actorToken)) {
         throw callerBug('invalid_actor_token');
       }
 
       const headers = new Headers();
-      if (body !== undefined) headers.set('content-type', 'application/json');
+      if (body !== undefined) {
+        headers.set(
+          'content-type',
+          request.form === undefined ? 'application/json' : 'application/x-www-form-urlencoded',
+        );
+      }
       if (authorization !== undefined) headers.set('authorization', authorization);
       if (request.actorToken !== undefined) headers.set('x-actor-token', request.actorToken);
       headers.set(

@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-04 sesi A: pengambil token/JWKS bersama dan profil Compose Keycloak (feat/dk-04-a, ADR-0017)
+
+- `packages/common/src/idp.ts`: `createIdpTokenCache` (satu pengambil token untuk gateway, transaction, notification, reconciliation, bank-simulator; `IDP_KIND`=`dev-idp` bawaan, jadi perilaku tidak berubah), `idpEndpoints`, `signingKeysOf`; `idpJwksSource(http, idp)`; `HttpRequest.form`. Bank-simulator: `BANK_PASSWORD_FILE` hanya bila `IDP_KIND=keycloak`.
+- Compose: profil `keycloak` (`keycloak-realm` + `keycloak`, 768 MiB, heap 320 MiB, tanpa administrator bootstrap). `pnpm docker:keycloak-check` memeriksa klaim dari dalam jaringan. Tes: 15 tes Keycloak sekali pakai (termasuk helper bersama terhadap Keycloak asli), unit 1497+, integrasi 62+231 (layanan yang memakai modul), tes statis profil.
+
 ### DK-04 (sebagian) Keycloak: realm dan pemetaan klaim terbukti (feat/dk-04, ADR-0017)
 
 - `scripts/docker/keycloak-realm.cjs` merender realm `privpay` dari tabel sistem dan berkas rahasia (tanpa literal). `pnpm test:edge tests/docker/keycloak-claims`: 13 tes pada Keycloak 26.4.0 sekali pakai (klaim lolos `authenticate()`, audiens per peran/akun layanan, satu peran, `customer_id` CUST-nnnnnn, peran ganda ditolak, Admin API `idp-admin`). Rahasia baru: `idp-admin_client_secret`, `keycloak_dev_user_password`. Belum disambung ke Compose dan layanan (ADR-0017, Status).

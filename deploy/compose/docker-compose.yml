@@ -106,11 +106,14 @@ secrets:
   tls_privacy_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_privacy.key' }
   tls_kong_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.crt' }
   tls_kong_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.key' }
+  idp-admin_client_secret: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/idp-admin_client_secret' }
+  keycloak_dev_user_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/keycloak_dev_user_password' }
   edge_adapter_secret: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/edge_adapter_secret' }
   grafana_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/grafana_admin_password' }
 
 volumes:
   idp-state: {}
+  keycloak-import: {}
   kong-config: {}
   pgdata-privacy: {}
   pgdata-transaction: {}
@@ -377,7 +380,7 @@ services:
   gateway:
     <<: [*hardening, *limits, *node-health]
     image: privpay-gateway:dk01a
-    build:
+    build: &build-gateway-image
       context: ../..
       dockerfile: deploy/docker/Dockerfile
       args: { SERVICE_PKG: '@privpay/gateway', SERVICE_DIR: services/gateway }
@@ -468,6 +471,61 @@ services:
     depends_on:
       kong-config: { condition: service_completed_successfully }
       gateway: { condition: service_healthy }
+
+  # ---- Keycloak (DK-04, ADR-0017): a profile, NOT part of the default stack ----
+  # `docker compose --profile keycloak up -d keycloak` starts Keycloak alone (the realm is rendered first, from secret files).
+  # It is not the IdP of the stack yet (the services still use `idp`), and the two must not run together in the full
+  # stack; ticket 3 of DK-04 moves the stack over. There is no bootstrap administrator: nobody can sign in to the console,
+  # and the realm is managed by the client `idp-admin` only.
+  keycloak-realm:
+    <<: [*hardening, *limits]
+    profiles: [keycloak]
+    restart: 'no'
+    image: privpay-gateway:dk01a
+    build: *build-gateway-image
+    command: ['node', '/render/keycloak-realm.cjs', '/run/secrets', '/state/privpay-realm.json']
+    secrets:
+      [api-gateway_client_secret, transaction_client_secret, fraud_client_secret, notification_client_secret, reconciliation_client_secret, idp-admin_client_secret, keycloak_dev_user_password]
+    volumes:
+      - 'keycloak-import:/state'
+      - '../../scripts/docker/keycloak-realm.cjs:/render/keycloak-realm.cjs:ro'
+    networks: [business]
+
+  keycloak:
+    profiles: [keycloak]
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    # Not read-only: `start-dev` builds its runtime (lib/quarkus) and keeps an H2 file at start. The user is the image's own (keycloak).
+    restart: unless-stopped
+    tmpfs: ['/tmp']
+    image: quay.io/keycloak/keycloak:26.4.0@sha256:5f3fb534cde6bf006d79f5912473e5d2c828c707cdfc52e16972803aca9d43dd
+    command: ['start-dev', '--import-realm']
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 768M
+    environment:
+      KC_HOSTNAME: http://keycloak:8080
+      KC_HOSTNAME_STRICT: 'false'
+      KC_HEALTH_ENABLED: 'true'
+      # The JVM heap is capped so the container stays within its limit (the rest is metaspace, threads and native memory).
+      JAVA_OPTS_KC_HEAP: -Xms128m -Xmx320m
+    volumes: ['keycloak-import:/opt/keycloak/data/import:ro']
+    networks: [business]
+    healthcheck:
+      # The image has no curl and /bin/sh has no /dev/tcp; bash opens the management port and asks for readiness.
+      test:
+        - CMD
+        - bash
+        - -c
+        - 'exec 3<>/dev/tcp/127.0.0.1/9000 && printf "GET /health/ready HTTP/1.0\r\n\r\n" >&3 && grep -q UP <&3'
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    depends_on:
+      keycloak-realm: { condition: service_completed_successfully }
 
   # ---- One-off check from inside the network (`pnpm docker:smoke`): the IdP and the SMS simulator are not published. ----
   smoke:

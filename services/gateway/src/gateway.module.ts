@@ -3,8 +3,9 @@ import { All, Controller, Inject, Module, Req, Res } from '@nestjs/common';
 import {
   createHttpClient,
   createLogger,
-  createTokenCache,
+  createIdpTokenCache,
   idpJwksSource,
+  idpOf,
   JwksKeys,
   privacyBaseUrl,
   subjectRefShape,
@@ -14,7 +15,6 @@ import {
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
-import { z } from 'zod';
 import { loadGatewayConfig } from './config';
 import { clientAddress } from './edge/client-address';
 import { baselinePrivacyPort } from './baseline';
@@ -38,11 +38,6 @@ const UPSTREAMS: readonly Upstream[] = [
   'reconciliation-service',
   'notification-service',
 ];
-
-const tokenAnswer = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().int().min(1).max(300),
-});
 
 @Controller()
 class GatewayController {
@@ -128,28 +123,15 @@ export function gatewayModules(
     });
 
     const tokenFor = (upstream: Upstream | typeof DEV_IDP): TokenCache =>
-      createTokenCache({
+      createIdpTokenCache({
+        http,
         clock,
-        fetchToken: async () => {
-          const answer = await http.request({
-            service: 'idp',
-            method: 'POST',
-            path: '/token',
-            body: {
-              grant_type: 'client_credentials',
-              client_id: CLIENT_ID,
-              client_secret: config.clientSecret,
-              audience: [upstream],
-            },
-            idempotent: true,
-          });
-          const parsed = tokenAnswer.safeParse(answer.body);
-          if (answer.status !== 200 || !parsed.success)
-            throw new DomainError('SERVICE_UNAVAILABLE', 'token');
-          return {
-            token: parsed.data.access_token,
-            expiresAt: new Date(clock.now().getTime() + parsed.data.expires_in * 1000),
-          };
+        idp: idpOf(config),
+        grant: {
+          type: 'client-credentials',
+          clientId: CLIENT_ID,
+          clientSecret: config.clientSecret,
+          audience: upstream,
         },
       });
 
@@ -177,7 +159,7 @@ export function gatewayModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: idpJwksSource(http),
+        source: idpJwksSource(http, idpOf(config)),
       }),
       http,
       masker,
