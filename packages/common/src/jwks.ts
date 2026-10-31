@@ -2,6 +2,7 @@ import { createPublicKey, type KeyObject } from 'node:crypto';
 import type { Clock } from './clock';
 import { DomainError } from './errors';
 import type { HttpClient } from './http';
+import { DEV_IDP, idpChoiceShape, idpEndpoints, signingKeysOf, type IdpChoice } from './idp';
 import { z } from 'zod';
 
 /**
@@ -12,6 +13,8 @@ export const idpConfigShape = {
   // Addresses of the other processes come from configuration only (API7): the client never names a URL.
   IDP_URL: z.url({ protocol: /^https?$/, hostname: z.regexes.hostname }),
   IDP_ISSUER: z.string().min(1).max(128).default('privpay-dev-idp'),
+  // DK-04: which IdP (dev-idp by default), and the realm of Keycloak.
+  ...idpChoiceShape,
   /** Minimum seconds between two reloads of the issuer's keys caused by an unknown key id. */
   JWKS_REFRESH_COOLDOWN_SECONDS: z.coerce.number().int().min(1).default(30),
   /** Keys older than this are reloaded, so a key the IdP withdrew stops being trusted (FR-01). */
@@ -19,17 +22,18 @@ export const idpConfigShape = {
 };
 
 /** The IdP's JWKS over the shared HTTP client; `http` must know a base URL named `idp`. */
-export function idpJwksSource(http: HttpClient): JwksSource {
+export function idpJwksSource(http: HttpClient, idp: IdpChoice = DEV_IDP): JwksSource {
   return {
     fetch: async () => {
       const answer = await http.request({
         service: 'idp',
         method: 'GET',
-        path: '/.well-known/jwks.json',
+        path: idpEndpoints(idp).jwks,
         idempotent: true,
       });
       if (answer.status !== 200) throw new DomainError('SERVICE_UNAVAILABLE', 'jwks');
-      return answer.body;
+      // Keycloak publishes more than the signing key; the dev IdP's answer is read as it is, strictly.
+      return idp.kind === 'keycloak' ? signingKeysOf(answer.body) : answer.body;
     },
   };
 }

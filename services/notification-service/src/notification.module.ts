@@ -14,9 +14,9 @@ import {
 import {
   createHttpClient,
   createServicePool,
-  createTokenCache,
-  DomainError,
+  createIdpTokenCache,
   idpJwksSource,
+  idpOf,
   JwksKeys,
   privacyBaseUrl,
   subjectRefShape,
@@ -26,7 +26,6 @@ import {
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import type { Pool } from 'pg';
-import { z } from 'zod';
 import { baselineContactRepository, baselinePrivacyClient } from './baseline';
 import { proposedContactRepository } from './proposed';
 import { loadNotificationConfig } from './config';
@@ -44,11 +43,6 @@ const CLIENT_ID = 'notification';
 
 const NOTIFICATION_HTTP = Symbol('NOTIFICATION_HTTP');
 const OWNED_POOLS = Symbol('OWNED_POOLS');
-
-const tokenAnswer = z.object({
-  access_token: z.string().min(1),
-  expires_in: z.number().int().min(1).max(300),
-});
 
 @Controller()
 class NotificationController {
@@ -121,29 +115,15 @@ export function notificationModules(
     });
     // One cached service token per service it calls (NFR-21); the secret never leaves this closure.
     const tokenFor = (audience: string): TokenCache =>
-      createTokenCache({
+      createIdpTokenCache({
+        http,
         clock,
-        fetchToken: async () => {
-          const answer = await http.request({
-            service: 'idp',
-            method: 'POST',
-            path: '/token',
-            body: {
-              grant_type: 'client_credentials',
-              client_id: CLIENT_ID,
-              client_secret: config.clientSecret,
-              audience: [audience],
-            },
-            idempotent: true,
-          });
-          const parsed = tokenAnswer.safeParse(answer.body);
-          if (answer.status !== 200 || !parsed.success) {
-            throw new DomainError('SERVICE_UNAVAILABLE', 'token');
-          }
-          return {
-            token: parsed.data.access_token,
-            expiresAt: new Date(clock.now().getTime() + parsed.data.expires_in * 1000),
-          };
+        idp: idpOf(config),
+        grant: {
+          type: 'client-credentials',
+          clientId: CLIENT_ID,
+          clientSecret: config.clientSecret,
+          audience,
         },
       });
 
@@ -154,7 +134,7 @@ export function notificationModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: idpJwksSource(http),
+        source: idpJwksSource(http, idpOf(config)),
       }),
       customerRef: subjectRefShape(config.PRIVACY_MODE).customer,
       notifications: new NotificationService({

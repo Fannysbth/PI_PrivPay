@@ -14,6 +14,7 @@ import {
   createHttpClient,
   createServicePool,
   idpJwksSource,
+  idpOf,
   JwksKeys,
   subjectRefShape,
   type HttpClient,
@@ -87,7 +88,7 @@ export function fraudModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: idpJwksSource(http),
+        source: idpJwksSource(http, idpOf(config)),
       }),
       customerRef: subjectRefShape(config.PRIVACY_MODE).customer,
       assessor: new FraudAssessor({

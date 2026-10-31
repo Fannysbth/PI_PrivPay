@@ -20,6 +20,7 @@ import {
   createLogger,
   createServicePool,
   idpJwksSource,
+  idpOf,
   JwksKeys,
   schedulerProviders,
   type HttpClient,
@@ -217,7 +218,7 @@ export function privacyModules(
         clock,
         cooldownSeconds: config.JWKS_REFRESH_COOLDOWN_SECONDS,
         maxAgeSeconds: config.JWKS_MAX_AGE_SECONDS,
-        source: idpJwksSource(http),
+        source: idpJwksSource(http, idpOf(config)),
       }),
       tokens: new TokenService({
         operation,

@@ -1,5 +1,9 @@
 import {
+  idpChoiceShape,
   idpConfigShape,
+  idpEndpoints,
+  idpOf,
+  signingKeysOf,
   loadConfig,
   modeConfigShape,
   privacyUrlMatchesMode,
@@ -27,6 +31,7 @@ const schema = z
     TOKENIZER_EDGE_SECRET_NAME: secretName.optional(),
     IDP_URL: idpConfigShape.IDP_URL,
     IDP_ISSUER: idpConfigShape.IDP_ISSUER,
+    ...idpChoiceShape,
     KONG_UPSTREAM_URL: serviceUrl,
     RATE_LIMIT_ENABLED: z
       .enum(['true', 'false'])
@@ -44,10 +49,10 @@ const schema = z
 const jwks = z.object({ keys: z.array(z.record(z.string(), z.unknown())) });
 const FETCH_TIMEOUT_MS = 3000;
 
-async function fetchJwks(idpUrl: string, fetchImpl: typeof fetch): Promise<unknown> {
+async function fetchJwks(idpUrl: string, path: string, fetchImpl: typeof fetch): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetchImpl(new URL('/.well-known/jwks.json', idpUrl).toString(), {
+    response = await fetchImpl(new URL(path, idpUrl).toString(), {
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
   } catch {
@@ -69,7 +74,18 @@ export async function renderKongConfig(
   fetchImpl: typeof fetch = fetch,
 ): Promise<string> {
   const config = loadConfig(schema, env);
-  const parsed = jwks.safeParse(await fetchJwks(config.IDP_URL, fetchImpl));
+  const idp = idpOf(config);
+  const answer = await fetchJwks(config.IDP_URL, idpEndpoints(idp).jwks, fetchImpl);
+  let body = answer;
+  if (idp.kind === 'keycloak') {
+    // Keycloak publishes a signing and an encryption key; only the one RS256 signing key is read (ADR-0017).
+    try {
+      body = signingKeysOf(answer);
+    } catch {
+      throw new Error('the IdP must publish exactly one signing key');
+    }
+  }
+  const parsed = jwks.safeParse(body);
   if (!parsed.success) throw new Error('the IdP answer is not a JWKS');
   const [key, ...rest] = parsed.data.keys;
   if (key === undefined || rest.length > 0) {
