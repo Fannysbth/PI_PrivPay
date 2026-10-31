@@ -1,3 +1,21 @@
+# HANDOFF (2026-10-31): DK-04 SEBAGIAN di `feat/dk-04` (Keycloak: realm dan pemetaan klaim terbukti; belum disambung ke Compose/layanan)
+
+Tiga keputusan Fanny dikerjakan sebagai komit kecil: DK-02c ditutup tanpa kode (ADR-0016, OPEN_QUESTIONS), aturan spek Docker di CLAUDE.md, `/simplify` DK-02b (payload scan mengambil dump sekali; temuan lain dilewati karena mengubah perilaku atau marginal). Dua keputusan DK-04: customer_id tetap `CUST-nnnnnn` (adapter membangkitkan acak dan memeriksa atribut lewat Admin API), satu kata sandi uji dari secrets.
+
+| Butir | Bukti |
+| --- | --- |
+| Memori | Keycloak 26.4.0 (`sha256:5f3fb534…`) start-dev, heap 320 MiB: 485 MiB dari 768 MiB; memori bebas laptop 2,6 GB (hanya Keycloak). Tumpukan penuh dengan Keycloak BELUM diukur |
+| Klaim | `pnpm test:edge tests/docker/keycloak-claims`: 13 tes lulus (nasabah/administrator/analis/bank/akun layanan lolos `authenticate()` hanya di layanan benar; klien salah tanpa peran; kunci lain ditolak; peran ganda ditolak; empat mata dua orang berbeda; `X-Actor-Token`; Admin API `idp-admin` buat/cari/hapus) |
+| Newman, mutasi lewat Kong, payload scan ulang | BELUM (dev-idp masih IdP tumpukan) |
+
+## Sisa DK-04 (N-56, ADR-0017)
+1. Pengambil token bersama di common (form-urlencoded, `scope` `aud-*`? atau audiens dari peran; default dev-idp) menggantikan lima salinan (gateway, transaction, notification, reconciliation, bank-simulator); jalur JWKS dan issuer dari konfigurasi.
+2. Compose: layanan `keycloak` (profil, memori 768M, heap dibatasi, healthcheck port 9000) + langkah render realm (`scripts/docker/keycloak-realm.cjs`) ke volume impor; `idp` pindah ke profil; `pnpm docker:secrets` sudah membuat `idp-admin_client_secret` dan `keycloak_dev_user_password`.
+3. Port registrasi Admin API di adapter; `kong-config` memilih kunci `use=sig`, `alg=RS256`; Postman (password grant) dan README; aturan buat-ulang `idp/gateway/kong-config/kong` disesuaikan.
+4. Bukti: Newman dua mode (target 149 request, 115 dan 103 asersi), mutasi, payload scan, memori tumpukan penuh; berhenti bila memori bebas < 0,9 GB.
+
+Skill: dipakai /simplify, /tdd (pola), /run (kontainer nyata); /code-review dan /security-review atas irisan ini tidak dijalankan (batas pemakaian). Tidak dikerjakan: DK-06, M6, M7.
+
 # HANDOFF (2026-10-31): DK-02b SELESAI di `feat/dk-02b` (plugin Kong privacy-tokenizer, ADR-0016)
 
 Urutan keputusan Fanny: DK-02a (selesai), DK-02b (ini), titik keputusan DK-02c, DK-04, DK-06, penutup DK dua putaran, M6, M7. Tiga keputusan DK-02a (N-54b `/health` tanpa mode, `clientAddress` tetap fungsi kecil, aturan buat-ulang `idp`/`gateway`/`kong-config`/`kong`) sudah dikerjakan sebagai komit kecil.

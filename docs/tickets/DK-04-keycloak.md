@@ -1,3 +1,5 @@
+> **Status 2026-10-31 (ADR-0017):** realm dan pemetaan klaim terbukti (`pnpm test:edge tests/docker/keycloak-claims`); penyambungan ke Compose dan layanan belum (N-56).
+
 # DK-04: Keycloak: realm, klien, pemetaan klaim
 
 - Milestone: DK (fase Docker, setelah M4 stabil, ADR-0004)

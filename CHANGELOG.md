@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-04 (sebagian) Keycloak: realm dan pemetaan klaim terbukti (feat/dk-04, ADR-0017)
+
+- `scripts/docker/keycloak-realm.cjs` merender realm `privpay` dari tabel sistem dan berkas rahasia (tanpa literal). `pnpm test:edge tests/docker/keycloak-claims`: 13 tes pada Keycloak 26.4.0 sekali pakai (klaim lolos `authenticate()`, audiens per peran/akun layanan, satu peran, `customer_id` CUST-nnnnnn, peran ganda ditolak, Admin API `idp-admin`). Rahasia baru: `idp-admin_client_secret`, `keycloak_dev_user_password`. Belum disambung ke Compose dan layanan (ADR-0017, Status).
+- Keputusan: DK-02c ditutup tanpa kode (ADR-0016); aturan spek Docker di CLAUDE.md; `/simplify` DK-02b (payload scan mengambil dump sekali).
+
 ### DK-02b plugin Kong privacy-tokenizer (feat/dk-02b, ADR-0016)
 
 - Plugin Lua (`services/gateway/plugins/privacy-tokenizer`, di-mount baca-saja ke Kong) menokenisasi `POST /transaction`, `/settlement/report`, `/notification/register` di kondisi usulan: minta pseudonim ke Privacy (TLS, token layanan, tanpa `K_token`), gagal tertutup, lalu teruskan body bertoken dengan rahasia bersama `X-Edge-Auth`. Baseline: passthrough. `/register` tetap di adapter.
