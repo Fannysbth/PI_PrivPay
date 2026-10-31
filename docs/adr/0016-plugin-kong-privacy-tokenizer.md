@@ -19,6 +19,10 @@ Metodologi menempatkan tokenisasi di plugin Lua Kong. Sampai DK-02a tokenisasi a
 6. **Baseline = passthrough.** Plugin diberi aksi `passthrough` dan tidak membaca atau mengubah apa pun; ia tidak mendapat alamat Privacy.
 7. **`SubjectReferencePort`/`PRIVACY_MODE` tidak berubah:** hilir menerima token seperti sebelumnya. Aksi plugin dipilih dari ada-tidaknya alamat Privacy (dijamin cocok dengan mode oleh `privacyUrlMatchesMode`), karena kode domain tidak boleh menyebut mode (ADR-0006).
 
+## Penutupan DK-02c (keputusan Fanny, 2026-10-31)
+
+DK-02c ditutup **tanpa kode**. Otorisasi per rute (`aud`, `azp`, peran), skema penuh, penyamaran galat (`ErrorMasker`, delapan kode), dan token layanan per hulu **tetap di `gateway-adapter`**; tidak ada plugin Lua tambahan. Lua di repositori terbatas pada `post-function` (bentuk galat, ADR-0015) dan `privacy-tokenizer` (ADR ini). Peninjauan ulang hanya bila ada kebutuhan tertulis yang baru.
+
 ## Konsekuensi
 
 - Positif: titik tokenisasi pertama sesuai Metodologi; data mentah tidak sampai ke adapter di kondisi usulan; vektor kontrak yang sama dipakai TypeScript dan Lua.
@@ -28,4 +32,4 @@ Metodologi menempatkan tokenisasi di plugin Lua Kong. Sampai DK-02a tokenisasi a
 
 ## Kapan ditinjau ulang
 
-Di DK-02c, dan saat Keycloak menggantikan dev-idp (DK-04).
+Saat Keycloak menggantikan dev-idp (DK-04). DK-02c sudah ditutup (lihat di atas).
