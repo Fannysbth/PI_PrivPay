@@ -3,6 +3,7 @@ import {
   DomainError,
   parseBearer,
   RateLimitedError,
+  safeEqual,
   unverifiedKid,
   type JwksKeys,
   type AuthHeaders,
@@ -15,6 +16,7 @@ import type { ErrorMasker } from './error-masker';
 import type { RateLimiter } from './rate-limiter';
 import type { RegistrationFlow } from './registration';
 import type { Route, RouteMatch, RouteTable, Upstream } from './routes';
+import { EDGE_BODIES, IDEMPOTENCY_KEY } from './tokenizer/schemas';
 import type { Tokenizer } from './tokenizer/tokenizer';
 
 export interface GatewayRequest {
@@ -48,6 +50,11 @@ export interface GatewayDependencies {
   readonly registration: RegistrationFlow;
   /** The gateway's own service token, one cache per upstream (the token's `aud` is that upstream). */
   readonly serviceTokens: Readonly<Record<Upstream, TokenCache>>;
+  /**
+   * DK-02b: set when Kong tokenizes before the adapter. The tokenizing routes then take the tokenized shape from a
+   * request that proves it came from Kong, and the adapter does not tokenize them (no double tokenizing).
+   */
+  readonly edge?: { readonly secret: string };
 }
 
 /**
@@ -110,14 +117,10 @@ export class Gateway {
     if (!this.mayCall(route, caller)) throw new DomainError('FORBIDDEN_ROLE', 'route_role');
 
     this.assertSize(route, request.headers['content-length']);
-    const validated = this.validatedBody(route, request.body);
     const query = this.validatedQuery(route, request.query);
-    // Gateway spec 4 and 5: the identifiers are replaced by tokens here, and only what the tokenizer returns goes on.
+    // Gateway spec 4 and 5: the identifiers are replaced by tokens, and only what the tokenizer returns goes on.
     // If it cannot (Privacy away or refusing) it throws and nothing is sent: no fallback to raw data (invariant 8).
-    const body =
-      route.tokenize === null
-        ? validated
-        : (await this.tokenized(route, request, caller, validated)).outbound;
+    const body = await this.outbound(route, request, caller);
 
     const response = await this.deps.http.request({
       service: route.upstream,
@@ -140,6 +143,43 @@ export class Gateway {
     // The phone of a customer is changed by AZ-02: the domain token Notification answers with is not the customer's to see.
     if (route.tokenize === 'notification') return { status: 200, body: { status: 'REGISTERED' } };
     return { status: response.status, body: response.body };
+  }
+
+  /**
+   * The body that goes on. A route without tokenizing sends what validated. A tokenizing route sends what the tokenizer
+   * returns, or, behind Kong (DK-02b), the tokenized body Kong made, when the request proves it came from Kong. Behind
+   * Kong a request that did not (a client that went round it, or Kong declined) is still checked the way it always was,
+   * so a bad one gets the same 422; a good raw one is refused 503, because the adapter no longer tokenizes there and
+   * raw identifiers never go on (invariant 8).
+   */
+  private async outbound(
+    route: Route,
+    request: GatewayRequest,
+    caller: Authenticated,
+  ): Promise<unknown> {
+    const { edge } = this.deps;
+    if (edge !== undefined && route.tokenize !== null && this.fromEdge(request, edge.secret)) {
+      const parsed = EDGE_BODIES[route.tokenize].safeParse(request.body ?? {});
+      if (!parsed.success) throw new DomainError('VALIDATION_ERROR', 'edge_body');
+      return parsed.data;
+    }
+    const validated = this.validatedBody(route, request.body);
+    if (route.tokenize === null) return validated;
+    if (edge !== undefined) {
+      if (route.tokenize === 'transaction') {
+        const key = request.headers['idempotency-key'];
+        if (typeof key !== 'string' || !IDEMPOTENCY_KEY.test(key))
+          throw new DomainError('VALIDATION_ERROR', 'idempotency_key');
+      }
+      throw new DomainError('SERVICE_UNAVAILABLE', 'edge_untokenized');
+    }
+    return (await this.tokenized(route, request, caller, validated)).outbound;
+  }
+
+  /** True when the request carries the secret only Kong and the adapter know (Kong overwrites the header on every request). */
+  private fromEdge(request: GatewayRequest, secret: string): boolean {
+    const presented = request.headers['x-edge-auth'];
+    return typeof presented === 'string' && safeEqual(presented, secret);
   }
 
   /** Who may use the route (gateway spec 3): people by role, a customer with a customer id, or the bank. */

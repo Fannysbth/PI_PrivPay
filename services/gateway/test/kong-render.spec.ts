@@ -9,7 +9,14 @@ const jwk = () => ({
   alg: 'RS256',
   use: 'sig',
 });
-const ENV = { IDP_URL: 'http://idp:4000', KONG_UPSTREAM_URL: 'http://gateway:4010' };
+const ENV = {
+  PRIVACY_MODE: 'proposed',
+  PRIVACY_SERVICE_URL: 'https://privacy-service:4001',
+  TOKENIZER_CLIENT_SECRET_NAME: 'api-gateway_client_secret',
+  TOKENIZER_EDGE_SECRET_NAME: 'edge_adapter_secret',
+  IDP_URL: 'http://idp:4000',
+  KONG_UPSTREAM_URL: 'http://gateway:4010',
+};
 const answer =
   (body: unknown, status = 200): typeof fetch =>
   () =>
@@ -79,5 +86,51 @@ describe('DK-02a renderKongConfig reads the IdP JWKS and writes the Kong file', 
       renderKongConfig({ ...ENV, KONG_RATE_LIMIT_PER_MINUTE: '0' }, answer({ keys: [jwk()] })),
     ).rejects.toThrow(/KONG_RATE_LIMIT_PER_MINUTE/);
     await expect(renderKongConfig({}, answer({ keys: [jwk()] }))).rejects.toThrow(/IDP_URL/);
+  });
+});
+
+describe('DK-02b renderKongConfig tells the tokenizing plugin the mode', () => {
+  const plugin = (text: string): { config: Record<string, unknown> } | undefined =>
+    (
+      JSON.parse(text) as { plugins: { name: string; config: Record<string, unknown> }[] }
+    ).plugins.find((candidate) => candidate.name === 'privacy-tokenizer');
+
+  it('DK-02b proposed: the plugin gets Privacy and the two secret paths from the environment', async () => {
+    const config = plugin(await renderKongConfig(ENV, answer({ keys: [jwk()] })))?.config;
+    expect(config).toMatchObject({
+      action: 'tokenize',
+      privacy_url: 'https://privacy-service:4001',
+      client_secret_file: '/run/secrets/api-gateway_client_secret',
+      edge_secret_file: '/run/secrets/edge_adapter_secret',
+    });
+  });
+
+  it('DK-02b baseline: passthrough, and an address of Privacy is refused (ADR-0006)', async () => {
+    const baseline = {
+      IDP_URL: ENV.IDP_URL,
+      KONG_UPSTREAM_URL: ENV.KONG_UPSTREAM_URL,
+      PRIVACY_MODE: 'baseline',
+    };
+    const config = plugin(await renderKongConfig(baseline, answer({ keys: [jwk()] })))?.config;
+    expect(config).toEqual({ action: 'passthrough' });
+    await expect(
+      renderKongConfig(
+        { ...baseline, PRIVACY_SERVICE_URL: ENV.PRIVACY_SERVICE_URL },
+        answer({ keys: [jwk()] }),
+      ),
+    ).rejects.toThrow(/PRIVACY_SERVICE_URL/);
+  });
+
+  it('DK-02b proposed without the mode, or without a secret path, stops the start', async () => {
+    const without = (key: keyof typeof ENV): Record<string, string> =>
+      Object.fromEntries(Object.entries(ENV).filter(([name]) => name !== key));
+    const noMode = without('PRIVACY_MODE');
+    await expect(renderKongConfig(noMode, answer({ keys: [jwk()] }))).rejects.toThrow(
+      /PRIVACY_MODE/,
+    );
+    const noSecret = without('TOKENIZER_EDGE_SECRET_NAME');
+    await expect(renderKongConfig(noSecret, answer({ keys: [jwk()] }))).rejects.toThrow(
+      /edgeSecretFile/,
+    );
   });
 });

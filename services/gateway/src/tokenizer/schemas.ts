@@ -62,3 +62,43 @@ export const notificationBody = z.strictObject({
   phone: z.string().regex(PHONE),
   channel: z.literal('SMS'),
 });
+
+// DK-02b: what Kong sends the adapter when it has already replaced the identifiers by tokens (gateway spec 4, 5, 9).
+// Only a request that carries the secret of Kong (X-Edge-Auth) is read with these; they hold no raw identifier.
+const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
+
+export const edgeTransactionBody = z.strictObject({
+  transaction_id: z.string().regex(TRANSACTION_ID),
+  idempotency_key: z.string().regex(IDEMPOTENCY_KEY),
+  customer_token: z.string().regex(PSEUDONYM),
+  account_token: z.string().regex(PSEUDONYM),
+  merchant_id: z.string().regex(MERCHANT_ID),
+  amount,
+  geohash: z.string().regex(GEOHASH),
+});
+
+export const edgeSettlementBody = z.strictObject({
+  batch_date: z.string().regex(ISO_DATE).refine(isRealDate),
+  items: z
+    .array(
+      z.strictObject({
+        account_pseudonym: z.string().regex(PSEUDONYM),
+        amount,
+        bank_reference: z.string().regex(BANK_REFERENCE),
+      }),
+    )
+    .min(1)
+    .max(MAX_SETTLEMENT_ITEMS),
+});
+
+export const edgeNotificationBody = z.strictObject({
+  notification_domain_id: z.string().regex(PSEUDONYM),
+  phone: z.string().regex(PHONE),
+  channel: z.literal('SMS'),
+});
+
+export const EDGE_BODIES = {
+  transaction: edgeTransactionBody,
+  settlement: edgeSettlementBody,
+  notification: edgeNotificationBody,
+} as const;

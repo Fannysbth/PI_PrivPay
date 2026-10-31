@@ -8,6 +8,7 @@ module.exports = {
     '/docs/',
     '\\.integration\\.spec\\.ts$',
     '\\.smoke\\.spec\\.ts$',
+    '\\.docker\\.spec\\.ts$',
   ],
   // `source` resolves workspace packages to their TypeScript (see their package.json exports); the built output is
   // only used by the processes the smoke tests start.

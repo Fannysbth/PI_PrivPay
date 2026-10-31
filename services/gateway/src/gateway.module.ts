@@ -196,6 +196,7 @@ export function gatewayModules(
         logger: createLogger({ service: 'gateway', destination: overrides.logDestination }),
       }),
       serviceTokens,
+      ...(config.edgeSecret === undefined ? {} : { edge: { secret: config.edgeSecret } }),
     });
 
     return [

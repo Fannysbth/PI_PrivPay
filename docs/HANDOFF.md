@@ -1,3 +1,26 @@
+# HANDOFF (2026-10-31): DK-02b SELESAI di `feat/dk-02b` (plugin Kong privacy-tokenizer, ADR-0016)
+
+Urutan keputusan Fanny: DK-02a (selesai), DK-02b (ini), titik keputusan DK-02c, DK-04, DK-06, penutup DK dua putaran, M6, M7. Tiga keputusan DK-02a (N-54b `/health` tanpa mode, `clientAddress` tetap fungsi kecil, aturan buat-ulang `idp`/`gateway`/`kong-config`/`kong`) sudah dikerjakan sebagai komit kecil.
+
+| Butir | Bukti |
+| --- | --- |
+| Vektor kontrak (8 berkas, termasuk notification) | lulus di TypeScript (`Tokenizer`) dan di Lua (`pnpm test:edge`, kontainer Kong terpin); luacheck 0 peringatan lewat `ghcr.io/lunarmodules/luacheck@sha256:46601a79…` |
+| Newman lewat Kong | proposed 149 request / 115 asersi / 0 gagal; baseline 149 / 103 / 0 |
+| Payload scan hilir (`tests/docker`) | proposed: hanya PSEU-, tanpa kanari di DB Transaction/Fraud/Reconciliation dan log; Notification hanya telepon; baseline: nomor rekening asli ditemukan (kontrol positif) |
+| Fail-closed | Privacy dimatikan: 503 `SERVICE_UNAVAILABLE` dari Kong, adapter tidak melihat request, pulih setelah dinyalakan |
+| Mutasi | penjaga fail-closed dihapus: tes gagal; penjaga passthrough baseline dihapus: tes gagal; keduanya dipulihkan dan hijau |
+| Memori | Kong 80 MiB (baseline) sampai 104 MiB (proposed) dari batas 512 MiB; memori bebas laptop 1,6 sampai 2,0 GB dengan Docker menyala |
+
+## Rancangan
+Kong menokenisasi `POST /transaction`, `/settlement/report`, `/notification/register` di kondisi usulan (Privacy lewat TLS, token layanan `api-gateway`, tanpa `K_token`), lalu meneruskan body bertoken dengan `X-Edge-Auth` (rahasia bersama `edge_adapter_secret`). Adapter (`EDGE_TOKENIZATION=true`) hanya menerima bentuk bertoken dari Kong; raw valid tanpa rahasia 503. `/register` tetap di adapter. Baseline: plugin `passthrough`, adapter memakai `Tokenizer` lama. Kong ikut jaringan `privacy` di kondisi usulan.
+
+## Yang perlu diketahui
+- `pnpm docker:secrets` sekali lagi membuat `edge_adapter_secret`. Rahasia ini dibaca Kong saat worker dimulai: ganti rahasia berarti buat ulang Kong dan adapter bersama.
+- Spec Docker memakai `pnpm test:edge` (tumpukan menyala dengan `docs/postman/compose.postman.yml`; `PRIVPAY_STACK_MODE=proposed|baseline`). Data tumpukan bertahan antar-run; spec membuat data unik per run.
+- Temuan `/code-review` yang diperbaiki: periksa `aud` sebelum meminta token, refresh token layanan di luar jatah retry, buang garis miring akhir URL Privacy. Dicatat sebagai keterbatasan N-55: pola skema ganda (zod dan Lua), settlement berurutan (belum diukur), rahasia di-cache per worker, penolakan 409 dari Privacy menjadi 422 di tepi (tidak mungkin dari `/pseudonymize` hari ini), pemeriksaan jaringan 'Privacy tidak menjangkau Kong' dihapus karena Kong memang di jaringan privacy.
+- Tidak dikerjakan: DK-02c, DK-04, DK-06, M6, M7.
+- Skill: /tdd (pola), /simplify (tidak dijalankan pada DK-02b, lihat laporan), /code-review, /security-review (inline), /run (tumpukan nyata). Belum teruji: `aud` salah di plugin (tidak bisa dibuat dari luar tanpa rahasia), settlement besar lewat Kong, `test:integration` dan `test:security` penuh (gerbang ringan), kinerja.
+
 # HANDOFF (2026-10-31): DK-02a SELESAI di `feat/dk-02a` (Kong 3.9.4 OSS di depan gateway-adapter, kedua mode)
 
 Keputusan Fanny (2026-10-31): pengembangan diselesaikan dulu dengan komponen standar industri sebelum pengujian. Urutan: DK-02a (selesai), DK-02b, titik keputusan DK-02c, DK-04, DK-06, penutup DK dua putaran, lalu M6 dan M7. **Q-10 (adapter permanen) DIBATALKAN.** Dicatat di OPEN_QUESTIONS, ADR-0015 (baru; ADR-0004, 0007, 0008 diberi catatan), tiket DK-02.

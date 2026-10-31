@@ -188,16 +188,32 @@ services:
     depends_on: { privacy-service: { condition: service_healthy } }
 
   gateway:
-    secrets: [tls_ca_crt]
+    secrets: [tls_ca_crt, edge_adapter_secret]
     networks: [privacy]
     environment:
       PRIVACY_MODE: proposed
       PRIVACY_SERVICE_URL: https://privacy-service:4001
       NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
+      # DK-02b: Kong tokenizes before the adapter; the adapter takes only what proves it came from Kong.
+      EDGE_TOKENIZATION: 'true'
+      EDGE_ADAPTER_SECRET_FILE: /run/secrets/edge_adapter_secret
     depends_on: { privacy-service: { condition: service_healthy } }
+
+  # DK-02b: in proposed the edge tokenizes, so it must reach Privacy (TLS, CA verified), prove itself to the adapter, and ask
+  # the IdP for the service token of the gateway client. K_token is not here: the pseudonym is made inside Privacy.
+  kong-config:
+    environment:
+      PRIVACY_MODE: proposed
+      PRIVACY_SERVICE_URL: https://privacy-service:4001
+      TOKENIZER_CLIENT_SECRET_NAME: api-gateway_client_secret
+      TOKENIZER_EDGE_SECRET_NAME: edge_adapter_secret
 
   # DK-02a: the published edge. The host port is the one Postman and the earlier checks already use.
   kong:
+    secrets: [tls_ca_crt, api-gateway_client_secret, edge_adapter_secret]
+    networks: [privacy]
+    environment:
+      KONG_LUA_SSL_TRUSTED_CERTIFICATE: /run/secrets/tls_ca_crt
     ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4010}:8443']
 
   smoke:

@@ -1,4 +1,10 @@
-import { idpConfigShape, loadConfig, type EnvSource } from '@privpay/common';
+import {
+  idpConfigShape,
+  loadConfig,
+  modeConfigShape,
+  privacyUrlMatchesMode,
+  type EnvSource,
+} from '@privpay/common';
 import { z } from 'zod';
 import { buildKongConfig, jwkToPem } from './kong-config';
 
@@ -8,21 +14,32 @@ import { buildKongConfig, jwkToPem } from './kong-config';
 
 const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname });
 
-const schema = z.object({
-  IDP_URL: idpConfigShape.IDP_URL,
-  IDP_ISSUER: idpConfigShape.IDP_ISSUER,
-  KONG_UPSTREAM_URL: serviceUrl,
-  RATE_LIMIT_ENABLED: z
-    .enum(['true', 'false'])
-    .default('true')
-    .transform((value) => value === 'true'),
-  // Above the adapter's own limit (RATE_LIMIT_PER_MINUTE, per caller): Kong's is a flood guard per client address.
-  KONG_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(300),
-  // The largest body of any route (settlement, 64 KiB; gateway spec 3).
-  KONG_MAX_PAYLOAD_BYTES: z.coerce.number().int().min(1).default(65_536),
-  // ADR-0007 item 7.
-  ACCESS_TOKEN_MAX_LIFETIME_SECONDS: z.coerce.number().int().min(1).max(3600).default(300),
-});
+// The name of a Docker secret, not a path and not a value: Kong mounts it under /run/secrets, this step does not.
+const secretName = z.string().regex(/^[A-Za-z0-9_.-]+$/);
+
+const schema = z
+  .object({
+    ...modeConfigShape,
+    // DK-02b: where the tokenizing plugin reaches Privacy (proposed only), and the paths, inside the Kong container, of the
+    // two secret files it reads. The values of those files are never read here.
+    PRIVACY_SERVICE_URL: serviceUrl.optional(),
+    TOKENIZER_CLIENT_SECRET_NAME: secretName.optional(),
+    TOKENIZER_EDGE_SECRET_NAME: secretName.optional(),
+    IDP_URL: idpConfigShape.IDP_URL,
+    IDP_ISSUER: idpConfigShape.IDP_ISSUER,
+    KONG_UPSTREAM_URL: serviceUrl,
+    RATE_LIMIT_ENABLED: z
+      .enum(['true', 'false'])
+      .default('true')
+      .transform((value) => value === 'true'),
+    // Above the adapter's own limit (RATE_LIMIT_PER_MINUTE, per caller): Kong's is a flood guard per client address.
+    KONG_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(300),
+    // The largest body of any route (settlement, 64 KiB; gateway spec 3).
+    KONG_MAX_PAYLOAD_BYTES: z.coerce.number().int().min(1).default(65_536),
+    // ADR-0007 item 7.
+    ACCESS_TOKEN_MAX_LIFETIME_SECONDS: z.coerce.number().int().min(1).max(3600).default(300),
+  })
+  .superRefine(privacyUrlMatchesMode);
 
 const jwks = z.object({ keys: z.array(z.record(z.string(), z.unknown())) });
 const FETCH_TIMEOUT_MS = 3000;
@@ -42,6 +59,9 @@ async function fetchJwks(idpUrl: string, fetchImpl: typeof fetch): Promise<unkno
     throw new Error('the IdP answer is not JSON (JWKS expected)');
   });
 }
+
+const mounted = (name: string | undefined): string | undefined =>
+  name === undefined ? undefined : `/run/secrets/${name}`;
 
 /** The text of the Kong declarative file for this environment. Errors never repeat key material. */
 export async function renderKongConfig(
@@ -66,6 +86,17 @@ export async function renderKongConfig(
     rateLimit: { enabled: config.RATE_LIMIT_ENABLED, perMinute: config.KONG_RATE_LIMIT_PER_MINUTE },
     maxPayloadBytes: config.KONG_MAX_PAYLOAD_BYTES,
     maxTokenLifetimeSeconds: config.ACCESS_TOKEN_MAX_LIFETIME_SECONDS,
+    tokenizer:
+      // A Privacy Service is configured exactly when the condition has one (privacyUrlMatchesMode), so its address decides.
+      config.PRIVACY_SERVICE_URL === undefined
+        ? { action: 'passthrough' }
+        : {
+            action: 'tokenize',
+            privacyUrl: config.PRIVACY_SERVICE_URL,
+            idpUrl: config.IDP_URL,
+            clientSecretFile: mounted(config.TOKENIZER_CLIENT_SECRET_NAME),
+            edgeSecretFile: mounted(config.TOKENIZER_EDGE_SECRET_NAME),
+          },
   });
   return JSON.stringify(file, null, 2);
 }

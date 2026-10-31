@@ -1,5 +1,5 @@
 import { createPublicKey, type JsonWebKey } from 'node:crypto';
-import { DomainError, toClientError } from '@privpay/common';
+import { DomainError, REASONS, toClientError } from '@privpay/common';
 
 // DK-02a: the declarative (DB-less) configuration of Kong 3.9.4 OSS, which stands in front of the gateway adapter at the
 // edge (Metodologi, Tabel III). Kong keeps what a generic proxy can do: TLS, token signature and expiry, request size,
@@ -19,7 +19,23 @@ export interface KongConfigInput {
   readonly maxPayloadBytes: number;
   /** ADR-0007 item 7: an access token lives at most this many seconds. */
   readonly maxTokenLifetimeSeconds: number;
+  /** DK-02b: the tokenizing plugin. */
+  readonly tokenizer: TokenizerInput;
 }
+
+/**
+ * passthrough: the plugin is told nothing else and so cannot reach Privacy. tokenize: the places the plugin
+ * needs. The two secrets are paths of files that Kong mounts (never values), Privacy is reached over TLS only.
+ */
+export type TokenizerInput =
+  | { readonly action: 'passthrough' }
+  | {
+      readonly action: 'tokenize';
+      readonly privacyUrl?: string | undefined;
+      readonly idpUrl?: string | undefined;
+      readonly clientSecretFile?: string | undefined;
+      readonly edgeSecretFile?: string | undefined;
+    };
 
 /** A public JWK as a PEM. A JWK with private parameters is refused: Kong needs the public key only. */
 export function jwkToPem(jwk: JsonWebKey): string {
@@ -99,6 +115,47 @@ end`;
 
 type Plugin = { name: string; config?: Record<string, unknown> };
 
+/** Reason of Privacy -> the HTTP status a client sees (ADR-0008), from the same table as the adapter's answers. */
+function reasonStatuses(): Record<string, number> {
+  return Object.fromEntries(
+    (Object.keys(REASONS) as (keyof typeof REASONS)[]).map((reason) => [
+      reason,
+      toClientError(new DomainError(reason, 'edge'), '0'.repeat(32)).status,
+    ]),
+  );
+}
+
+function tokenizerPlugin(input: TokenizerInput): Plugin {
+  if (input.action === 'passthrough') {
+    return { name: 'privacy-tokenizer', config: { action: 'passthrough' } };
+  }
+  const needs = {
+    privacyUrl: input.privacyUrl,
+    idpUrl: input.idpUrl,
+    clientSecretFile: input.clientSecretFile,
+    edgeSecretFile: input.edgeSecretFile,
+  };
+  for (const [name, value] of Object.entries(needs)) {
+    if (value === undefined || value === '')
+      throw new RangeError(`tokenizer ${name} is required to tokenize`);
+  }
+  if (!input.privacyUrl?.startsWith('https://')) {
+    throw new RangeError('tokenizer privacyUrl must be https (NFR-06)');
+  }
+  return {
+    name: 'privacy-tokenizer',
+    config: {
+      action: 'tokenize',
+      // No trailing slash: the plugin appends /pseudonymize.
+      privacy_url: input.privacyUrl.replace(/\/+$/, ''),
+      idp_url: input.idpUrl,
+      client_secret_file: input.clientSecretFile,
+      edge_secret_file: input.edgeSecretFile,
+      reasons: reasonStatuses(),
+    },
+  };
+}
+
 /** The Kong declarative configuration (format 3.0) as a plain object; the caller writes it as JSON. */
 export function buildKongConfig(input: KongConfigInput): Record<string, unknown> {
   positive('rate limit per minute', input.rateLimit.perMinute);
@@ -143,6 +200,8 @@ export function buildKongConfig(input: KongConfigInput): Record<string, unknown>
           },
         ]
       : []),
+    // Runs after the JWT plugin (priority 800 < 1450): it reads the claims the JWT plugin has verified (DK-02b).
+    tokenizerPlugin(input.tokenizer),
     { name: 'prometheus' },
     {
       name: 'post-function',
@@ -164,8 +223,23 @@ export function buildKongConfig(input: KongConfigInput): Record<string, unknown>
         routes: [
           // The one call without a token (gateway spec 6); the adapter counts it per address and checks the form in full.
           { name: 'register', methods: ['POST'], paths: ['~/register$'], ...common },
-          // Status and mode only; /metrics is not offered on this listener.
-          { name: 'health', methods: ['GET'], paths: ['~/health$'], ...common },
+          // Answered by Kong itself, status only: the mode is not told to the outside (N-54b); /metrics is not offered either.
+          {
+            name: 'health',
+            methods: ['GET'],
+            paths: ['~/health$'],
+            ...common,
+            plugins: [
+              {
+                name: 'request-termination',
+                config: {
+                  status_code: 200,
+                  content_type: 'application/json',
+                  body: '{"status":"ok"}',
+                },
+              },
+            ],
+          },
           {
             name: 'metrics-blocked',
             paths: ['~/(?i)metrics/*$'],

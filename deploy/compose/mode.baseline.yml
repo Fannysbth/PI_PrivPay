@@ -40,6 +40,10 @@ services:
   gateway:
     environment: { PRIVACY_MODE: baseline }
 
+  # DK-02b: baseline is passthrough: the plugin is told the mode and nothing else, and the adapter tokenizes nothing.
+  kong-config:
+    environment: { PRIVACY_MODE: baseline }
+
   # DK-02a: the published edge. The host port is the one Postman and the earlier checks already use.
   kong:
     ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4011}:8443']

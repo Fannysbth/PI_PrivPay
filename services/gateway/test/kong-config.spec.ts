@@ -13,6 +13,13 @@ const input = (over: Partial<KongConfigInput> = {}): KongConfigInput => ({
   rateLimit: { enabled: true, perMinute: 300 },
   maxPayloadBytes: 65_536,
   maxTokenLifetimeSeconds: 300,
+  tokenizer: {
+    action: 'tokenize',
+    privacyUrl: 'https://privacy-service:4001',
+    idpUrl: 'http://idp:4000',
+    clientSecretFile: '/run/secrets/api-gateway_client_secret',
+    edgeSecretFile: '/run/secrets/edge_adapter_secret',
+  },
   ...over,
 });
 
@@ -71,6 +78,16 @@ describe('DK-02a Kong declarative config: who needs a token', () => {
     expect(route(config, 'register').paths).toEqual(['~/register$']);
     expect(route(config, 'health').methods).toEqual(['GET']);
     expect(route(config, 'health').paths).toEqual(['~/health$']);
+  });
+
+  it('N-54b /health is answered by Kong itself with status only: no mode, and no hop to the adapter', () => {
+    const health = route(build(), 'health');
+    expect(health.plugins).toEqual([
+      {
+        name: 'request-termination',
+        config: { status_code: 200, content_type: 'application/json', body: '{"status":"ok"}' },
+      },
+    ]);
   });
 
   it('DK-02a /metrics is not served on the public listener (N-05): a token is asked first, then it is refused', () => {
@@ -178,5 +195,52 @@ describe('DK-02a Kong refusals take the ADR-0008 shape', () => {
 
   it('DK-02a maps 413 to VALIDATION_ERROR, since ADR-0008 has no 413', () => {
     expect(lua()).toMatch(/else name = "VALIDATION_ERROR"/);
+  });
+});
+
+describe('DK-02b Kong declarative config: the privacy-tokenizer plugin', () => {
+  const tokenizer = (config: Config): Plugin | undefined =>
+    config.plugins.find((plugin) => plugin.name === 'privacy-tokenizer');
+
+  it('DK-02b proposed: the plugin knows Privacy, the IdP and the paths of two secret files, and holds no secret', () => {
+    const plugin = tokenizer(build());
+    expect(plugin?.config).toMatchObject({
+      action: 'tokenize',
+      privacy_url: 'https://privacy-service:4001',
+      idp_url: 'http://idp:4000',
+      client_secret_file: '/run/secrets/api-gateway_client_secret',
+      edge_secret_file: '/run/secrets/edge_adapter_secret',
+    });
+    // Privacy is reached over TLS only (NFR-06).
+    expect(String(plugin?.config?.['privacy_url'])).toMatch(/^https:/);
+  });
+
+  it('DK-02b passthrough (the baseline condition): the plugin is told so and nothing else, so it cannot reach Privacy', () => {
+    const plugin = tokenizer(build({ tokenizer: { action: 'passthrough' } }));
+    expect(plugin?.config?.['action']).toBe('passthrough');
+    expect(Object.keys(plugin?.config ?? {}).sort()).toEqual(['action']);
+  });
+
+  it('DK-02b maps every reason of Privacy to the status a client sees, from the table of the adapter', () => {
+    const reasons = tokenizer(build())?.config?.['reasons'] as Record<string, number>;
+    expect(reasons['POLICY_NOT_ALLOWED']).toBe(403);
+    expect(reasons['TOKEN_NOT_FOUND']).toBe(403);
+    expect(reasons['VALIDATION_ERROR']).toBe(422);
+    expect(reasons['RATE_LIMITED']).toBe(429);
+    expect(reasons['SERVICE_UNAVAILABLE']).toBe(503);
+    expect(reasons['INTERNAL_ERROR']).toBe(500);
+    expect(reasons['IDEMPOTENCY_CONFLICT']).toBe(409);
+  });
+
+  it('DK-02b proposed without a URL or a secret path is refused at render time (fail fast)', () => {
+    const good = input().tokenizer;
+    if (good.action !== 'tokenize') throw new Error('fixture');
+    for (const missing of ['privacyUrl', 'idpUrl', 'clientSecretFile', 'edgeSecretFile'] as const) {
+      const broken = { ...good, [missing]: undefined };
+      expect(() => build({ tokenizer: broken })).toThrow(new RegExp(missing));
+    }
+    expect(() =>
+      build({ tokenizer: { ...good, privacyUrl: 'http://privacy-service:4001' } }),
+    ).toThrow(/https/);
   });
 });

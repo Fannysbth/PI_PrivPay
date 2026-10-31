@@ -140,4 +140,4 @@ npx --yes newman@6.2.1 run docs/postman/privpay-manual.postman_collection.json -
 
 - Kinerja (latensi, throughput) tidak diukur dan tidak boleh diklaim dari koleksi ini.
 - Fail-closed Privacy Service dengan kontainer dimatikan (NFR-19) tidak ada di koleksi; itu pekerjaan M7.
-- Keycloak belum ada (dev-idp). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status dan mode.
+- Keycloak belum ada (dev-idp). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status (tanpa mode); pastikan environment sama dengan mode yang dinyalakan.
