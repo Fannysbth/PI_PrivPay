@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-02a Kong 3.9.4 OSS di depan gateway-adapter (feat/dk-02a, ADR-0015)
+
+- Kong tanpa basis data di depan adapter, kedua mode. Plugin OSS: `jwt` (RS256, `exp`, umur ≤ 300 detik, `iss`, token hanya dari `Authorization`), `rate-limiting` (per alamat klien, `KONG_RATE_LIMIT_PER_MINUTE` bawaan 300, ikut `RATE_LIMIT_ENABLED`), `request-size-limiting` (64 KiB), `correlation-id`, `request-termination` (`/metrics` ditolak, N-05), `prometheus` (listener status internal), `post-function` (±25 baris Lua: galat buatan Kong menjadi bentuk ADR-0008, 413 menjadi 422; jawaban adapter tidak disentuh).
+- Konfigurasi deklaratif dibangkitkan saat start (`services/gateway/src/edge`, langkah Compose `kong-config`) dari JWKS dev-idp: hanya kunci publik, tepat satu kunci RS256. TLS 1.2+ di tepi dengan sertifikat CA dev (`tls_kong.*`, SAN `kong`, `localhost`, `127.0.0.1`; `pnpm docker:secrets` menambahkannya tanpa menimpa). Tanpa port HTTP, tanpa admin API, tanpa header versi, tanpa access log.
+- Adapter tidak lagi dipublikasikan atau di jaringan `edge`; port 4010/4011 di host kini milik Kong (HTTPS). `EDGE_PROXY_HOPS=1`: alamat klien batas `/register` (K-14) diambil dari entri terakhir `X-Forwarded-For`.
+- Perintah baru: `pnpm docker:edge-check <mode> [base|expiry|limits]` (mutasi dari host), `pnpm docker:newman <mode>` (koleksi Postman lewat Kong, citra Newman terpin, bukan dependensi). Postman: environment `https`, CA dev dipercaya di Postman (README).
+- Q-10 dibatalkan; N-05 sebagian ditutup; N-54 mencatat keterbatasan. Lihat `docs/adr/0015-kong-oss-di-depan-gateway-adapter.md`.
+
 ### DK-03 tiga jaringan dan TLS Gateway ke Privacy (feat/dk-03)
 
 - Compose: jaringan `edge` (satu-satunya yang punya jalan keluar; hanya Gateway), `business` dan `privacy` (keduanya `internal`). Privacy Service, `pg-privacy`, dan migrasinya hanya di `privacy`; Gateway, Transaction, Notification, Reconciliation, dan IdP (kunci JWT) juga di `privacy` pada kondisi proposed; Fraud, simulator, dan database layanan bisnis hanya di `business`. Baseline tidak memakai `privacy`.

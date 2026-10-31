@@ -1,0 +1,187 @@
+'use strict';
+// `pnpm docker:edge-check <proposed|baseline> [base|expiry|limits]`: attacks the RUNNING edge (Kong, DK-02a) from the host over
+// TLS and expects Kong to refuse in the one ADR-0008 shape. It needs the stack started with docs/postman/compose.postman.yml
+// (the dev IdP published on 127.0.0.1:4000, only to mint tokens). Nothing here prints a token, a key or a certificate;
+// the CA file is only the public certificate of the development CA.
+//
+//   base    TLS, token and size mutations, N-05 and header checks.        (stack as started by the Postman override)
+//   expiry  an expired token. Start the stack with ACCESS_TOKEN_TTL_SECONDS=2 first (the adapter's own service tokens
+//           live that short too, so only this one check is made with it).
+//   limits  the request rate. Start the stack with KONG_RATE_LIMIT_PER_MINUTE=20 first, so the check needs 21 requests.
+// Exit code 0 only if every check came out as expected.
+const https = require('node:https');
+const http = require('node:http');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawnSync } = require('node:child_process');
+const { MODES, composeArgs, caFile } = require('./compose.cjs');
+
+const HOST = '127.0.0.1';
+const PORTS = { proposed: 4010, baseline: 4011 };
+const IDP = { host: HOST, port: Number(process.env['IDP_HOST_PORT'] ?? 4000) };
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** One HTTPS request to the edge. Resolves to { status, headers, body } or { error: code }. */
+let counter = 0;
+const nextId = () => `00000000-0000-4000-8000-${String((counter += 1)).padStart(12, '0')}`;
+const AT_EDGE = [];
+/** Marks an answer as one the edge must give alone: the adapter must never log its request id. */
+const edgeOnly = (answer) => {
+  AT_EDGE.push(answer.id);
+  return answer;
+};
+
+function call(port, { method = 'GET', url = '/', headers = {}, body, tls = {} }) {
+  const id = headers['x-request-id'] ?? nextId();
+  headers = { ...headers, 'x-request-id': id };
+  return new Promise((resolve0) => {
+    const resolve = (answer) => resolve0({ ...answer, id });
+    const payload = body === undefined ? undefined : Buffer.from(typeof body === 'string' ? body : JSON.stringify(body));
+    const request = https.request(
+      { host: HOST, port, method, path: url, headers: { ...(payload ? { 'content-type': 'application/json', 'content-length': payload.length } : {}), ...headers }, timeout: 8000, ...tls },
+      (response) => {
+        const chunks = [];
+        response.on('data', (chunk) => chunks.push(chunk));
+        response.on('end', () => resolve({ status: response.statusCode, headers: response.headers, body: Buffer.concat(chunks).toString('utf8') }));
+      },
+    );
+    request.on('timeout', () => request.destroy(new Error('timeout')));
+    request.on('error', (error) => resolve({ error: error.code ?? error.message }));
+    request.end(payload);
+  });
+}
+
+function mintToken(username = 'analis.uji.1', clientId = 'admin-console') {
+  return new Promise((resolve, reject) => {
+    const payload = Buffer.from(JSON.stringify({ grant_type: 'dev_login', client_id: clientId, username }));
+    const request = http.request({ ...IDP, method: 'POST', path: '/token', headers: { 'content-type': 'application/json', 'content-length': payload.length }, timeout: 5000 }, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(chunk));
+      response.on('end', () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')).access_token); } catch { reject(new Error('the dev IdP gave no token')); }
+      });
+    });
+    request.on('error', () => reject(new Error('the dev IdP is not reachable on 127.0.0.1 (start the stack with docs/postman/compose.postman.yml)')));
+    request.end(payload);
+  });
+}
+
+const bearer = (token) => ({ authorization: `Bearer ${token}` });
+const shape = (answer) => { try { const e = JSON.parse(answer.body).error; return e && Object.keys(e).sort().join() === 'code,message,request_id' && UUID.test(e.request_id) ? e.code : 'bad-shape'; } catch { return 'not-json'; } };
+const refused = (answer) => (answer.error ? `error ${answer.error}` : `${answer.status} ${shape(answer)}`);
+const tamper = (token) => { const [h, p, s] = token.split('.'); return `${h}.${p.slice(0, -2)}${p.endsWith('AA') ? 'BB' : 'AA'}.${s}`; };
+const b64 = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
+const padding = (bytes) => ({ filler: 'a'.repeat(bytes) });
+
+/** True if the adapter's own log (request ids only, no payload) mentions the id: whether the request got that far. */
+function adapterLog(mode) {
+  const result = spawnSync('docker', composeArgs(mode, ['logs', '--no-log-prefix', 'gateway']), { encoding: 'utf8', timeout: 30000 });
+  return `${result.stdout}${result.stderr}`;
+}
+const BIG_ID = '00000000-0000-4000-8000-0000000000b1';
+const MID_ID = '00000000-0000-4000-8000-0000000000b2';
+
+async function baseChecks(mode, port, ca) {
+  const token = await mintToken();
+  const verified = { ca };
+  const results = [];
+  const add = (label, got, expected) => results.push([label, got, expected]);
+
+  const health = await call(port, { url: '/health', tls: verified });
+  add('TLS with the dev CA: /health answers and names the mode', health.error ?? `${health.status} ${JSON.parse(health.body || '{}').mode}`, `200 ${mode}`);
+  add('no server, via or x-kong headers on an answer (versions are not told)', Object.keys(health.headers ?? {}).filter((h) => /^(server|via|x-kong)/.test(h)).join(',') || 'none', 'none');
+  add('a client without the dev CA rejects the certificate', (await call(port, {})).error, /^(UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED_CERT_IN_CHAIN)$/);
+  add('a certificate for another name is rejected (connect with a wrong server name)', (await call(port, { tls: { ca, servername: 'wrong.example.test' } })).error, 'ERR_TLS_CERT_ALTNAME_INVALID');
+  const plain = await new Promise((resolve) => {
+    const request = http.get({ host: HOST, port, path: '/health', timeout: 3000 }, (response) => { response.resume(); resolve(`status ${response.statusCode}`); });
+    request.on('error', (error) => resolve(`error ${error.code}`));
+    request.on('timeout', () => { request.destroy(); resolve('error timeout'); });
+  });
+  add('plain HTTP to the edge port gets no 2xx', /^status 2/.test(plain) ? plain : 'refused', 'refused');
+
+  const open = (extra = {}) => ({ url: '/transaction/held', tls: verified, ...extra });
+  const control = await call(port, open({ headers: bearer(token) }));
+  add('control: a valid token reaches the adapter through Kong', control.error ?? control.status, 200);
+  add('no token', refused(edgeOnly(await call(port, open()))), '401 UNAUTHENTICATED');
+  add('garbage token', refused(edgeOnly(await call(port, open({ headers: bearer('abc.def.ghi') })))), '401 UNAUTHENTICATED');
+  add('token with a changed payload (signature no longer fits)', refused(edgeOnly(await call(port, open({ headers: bearer(tamper(token)) })))), '401 UNAUTHENTICATED');
+  add('alg=none token', refused(edgeOnly(await call(port, open({ headers: bearer(`${b64({ alg: 'none', typ: 'JWT' })}.${b64({ iss: 'privpay-dev-idp', exp: 4102444800 })}.`) })))), '401 UNAUTHENTICATED');
+  add('a valid token in the URL (?jwt=) is not read', refused(edgeOnly(await call(port, { url: `/transaction/held?jwt=${token}`, tls: verified }))), '401 UNAUTHENTICATED');
+
+  const big = await call(port, { method: 'POST', url: '/transaction/TX-1/review', headers: { ...bearer(token), 'x-request-id': BIG_ID }, body: padding(100 * 1024), tls: verified });
+  add('body of 100 KiB (over Kong\'s 64 KiB): 422 VALIDATION_ERROR, never Kong\'s own 413', refused(big), '422 VALIDATION_ERROR');
+  const mid = await call(port, { method: 'POST', url: '/transaction/TX-1/review', headers: { ...bearer(token), 'x-request-id': MID_ID }, body: padding(20 * 1024), tls: verified });
+  add('body of 20 KiB (over the route\'s 16 KiB, under Kong\'s): same answer, from the adapter', refused(mid), '422 VALIDATION_ERROR');
+
+
+  const metrics = await call(port, { url: '/metrics', headers: bearer(token), tls: verified });
+  add('/metrics is not offered on the edge, not even to a valid token (N-05)', `${refused(metrics)} ${/# (HELP|TYPE)/.test(metrics.body ?? '') ? 'LEAK' : 'no-metrics'}`, '422 VALIDATION_ERROR no-metrics');
+  for (const variant of ['/metrics/', '/Metrics', '/METRICS/']) {
+    const answer = await call(port, { url: variant, headers: bearer(token), tls: verified });
+    add(`${variant} is refused as well (the adapter's router ignores case and a trailing slash)`, `${refused(answer)} ${/# (HELP|TYPE)/.test(answer.body ?? '') ? 'LEAK' : 'no-metrics'}`, '422 VALIDATION_ERROR no-metrics');
+  }
+  const open2 = await call(port, { method: 'POST', url: '/register', body: {}, tls: verified });
+  add('/register is open without a token (the adapter answers, not Kong)', refused(open2), '422 VALIDATION_ERROR');
+  add('another method on /health is not open (token asked first)', refused(await call(port, { method: 'POST', url: '/health', tls: verified })), '401 UNAUTHENTICATED');
+  add('a path under /health is not open either', refused(await call(port, { url: '/health/x', tls: verified })), '401 UNAUTHENTICATED');
+  // One read of the adapter log after the last request answers every "did it get that far" question.
+  const log = adapterLog(mode);
+  add('the 100 KiB request never reached the adapter, the 20 KiB one did', `${log.includes(BIG_ID) ? 'adapter-saw-big' : 'big-stopped'} ${log.includes(MID_ID) ? 'mid-reached' : 'mid-missing'}`, 'big-stopped mid-reached');
+  add('none of the refused token requests reached the adapter (its log has none of their ids)', AT_EDGE.filter((id) => log.includes(id)).length, 0);
+  return results;
+}
+
+async function expiryChecks(mode, port, ca) {
+  const short = await mintToken();
+  await new Promise((resolve) => setTimeout(resolve, 3500));
+  const answer = await call(port, { url: '/transaction/held', headers: bearer(short), tls: { ca } });
+  return [
+    ['expired token (lifetime 2 s, used after 3.5 s)', refused(answer), '401 UNAUTHENTICATED'],
+    ['the expired token was stopped by Kong: the adapter never saw its request', adapterLog(mode).includes(answer.id), false],
+  ];
+}
+
+async function limitChecks(port, ca) {
+  const verified = { ca };
+  const results = [];
+  const add = (label, got, expected) => results.push([label, got, expected]);
+
+  const token = await mintToken();
+  let first;
+  const codes = [];
+  let retryAfter;
+  let limited;
+  for (let i = 0; i < 40; i += 1) {
+    const answer = await call(port, { url: '/transaction/held', headers: bearer(token), tls: verified });
+    first ??= answer.status;
+    codes.push(answer.status);
+    if (answer.status === 429) { limited = answer; retryAfter = answer.headers['retry-after']; break; }
+  }
+  add('the first requests pass', first, 200);
+  add('past the limit: 429 RATE_LIMITED in the one shape', limited ? refused(limited) : `never limited in ${codes.length} requests`, '429 RATE_LIMITED');
+  add('the refusal says when to come back (Retry-After)', /^[0-9]+$/.test(retryAfter ?? '') ? 'seconds' : String(retryAfter), 'seconds');
+  add('the rate limit also counts the open /register route', refused(await call(port, { method: 'POST', url: '/register', body: {}, tls: verified })), '429 RATE_LIMITED');
+  return results;
+}
+
+async function main() {
+  const [mode, phase = 'base'] = process.argv.slice(2);
+  if (!MODES.includes(mode) || !['base', 'expiry', 'limits'].includes(phase)) {
+    process.stderr.write('usage: edge-check.cjs <proposed|baseline> [base|expiry|limits]\n');
+    return 2;
+  }
+  const ca = fs.readFileSync(caFile());
+  const port = PORTS[mode];
+  const run = { base: () => baseChecks(mode, port, ca), expiry: () => expiryChecks(mode, port, ca), limits: () => limitChecks(port, ca) };
+  const results = await run[phase]();
+  let failed = 0;
+  for (const [label, got, expected] of results) {
+    const ok = expected instanceof RegExp ? expected.test(String(got)) : got === expected;
+    if (!ok) failed += 1;
+    process.stdout.write(`${ok ? 'PASS' : 'FAIL'}  ${label}${ok ? '' : `   (got: ${String(got)})`}\n`);
+  }
+  process.stdout.write(failed === 0 ? 'all checks passed\n' : `${String(failed)} check(s) failed\n`);
+  return failed === 0 ? 0 : 1;
+}
+
+main().then((code) => { process.exitCode = code; }, (error) => { process.stderr.write(`${error instanceof Error ? error.message : 'error'}\n`); process.exitCode = 1; });

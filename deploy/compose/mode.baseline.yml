@@ -39,7 +39,10 @@ services:
 
   gateway:
     environment: { PRIVACY_MODE: baseline }
-    ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4011}:4010']
+
+  # DK-02a: the published edge. The host port is the one Postman and the earlier checks already use.
+  kong:
+    ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4011}:8443']
 
   smoke:
     environment: { PRIVACY_MODE: baseline }

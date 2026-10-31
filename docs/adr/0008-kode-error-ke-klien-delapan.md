@@ -23,6 +23,10 @@ PRD 10 menyatakan klien eksternal hanya melihat enam `code`: `UNAUTHENTICATED` (
 - Dampak pada pengujian: skema JSON respons error divalidasi untuk delapan kode (NFR-25).
 - Yang harus diubah: `CLAUDE.md`, `PRD_RINGKAS.md`, `qa-checklist.md`, `security-checklist.md`, `docs/PRD_ERRATA.md`.
 
+## Tambahan (2026-10-31, ADR-0015)
+
+Penolakan yang dihasilkan Kong sendiri (token, ukuran, laju, hulu tidak ada) ditulis ulang oleh satu skrip `post-function` ke bentuk `{error:{code,message,request_id}}` dengan salah satu dari enam kode di atas; 413 menjadi 422 `VALIDATION_ERROR`. Tidak ada kode atau status baru. Jawaban adapter tidak diubah.
+
 ## Kapan ditinjau ulang
 
 Bila PRD 10 direvisi atau ada kode klien baru yang diusulkan.

@@ -54,7 +54,7 @@ function issueCa(dir, { commonName = 'PrivPay development CA', days = 825 } = {}
  * Issues a server certificate signed by `ca` (the object `issueCa` returned) into `dir` as `<name>.key` and
  * `<name>.crt`. `dnsNames` are the names the certificate is valid for; `notBefore`/`notAfter` are Dates.
  */
-function issueServer(dir, ca, { name, dnsNames, notBefore, notAfter }) {
+function issueServer(dir, ca, { name, dnsNames, ipAddresses = [], notBefore, notAfter }) {
   mkdirSync(dir, { recursive: true });
   const work = mkdtempSync(path.join(tmpdir(), 'privpay-ca-'));
   try {
@@ -66,7 +66,7 @@ function issueServer(dir, ca, { name, dnsNames, notBefore, notAfter }) {
     writeFileSync(path.join(work, 'index.txt'), '');
     writeFileSync(path.join(work, 'serial'), '01\n');
     writeFileSync(path.join(work, 'ext.cnf'),
-      `basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=${dnsNames.map((n) => `DNS:${n}`).join(',')}\n`);
+      `basicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature\nextendedKeyUsage=serverAuth\nsubjectAltName=${[...dnsNames.map((n) => `DNS:${n}`), ...ipAddresses.map((a) => `IP:${a}`)].join(',')}\n`);
     writeFileSync(path.join(work, 'ca.cnf'),
       `[ca]\ndefault_ca=c\n[c]\ndatabase=${slash(path.join(work, 'index.txt'))}\nserial=${slash(path.join(work, 'serial'))}\nnew_certs_dir=${slash(work)}\ndefault_md=sha256\nunique_subject=no\npolicy=p\n[p]\ncommonName=supplied\n`);
     run(['ca', '-batch', '-notext', '-config', slash(path.join(work, 'ca.cnf')), '-cert', slash(ca.crt), '-keyfile', slash(ca.key),
@@ -78,46 +78,78 @@ function issueServer(dir, ca, { name, dnsNames, notBefore, notAfter }) {
   }
 }
 
-/** The files the Compose stack mounts; existing files are kept, so a second run changes nothing. */
+/**
+ * The files the Compose stack mounts; existing files are kept, so a second run changes nothing. Two sets, each all or
+ * nothing: the CA with the Privacy Service certificate (DK-03), and the Kong edge certificate (DK-02a). A stack made
+ * before DK-02a gets only the Kong pair, signed by the CA it already has.
+ */
 function makeComposeTls(secretsDir, out = () => undefined) {
   const caDir = path.join(secretsDir, 'ca');
-  const paths = {
+  const base = {
     caKey: path.join(caDir, 'ca.key'),
     caCrt: path.join(secretsDir, 'tls_ca.crt'),
     crt: path.join(secretsDir, 'tls_privacy.crt'),
     key: path.join(secretsDir, 'tls_privacy.key'),
   };
+  const kong = {
+    crt: path.join(secretsDir, 'tls_kong.crt'),
+    key: path.join(secretsDir, 'tls_kong.key'),
+  };
   mkdirSync(secretsDir, { recursive: true, mode: 0o700 });
-  const present = Object.values(paths).filter((file) => existsSync(file));
-  if (present.length === Object.keys(paths).length) {
-    for (const file of present) out(`kept    ${file}`);
+  const presentOf = (set) => Object.values(set).filter((file) => existsSync(file));
+  // A CA and a certificate only fit together as a set; never overwrite half of one.
+  for (const set of [base, kong]) {
+    const present = presentOf(set);
+    if (present.length > 0 && present.length < Object.keys(set).length) {
+      throw new Error(`incomplete TLS set in ${secretsDir}: remove the tls_* files and ca/ to make a new one`);
+    }
+  }
+  const needBase = presentOf(base).length === 0;
+  const needKong = presentOf(kong).length === 0;
+  if (!needBase && !needKong) {
+    for (const file of [...presentOf(base), ...presentOf(kong)]) out(`kept    ${file}`);
     return false;
   }
-  // A CA and a certificate only fit together as a set; never overwrite half of one.
-  if (present.length > 0) {
-    throw new Error(`incomplete TLS set in ${secretsDir}: remove the tls_* files and ca/ to make a new one`);
+  if (needBase && !needKong) {
+    throw new Error(`incomplete TLS set in ${secretsDir}: the Kong files exist without the CA; remove the tls_* files and ca/`);
   }
   const work = mkdtempSync(path.join(tmpdir(), 'privpay-tls-'));
+  const created = [];
   try {
-    const ca = issueCa(work);
     const now = new Date();
-    const server = issueServer(work, ca, {
-      name: 'privacy',
+    const validity = { notBefore: new Date(now.getTime() - 3600_000), notAfter: new Date(now.getTime() + 365 * 86_400_000) };
+    let ca;
+    if (needBase) {
+      ca = issueCa(work);
       // The service name on the `privacy` network is what callers connect to; nothing else is valid.
-      dnsNames: ['privacy-service'],
-      notBefore: new Date(now.getTime() - 3600_000),
-      notAfter: new Date(now.getTime() + 365 * 86_400_000),
-    });
-    mkdirSync(caDir, { recursive: true, mode: 0o700 });
-    copyFileSync(ca.key, paths.caKey);
-    copyFileSync(ca.crt, paths.caCrt);
-    copyFileSync(server.crt, paths.crt);
-    // Readable inside the folder so the non-root user of the container can read the bind-mounted copy (Linux).
-    copyFileSync(server.key, paths.key);
+      const privacy = issueServer(work, ca, { name: 'privacy', dnsNames: ['privacy-service'], ...validity });
+      mkdirSync(caDir, { recursive: true, mode: 0o700 });
+      copyFileSync(ca.key, base.caKey);
+      copyFileSync(ca.crt, base.caCrt);
+      copyFileSync(privacy.crt, base.crt);
+      // Readable inside the folder so the non-root user of the container can read the bind-mounted copy (Linux).
+      copyFileSync(privacy.key, base.key);
+      created.push(...Object.values(base));
+    } else {
+      // openssl reads the CA key; it is never printed or copied.
+      ca = { key: base.caKey, crt: base.caCrt };
+    }
+    if (needKong) {
+      // The names a client of the edge may use: the Compose service name, and the loopback names of the published port.
+      const edge = issueServer(work, ca, {
+        name: 'kong',
+        dnsNames: ['kong', 'localhost'],
+        ipAddresses: ['127.0.0.1'],
+        ...validity,
+      });
+      copyFileSync(edge.crt, kong.crt);
+      copyFileSync(edge.key, kong.key);
+      created.push(kong.crt, kong.key);
+    }
   } finally {
     rmSync(work, { recursive: true, force: true });
   }
-  for (const file of Object.values(paths)) out(`created ${file}`);
+  for (const file of created) out(`created ${file}`);
   return true;
 }
 
@@ -126,6 +158,8 @@ const TLS_SECRETS = Object.freeze({
   tls_ca_crt: 'tls_ca.crt',
   tls_privacy_crt: 'tls_privacy.crt',
   tls_privacy_key: 'tls_privacy.key',
+  tls_kong_crt: 'tls_kong.crt',
+  tls_kong_key: 'tls_kong.key',
 });
 
 module.exports = { issueCa, issueServer, makeComposeTls, opensslBinary, TLS_SECRETS };

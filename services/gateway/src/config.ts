@@ -31,6 +31,8 @@ export const gatewayConfigSchema = z
       .default('true')
       .transform((value) => value === 'true'),
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(100),
+    // DK-02a: 1 when Kong is the one proxy in front (its X-Forwarded-For entry is believed); 0 otherwise.
+    EDGE_PROXY_HOPS: z.enum(['0', '1']).default('0').transform(Number),
   })
   .superRefine(privacyUrlMatchesMode);
 export type GatewayConfig = z.output<typeof gatewayConfigSchema>;

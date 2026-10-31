@@ -23,7 +23,11 @@ function composeArgs(mode, rest) {
   ];
 }
 
-module.exports = { composeArgs, MODES };
+/** The folder of the Compose secrets (git-ignored), and the public certificate of the development CA inside it. */
+const secretsDir = () => process.env['DOCKER_SECRETS_DIR'] ?? path.join(__dirname, '..', '..', 'secrets', 'docker');
+const caFile = () => path.join(secretsDir(), 'tls_ca.crt');
+
+module.exports = { composeArgs, MODES, caFile };
 
 if (require.main === module) {
   const [mode, ...rest] = process.argv.slice(2);

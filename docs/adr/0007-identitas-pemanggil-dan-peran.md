@@ -34,6 +34,10 @@
 - Dampak pada pengujian: tes negatif untuk `X-Actor-Token` tidak valid, kedaluwarsa, `aud` salah, dan token manusia dipakai sebagai `Authorization` oleh layanan yang tidak berhak.
 - Yang harus diubah: spec `privacy-service` dan `gateway-tokenizer`, `CONTEXT.md`.
 
+## Tambahan (2026-10-31, ADR-0015)
+
+Di depan adapter, plugin `jwt` Kong memeriksa tanda tangan RS256, `exp` (umur ≤ 300 detik, butir 7), dan `iss` (kunci consumer) untuk setiap rute kecuali `POST /register` dan `GET /health`. Kong OSS tidak memeriksa `aud`; `aud`, `azp`, dan peran tetap hanya diperiksa adapter dan layanan penerima. Header `Authorization` dan `X-Actor-Token` diteruskan tanpa diubah.
+
 ## Kapan ditinjau ulang
 
 Saat Keycloak menggantikan `dev-idp`, atau bila Tabel 3 diubah.

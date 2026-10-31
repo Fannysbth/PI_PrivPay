@@ -22,6 +22,7 @@ interface ComposeService {
   profiles?: string[];
   healthcheck?: { test?: string[] };
   environment?: Record<string, string>;
+  depends_on?: Record<string, { condition?: string }>;
   deploy?: { resources?: { limits?: { cpus?: string; memory?: string } } };
 }
 interface Compose {
@@ -56,6 +57,9 @@ function merged(mode: Mode): Record<string, ComposeService> {
   }
   return out;
 }
+
+// Variables whose name ends in KEY but whose value is the path of a secret file, not the secret (third-party names).
+const PATH_VALUED_KEYS = new Set(['KONG_SSL_CERT_KEY']);
 
 describe('DK-01 the Dockerfile (NFR-22, TK-18, S-06)', () => {
   // Comments explain why; only instructions are checked.
@@ -110,10 +114,13 @@ describe.each(MODES)(
       }
     });
 
-    it('DK-01 only the Gateway is published, and only on the loopback of the host', () => {
+    it('DK-01 DK-02a only Kong (the edge) is published, only on the loopback of the host and only to its TLS port', () => {
       const published = Object.entries(services).filter(([, s]) => s.ports !== undefined);
-      expect(published.map(([name]) => name)).toEqual(['gateway']);
-      for (const port of published[0]?.[1].ports ?? []) expect(port).toMatch(/^127\.0\.0\.1:/);
+      expect(published.map(([name]) => name)).toEqual(['kong']);
+      for (const port of published[0]?.[1].ports ?? [])
+        expect(port).toMatch(/^127\.0\.0\.1:\$\{GATEWAY_HOST_PORT:-40(10|11)\}:8443$/);
+      // The adapter is reached through Kong only.
+      expect(services['gateway']?.ports).toBeUndefined();
     });
 
     it('DK-01 every image is pinned (a version, and a digest for the PostgreSQL image) and none is :latest', () => {
@@ -126,6 +133,8 @@ describe.each(MODES)(
         expect(service.image ?? '').toMatch(/:[^:@/]+(@|$)/);
         if (name.startsWith('pg-'))
           expect(service.image).toMatch(/^postgres:16\.\d+@sha256:[0-9a-f]{64}$/);
+        else if (name === 'kong')
+          expect(service.image).toMatch(/^kong:3\.9\.4@sha256:[0-9a-f]{64}$/);
         else expect(service.image).toMatch(/^privpay-[a-z-]+:dk01a$/);
       }
     });
@@ -144,7 +153,9 @@ describe.each(MODES)(
       for (const [name, service] of Object.entries(services)) {
         for (const [key, value] of Object.entries(service.environment ?? {})) {
           if (/(PASSWORD|SECRET|KEY)(_FILE)?$/.test(key) && !/_VERSION$/.test(key)) {
-            expect({ name, key, file: key.endsWith('_FILE') }).toEqual({ name, key, file: true });
+            // KONG_SSL_CERT_KEY is Kong's own variable for the path of its TLS key (DK-02a); the value is checked below.
+            const isPath = key.endsWith('_FILE') || PATH_VALUED_KEYS.has(key);
+            expect({ name, key, file: isPath }).toEqual({ name, key, file: true });
             expect(value).toMatch(/^\/run\/secrets\/[A-Za-z0-9_.-]+$/);
           }
         }
@@ -197,6 +208,9 @@ describe.each(MODES)(
         'TLS_CERT_FILE',
         'TLS_KEY_FILE',
         'NODE_EXTRA_CA_CERTS',
+        // DK-02a: the edge sits in front of the adapter only in Docker; the IdP lifetime is a knob of the edge-check.
+        'EDGE_PROXY_HOPS',
+        'ACCESS_TOKEN_TTL_SECONDS',
       ]);
       const localOnly = new Set(['PG_DATABASE_SUFFIX']);
       for (const planned of buildPlan(mode, { secretsDir: 'secrets' })) {
@@ -247,7 +261,9 @@ describe('DK-01 the two conditions differ only by the privacy layer (ADR-0003, N
   it('DK-01 PRIVACY_MODE is set by the mode file, to its own condition, on every service that reads it', () => {
     for (const mode of MODES) {
       for (const [name, service] of Object.entries(merged(mode))) {
-        if (service.profiles !== undefined || name.startsWith('pg-')) continue;
+        // Kong and its config step read no PRIVACY_MODE: the edge is the same in both conditions (DK-02a).
+        if (service.profiles !== undefined || name.startsWith('pg-') || name.startsWith('kong'))
+          continue;
         expect({ name, mode: service.environment?.['PRIVACY_MODE'] }).toEqual({ name, mode });
       }
       expect(base.services['gateway']?.environment?.['PRIVACY_MODE']).toBeUndefined();
@@ -300,13 +316,42 @@ describe.each(MODES)('DK-03 the three networks and TLS in the %s condition (NFR-
     expect(base.networks?.['privacy']?.internal).toBe(true);
   });
 
-  it('DK-03 only the Gateway is on the edge, and it is the only published service', () => {
-    expect(on('edge')).toEqual(['gateway']);
+  it('DK-03 DK-02a only Kong is on the edge, and it is the only published service', () => {
+    expect(on('edge')).toEqual(['kong']);
     expect(
       Object.entries(services)
         .filter(([, service]) => service.ports !== undefined)
         .map(([name]) => name),
-    ).toEqual(['gateway']);
+    ).toEqual(['kong']);
+    // The adapter has no way out and is not in front: only Kong reaches it, from the business network.
+    expect(services['gateway']?.networks).not.toContain('edge');
+  });
+
+  it('DK-02a Kong has TLS only, no admin API, no plain HTTP listener, no version headers, and the adapter trusts one proxy', () => {
+    const kong = services['kong']?.environment ?? {};
+    expect(kong['KONG_DATABASE']).toBe('off');
+    expect(kong['KONG_PROXY_LISTEN']).toBe('0.0.0.0:8443 ssl');
+    expect(kong['KONG_ADMIN_LISTEN']).toBe('off');
+    expect(kong['KONG_HEADERS']).toBe('off');
+    expect(kong['KONG_PROXY_ACCESS_LOG']).toBe('off');
+    expect(kong['KONG_SSL_CERT']).toBe('/run/secrets/tls_kong_crt');
+    expect(kong['KONG_SSL_CERT_KEY']).toBe('/run/secrets/tls_kong_key');
+    // Only the plugins DK-02a uses are loaded; a custom or unused one is not.
+    expect(String(kong['KONG_PLUGINS']).split(',').sort()).toEqual([
+      'correlation-id',
+      'jwt',
+      'post-function',
+      'prometheus',
+      'rate-limiting',
+      'request-size-limiting',
+      'request-termination',
+    ]);
+    // Kong starts only after the declarative file was written from the IdP key, and after the adapter is healthy.
+    expect(services['kong']?.depends_on).toMatchObject({
+      'kong-config': { condition: 'service_completed_successfully' },
+      gateway: { condition: 'service_healthy' },
+    });
+    expect(services['gateway']?.environment?.['EDGE_PROXY_HOPS']).toBe('1');
   });
 
   it('DK-03 every service is on a network, and none is on the default or a host network', () => {

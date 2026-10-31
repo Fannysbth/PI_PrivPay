@@ -1,3 +1,25 @@
+# HANDOFF (2026-10-31): DK-02a SELESAI di `feat/dk-02a` (Kong 3.9.4 OSS di depan gateway-adapter, kedua mode)
+
+Keputusan Fanny (2026-10-31): pengembangan diselesaikan dulu dengan komponen standar industri sebelum pengujian. Urutan: DK-02a (selesai), DK-02b, titik keputusan DK-02c, DK-04, DK-06, penutup DK dua putaran, lalu M6 dan M7. **Q-10 (adapter permanen) DIBATALKAN.** Dicatat di OPEN_QUESTIONS, ADR-0015 (baru; ADR-0004, 0007, 0008 diberi catatan), tiket DK-02.
+
+| Butir | Bukti |
+| --- | --- |
+| Kong 3.9.4 (digest terpin) DB-less, TLS saja, di depan adapter | Newman lewat Kong: proposed 149 request, 115 asersi, 0 gagal; baseline 149 request, 103 asersi, 0 gagal |
+| Mutasi di tepi (`pnpm docker:edge-check`) | base (semua cek), expiry, limits: lulus di kedua mode (token rusak/diubah/`alg=none`/di URL, kedaluwarsa, 100 KiB, laju 429 + Retry-After, TLS tanpa CA / nama salah / HTTP polos, `/metrics` dan variannya) |
+| Gerbang ringan | lint, typecheck, unit 1458/1458, `secret-scan:tree`, `gitleaks --all`, `audit --prod`: hijau |
+| Memori | kontainer Kong 81 sampai 102 MiB dari batas 512 MiB; memori bebas laptop 1,1 sampai 2,0 GB dengan Docker menyala (tumpukan penuh) |
+
+## Peta rute
+Kong (publik, `127.0.0.1:4010` proposed / `:4011` baseline, HTTPS): `POST /register` dan `GET /health` terbuka; `/metrics` (dan `/Metrics`, `/metrics/`) ditolak setelah token ditanyakan; semua lain wajib JWT lalu diteruskan ke adapter tanpa mengubah payload. Adapter (tidak dipublikasikan): `aud`, `azp`, peran, skema, tokenisasi, pendaftaran, batas laju per pemanggil. Listener status Kong (8100, internal) memberi metrik Kong.
+
+## Yang perlu diketahui
+- Setelah `idp` dibuat ulang, buat ulang `gateway kong-config kong` bersama (kunci dev-idp baru tiap start; adapter menyimpan JWKS lama 30 detik). Keycloak (DK-04) menghapus ini.
+- Postman: environment kini `https`; CA dev dipercaya di Postman (README). `pnpm docker:secrets` sekali lagi untuk membuat `tls_kong.*`.
+- Keterbatasan N-54 (aud tak diperiksa Kong OSS, `/health` menampilkan mode, kunci IdP basi, Lua tanpa kerangka uji, batas laju per alamat di Docker Desktop satu alamat).
+- Tidak dikerjakan: DK-02b, DK-02c, DK-04, DK-06, M6, M7. Skill dipakai: /tdd (pola), /simplify, /code-review, /security-review (inline), /run (tumpukan nyata); tidak dipakai: /diagnosing-bugs (tidak ada kegagalan berulang).
+- Belum teruji: Newman/edge-check di mesin bersih; latensi lewat Kong (tidak diklaim); pemindai kenari `pii-scan` lewat Kong; `test:integration` penuh (gerbang ringan); pelaksanaan DK-02b/c.
+
+
 # HANDOFF (2026-10-24, sesi lanjutan): DK image-scan, DK-05, DK-03 SELESAI dan di-merge ke `main` lokal; DK-02 (Kong) BERHENTI menunggu keputusan
 
 | Butir | Commit merge | Bukti |
