@@ -7,13 +7,13 @@ import type { PrivacyPort, PseudonymizeRequest } from '../src/tokenizer/privacy-
 import { Tokenizer } from '../src/tokenizer/tokenizer';
 
 // The contract vectors of gateway spec 2: input (claims, body, Privacy's answers) -> output or error. The Tokenizer
-// of the adapter passes them now; the Lua plugin must pass the same files later (DK-02). Canary values are not in the
+// of the adapter passes them now, and the Lua plugin of Kong passes the same files (DK-02b, `pnpm test:edge`). Canary values are not in the
 // files: `{{customer_id}}`, `{{rekening}}`, `{{nik}}`, `{{nama}}`, `{{email}}` are replaced from `canary` (K-24).
 const DIR = join(__dirname, '..', '..', '..', 'tests', 'security', 'gateway-contract');
 
 interface Vector {
   name: string;
-  route: 'transaction' | 'settlement';
+  route: 'transaction' | 'settlement' | 'notification';
   canary: number;
   claims?: { customer_id: string };
   idempotency_key?: string;
@@ -36,7 +36,7 @@ const files = readdirSync(DIR).filter((name) => name.endsWith('.json'));
 
 describe('M2-11 gateway contract vectors', () => {
   it('M2-11 there are vectors for both routes and for the failures', () => {
-    expect(files.length).toBeGreaterThanOrEqual(6);
+    expect(files.length).toBeGreaterThanOrEqual(8);
   });
 
   it.each(files)('M2-11 %s', async (file) => {
@@ -72,7 +72,13 @@ describe('M2-11 gateway contract vectors', () => {
             idempotencyKey: vector.idempotency_key ?? '',
             body: vector.body,
           }
-        : { route: 'settlement', body: vector.body },
+        : vector.route === 'notification'
+          ? {
+              route: 'notification',
+              claims: { customerId: vector.claims?.customer_id ?? '' },
+              body: vector.body,
+            }
+          : { route: 'settlement', body: vector.body },
     );
     if (vector.expect.error !== undefined) {
       await expect(run).rejects.toMatchObject({ reason: vector.expect.error });
@@ -81,10 +87,20 @@ describe('M2-11 gateway contract vectors', () => {
       expect(result.outbound).toEqual(vector.expect.outbound);
       // Whatever the file says, the payload that leaves holds no canary of this vector (FR-02, FR-03).
       assertNoFindings(
-        scanText(JSON.stringify(result.outbound), [buildCanary(vector.canary)], {
-          service: 'downstream',
-          location: 'outbound',
-        }),
+        scanText(
+          JSON.stringify(result.outbound),
+          // The phone is the one value Notification must receive to send the message (Metodologi, flow 8): it is the
+          // deliberate exception, so this route is held to every other attribute.
+          [
+            vector.route === 'notification'
+              ? { ...buildCanary(vector.canary), hp: 'not-sent' }
+              : buildCanary(vector.canary),
+          ],
+          {
+            service: 'downstream',
+            location: 'outbound',
+          },
+        ),
       );
     }
     expect(calls).toHaveLength(vector.expect.privacy_calls);

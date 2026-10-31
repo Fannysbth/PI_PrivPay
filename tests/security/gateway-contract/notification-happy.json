@@ -1,0 +1,19 @@
+{
+  "name": "AZ-02 a customer changes the phone: the domain token and the phone go on, the customer id never does",
+  "route": "notification",
+  "canary": 66,
+  "claims": { "customer_id": "{{customer_id}}" },
+  "body": { "phone": "{{hp}}", "channel": "SMS" },
+  "privacy": {
+    "pseudonyms": { "CUSTOMER:{{customer_id}}": "PSEU-DDDD0004" },
+    "errors": {}
+  },
+  "expect": {
+    "outbound": {
+      "notification_domain_id": "PSEU-DDDD0004",
+      "phone": "{{hp}}",
+      "channel": "SMS"
+    },
+    "privacy_calls": 1
+  }
+}

@@ -106,6 +106,7 @@ secrets:
   tls_privacy_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_privacy.key' }
   tls_kong_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.crt' }
   tls_kong_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.key' }
+  edge_adapter_secret: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/edge_adapter_secret' }
   grafana_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/grafana_admin_password' }
 
 volumes:
@@ -440,7 +441,11 @@ services:
       KONG_SSL_CERT_KEY: /run/secrets/tls_kong_key
       KONG_SSL_PROTOCOLS: TLSv1.2 TLSv1.3
       # Only what DK-02a uses is loaded.
-      KONG_PLUGINS: jwt,rate-limiting,request-size-limiting,request-termination,correlation-id,post-function,prometheus
+      KONG_PLUGINS: jwt,rate-limiting,request-size-limiting,request-termination,correlation-id,post-function,prometheus,privacy-tokenizer
+      # DK-02b: the plugin code is mounted read-only from the repository, not built into an image.
+      KONG_LUA_PACKAGE_PATH: /plugins/?.lua;;
+      # The whole body (settlement, up to the 64 KiB limit) stays in memory, so the plugin can read it.
+      KONG_NGINX_HTTP_CLIENT_BODY_BUFFER_SIZE: 128k
       KONG_NGINX_WORKER_PROCESSES: '1'
       # No access log: request lines and addresses stay out of the logs (invariant 6); errors go to stderr.
       KONG_PROXY_ACCESS_LOG: 'off'
@@ -450,7 +455,9 @@ services:
       KONG_HEADERS: 'off'
       KONG_ERROR_DEFAULT_TYPE: application/json
     secrets: [tls_kong_crt, tls_kong_key]
-    volumes: ['kong-config:/declarative:ro']
+    volumes:
+      - 'kong-config:/declarative:ro'
+      - '../../services/gateway/plugins/privacy-tokenizer/kong:/plugins/kong:ro'
     networks: [edge, business]
     healthcheck:
       test: [CMD, kong, health]

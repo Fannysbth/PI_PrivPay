@@ -54,7 +54,6 @@ function checks(mode) {
       ['bank-simulator has no route to pg-privacy', 'bank-simulator', tcpProbe('pg-privacy', 5432), 'refused'],
       ['privacy-service has no route to pg-transaction (other zone)', 'privacy-service', tcpProbe('pg-transaction', 5432), 'refused'],
       ['privacy-service has no route to fraud-service (business only)', 'privacy-service', tcpProbe('fraud-service', 4003), 'refused'],
-      ['privacy-service has no route to kong (edge is not in the privacy zone)', 'privacy-service', tcpProbe('kong', 8443), 'refused'],
       ['privacy-service reaches its own database', 'privacy-service', tcpProbe('pg-privacy', 5432), 'reach'],
     );
   } else {

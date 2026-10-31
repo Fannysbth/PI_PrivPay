@@ -1,0 +1,9 @@
+{
+  "name": "AZ-02 an extra field in the body: VALIDATION_ERROR and no token is asked for",
+  "route": "notification",
+  "canary": 67,
+  "claims": { "customer_id": "{{customer_id}}" },
+  "body": { "phone": "{{hp}}", "channel": "SMS", "customer_id": "{{customer_id}}" },
+  "privacy": { "pseudonyms": {}, "errors": {} },
+  "expect": { "error": "VALIDATION_ERROR", "privacy_calls": 0 }
+}

@@ -33,11 +33,33 @@ export const gatewayConfigSchema = z
     RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(100),
     // DK-02a: 1 when Kong is the one proxy in front (its X-Forwarded-For entry is believed); 0 otherwise.
     EDGE_PROXY_HOPS: z.enum(['0', '1']).default('0').transform(Number),
+    // DK-02b: true when Kong replaces the identifiers by tokens before the adapter (proposed only). The adapter then
+    // takes the tokenized shape from Kong, which proves itself with EDGE_ADAPTER_SECRET_FILE, and never raw identifiers.
+    EDGE_TOKENIZATION: z
+      .enum(['true', 'false'])
+      .default('false')
+      .transform((value) => value === 'true'),
   })
-  .superRefine(privacyUrlMatchesMode);
+  .superRefine(privacyUrlMatchesMode)
+  .superRefine((config, ctx) => {
+    // Without a Privacy Service nothing is tokenized, so there is nothing for Kong to do and nothing to trust it for.
+    if (config.EDGE_TOKENIZATION && config.PRIVACY_SERVICE_URL === undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['EDGE_TOKENIZATION'],
+        message: 'needs a Privacy Service (PRIVACY_SERVICE_URL)',
+      });
+    }
+  });
 export type GatewayConfig = z.output<typeof gatewayConfigSchema>;
 
-export function loadGatewayConfig(env: EnvSource): GatewayConfig & { clientSecret: string } {
+export function loadGatewayConfig(
+  env: EnvSource,
+): GatewayConfig & { clientSecret: string; edgeSecret: string | undefined } {
   const config = loadConfig(gatewayConfigSchema, env);
-  return { ...config, clientSecret: readSecret(env, 'API_GATEWAY_CLIENT_SECRET') };
+  return {
+    ...config,
+    clientSecret: readSecret(env, 'API_GATEWAY_CLIENT_SECRET'),
+    edgeSecret: config.EDGE_TOKENIZATION ? readSecret(env, 'EDGE_ADAPTER_SECRET') : undefined,
+  };
 }

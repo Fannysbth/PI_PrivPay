@@ -210,6 +210,8 @@ describe.each(MODES)(
         'NODE_EXTRA_CA_CERTS',
         // DK-02a: the edge sits in front of the adapter only in Docker; the IdP lifetime is a knob of the edge-check.
         'EDGE_PROXY_HOPS',
+        'EDGE_TOKENIZATION',
+        'EDGE_ADAPTER_SECRET_FILE',
         'ACCESS_TOKEN_TTL_SECONDS',
       ]);
       const localOnly = new Set(['PG_DATABASE_SUFFIX']);
@@ -242,8 +244,10 @@ describe('DK-01 the two conditions differ only by the privacy layer (ADR-0003, N
       .filter(([, s]) => s.environment?.['PRIVACY_SERVICE_URL'] !== undefined)
       .map(([name]) => name)
       .sort();
+    // kong-config only tells the tokenizing plugin of Kong where Privacy is (DK-02b); it calls nothing itself.
     expect(callers).toEqual([
       'gateway',
+      'kong-config',
       'notification-service',
       'reconciliation-service',
       'transaction-service',
@@ -262,8 +266,7 @@ describe('DK-01 the two conditions differ only by the privacy layer (ADR-0003, N
     for (const mode of MODES) {
       for (const [name, service] of Object.entries(merged(mode))) {
         // Kong and its config step read no PRIVACY_MODE: the edge is the same in both conditions (DK-02a).
-        if (service.profiles !== undefined || name.startsWith('pg-') || name.startsWith('kong'))
-          continue;
+        if (service.profiles !== undefined || name.startsWith('pg-') || name === 'kong') continue;
         expect({ name, mode: service.environment?.['PRIVACY_MODE'] }).toEqual({ name, mode });
       }
       expect(base.services['gateway']?.environment?.['PRIVACY_MODE']).toBeUndefined();
@@ -341,6 +344,7 @@ describe.each(MODES)('DK-03 the three networks and TLS in the %s condition (NFR-
       'correlation-id',
       'jwt',
       'post-function',
+      'privacy-tokenizer',
       'prometheus',
       'rate-limiting',
       'request-size-limiting',
@@ -379,11 +383,12 @@ describe.each(MODES)('DK-03 the three networks and TLS in the %s condition (NFR-
         });
     });
 
-    it('DK-03 only the Gateway, the three callers and the IdP (keys for the JWT check) share the privacy network', () => {
+    it('DK-03 DK-02b only Kong (the tokenizing edge), the Gateway, the three callers and the IdP share the privacy network', () => {
       expect(on('privacy')).toEqual(
         [
           'gateway',
           'idp',
+          'kong',
           'migrate-privacy',
           'notification-service',
           'pg-privacy',
