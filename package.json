@@ -26,6 +26,7 @@
     "docker:net-check": "node scripts/docker/net-check.cjs",
     "docker:edge-check": "node scripts/docker/edge-check.cjs",
     "docker:newman": "node scripts/docker/newman.cjs",
+    "docker:keycloak-check": "node scripts/docker/keycloak-check.cjs",
     "docker:compose": "node scripts/docker/compose.cjs",
     "db:migrate": "tsc -b tsconfig.build.json && node --env-file-if-exists=.env.test packages/common/dist/bin/db-migrate.js",
     "db:pg16": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/db/pg16.ps1",

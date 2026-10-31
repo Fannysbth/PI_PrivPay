@@ -108,10 +108,39 @@ describe.each(MODES)(
           name,
           opt: ['no-new-privileges:true'],
         });
-        expect({ name, read_only: service.read_only }).toEqual({ name, read_only: true });
+        // Keycloak is the one exception (DK-04): start-dev builds its runtime and keeps an H2 file at start. It still drops
+        // every capability and forbids new privileges, and its other guards are in the test below.
+        expect({ name, read_only: service.read_only }).toEqual({
+          name,
+          read_only: name === 'keycloak' ? undefined : true,
+        });
         expect(service.privileged).toBeUndefined();
         expect(service.network_mode).toBeUndefined();
       }
+    });
+
+    it('DK-04 Keycloak is a profile, never in the default stack, within 768 MiB with a capped heap, not published, no bootstrap secret', () => {
+      const keycloak = services['keycloak'];
+      expect(keycloak?.profiles).toEqual(['keycloak']);
+      expect(services['keycloak-realm']?.profiles).toEqual(['keycloak']);
+      // The dev IdP is not in that profile: the two cannot be started together by the profile alone.
+      expect(services['idp']?.profiles).toBeUndefined();
+      expect(keycloak?.image).toMatch(
+        /^quay\.io\/keycloak\/keycloak:26\.4\.0@sha256:[0-9a-f]{64}$/,
+      );
+      expect(keycloak?.deploy?.resources?.limits?.memory).toBe('768M');
+      expect(keycloak?.environment?.['JAVA_OPTS_KC_HEAP']).toMatch(/-Xmx320m/);
+      expect(keycloak?.ports).toBeUndefined();
+      expect(keycloak?.networks).toEqual(['business']);
+      expect(keycloak?.user).toBeUndefined();
+      const environment = Object.keys(keycloak?.environment ?? {});
+      expect(environment.filter((key) => /BOOTSTRAP|PASSWORD|SECRET/.test(key))).toEqual([]);
+      expect(keycloak?.depends_on).toMatchObject({
+        'keycloak-realm': { condition: 'service_completed_successfully' },
+      });
+      expect(services['keycloak-realm']?.secrets).toEqual(
+        expect.arrayContaining(['idp-admin_client_secret', 'keycloak_dev_user_password']),
+      );
     });
 
     it('DK-01 DK-02a only Kong (the edge) is published, only on the loopback of the host and only to its TLS port', () => {

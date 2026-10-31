@@ -10,8 +10,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   authenticate,
+  createHttpClient,
+  createIdpTokenCache,
   DomainError,
+  FakeClock,
+  idpJwksSource,
+  JwksKeys,
   signJwt,
+  unverifiedKid,
   type AuthenticateOptions,
 } from '../../packages/common/src';
 import { docker } from './helpers';
@@ -293,6 +299,59 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
 
     it('DK-04 the admin client cannot be used as a service token (its token has no audience of a service)', async () => {
       expect(refused(await service('idp-admin'), 'privacy-service')).not.toBe('accepted');
+    });
+  });
+
+  describe('the shared IdP helpers of packages/common against the real Keycloak (ticket 1)', () => {
+    const http = (): ReturnType<typeof createHttpClient> =>
+      createHttpClient({ baseUrls: { idp: BASE }, timeoutMs: 5000, maxRetries: 0 });
+    const idp = { kind: 'keycloak', realm: 'privpay' } as const;
+
+    it('DK-04 idpJwksSource keeps the signing key, JwksKeys loads it, and a token of createIdpTokenCache passes authenticate()', async () => {
+      const client = http();
+      const jwks = new JwksKeys({
+        source: idpJwksSource(client, idp),
+        clock: new FakeClock(new Date()),
+        cooldownSeconds: 30,
+        maxAgeSeconds: 300,
+      });
+      const cache = createIdpTokenCache({
+        http: client,
+        clock: new FakeClock(new Date()),
+        idp,
+        grant: {
+          type: 'client-credentials',
+          clientId: 'transaction',
+          clientSecret: clientSecrets['transaction'] ?? '',
+          audience: 'privacy-service',
+        },
+      });
+      const token = await cache.get();
+      const kid = unverifiedKid(token);
+      await jwks.ensure(kid);
+      const result = authenticate(
+        { authorization: `Bearer ${token}` },
+        { ...options('privacy-service'), resolveKey: (id) => jwks.resolveKey(id) },
+      );
+      expect(result).toMatchObject({ requestingService: 'TRANSACTION' });
+    });
+
+    it('DK-04 the bank signs in with createIdpTokenCache (password grant), and a wrong password is unavailable', async () => {
+      const grant = { type: 'login', clientId: 'bank-simulator', username: 'bank.uji.1' } as const;
+      const good = createIdpTokenCache({
+        http: http(),
+        clock: new FakeClock(new Date()),
+        idp,
+        grant: { ...grant, password: devPassword },
+      });
+      expect(who(await good.get(), 'api-gateway')).toMatchObject({ requestingService: 'BANK' });
+      const bad = createIdpTokenCache({
+        http: http(),
+        clock: new FakeClock(new Date()),
+        idp,
+        grant: { ...grant, password: `${devPassword}x` },
+      });
+      await expect(bad.get()).rejects.toMatchObject({ reason: 'SERVICE_UNAVAILABLE' });
     });
   });
 
