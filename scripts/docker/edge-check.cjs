@@ -17,13 +17,16 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const { spawnSync } = require('node:child_process');
-const { MODES, composeArgs, caFile } = require('./compose.cjs');
+const { MODES, composeArgs, caFile, secretsDir } = require('./compose.cjs');
 
 const HOST = '127.0.0.1';
 const PORTS = { proposed: 4010, baseline: 4011 };
 const IDP = { host: HOST, port: Number(process.env['IDP_HOST_PORT'] ?? 8080) };
 const REALM_PATH = '/realms/privpay/protocol/openid-connect/token';
-const readSecretFile = (name) => fs.readFileSync(path.join(path.dirname(caFile()), name), 'utf8').trim();
+const readSecretFile = (name) => fs.readFileSync(path.join(secretsDir(), name), 'utf8').trim();
+// The one invented test password is the same for every sign-in of a run: read the file once.
+let testPassword;
+const userPassword = () => (testPassword ??= readSecretFile('keycloak_dev_user_password'));
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** One HTTPS request to the edge. Resolves to { status, headers, body } or { error: code }. */
@@ -81,7 +84,7 @@ function idpCall(method, urlPath, { form, json, token } = {}) {
 }
 
 async function mintToken(username = 'analis.uji.1', clientId = 'admin-console') {
-  const answer = await idpCall('POST', REALM_PATH, { form: { grant_type: 'password', client_id: clientId, username, password: readSecretFile('keycloak_dev_user_password') } });
+  const answer = await idpCall('POST', REALM_PATH, { form: { grant_type: 'password', client_id: clientId, username, password: userPassword() } });
   if (typeof answer.json?.access_token !== 'string') throw new Error('Keycloak gave no token');
   return answer.json.access_token;
 }
@@ -182,7 +185,8 @@ async function claimChecks(mode, port, ca) {
   const add = (label, got, expected) => results.push([label, got, expected]);
   const held = (token) => call(port, { url: '/transaction/held', headers: bearer(token), tls: verified });
 
-  add('control: an analyst of the console is let in', (await held(await mintToken())).status, 200);
+  const analyst = await mintToken();
+  add('control: an analyst of the console is let in', (await held(analyst)).status, 200);
   const reconciliation = await serviceToken('reconciliation');
   add(`a service account whose audience does not include api-gateway (reconciliation: ${claimSummary(reconciliation)})`, refused(await held(reconciliation)), '403 ACCESS_DENIED');
   add('a customer asking for a token at the admin client (azp admin-console) gets no usable role', refused(await held(await mintToken('nasabah.uji.103', 'admin-console'))), '401 UNAUTHENTICATED');
@@ -190,7 +194,7 @@ async function claimChecks(mode, port, ca) {
   add('a customer on a route of the console (wrong role)', refused(await held(await mintToken('nasabah.uji.102', 'customer-app'))), '403 ACCESS_DENIED');
 
   // Same claims, another key: re-sign a valid payload with a key that Kong does not know. Kong must refuse it itself.
-  const [h, p] = (await mintToken()).split('.');
+  const [h, p] = analyst.split('.');
   const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
   const signed = crypto.sign('RSA-SHA256', Buffer.from(`${h}.${p}`), privateKey).toString('base64url');
   const foreign = edgeOnly(await held(`${h}.${p}.${signed}`));
@@ -204,7 +208,7 @@ async function claimChecks(mode, port, ca) {
   const name = `ganda.uji.${String(Date.now()).slice(-8)}`;
   let userId;
   try {
-    const made = await idpCall('POST', `${base}/users`, { token: admin, json: { username: name, enabled: true, credentials: [{ type: 'password', value: readSecretFile('keycloak_dev_user_password'), temporary: false }] } });
+    const made = await idpCall('POST', `${base}/users`, { token: admin, json: { username: name, enabled: true, credentials: [{ type: 'password', value: userPassword(), temporary: false }] } });
     const found = await idpCall('GET', `${base}/users?username=${name}&exact=true`, { token: admin });
     userId = Array.isArray(found.json) ? found.json[0]?.id : undefined;
     const statuses = [];

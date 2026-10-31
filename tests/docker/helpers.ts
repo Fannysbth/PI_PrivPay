@@ -74,6 +74,10 @@ export const edge = (
 
 // DK-04: Keycloak signs a customer in by password grant. The one test password (invented) comes from its secret file and is
 // never printed. Keycloak is published on the loopback by docs/postman/compose.postman.yml.
+let testPassword: string | undefined;
+const userPassword = (): string =>
+  (testPassword ??= readFileSync(join(SECRETS_DIR, 'keycloak_dev_user_password'), 'utf8').trim());
+
 export async function login(username: string): Promise<string> {
   const port = process.env['IDP_HOST_PORT'] ?? '8080';
   const response = await fetch(
@@ -85,7 +89,7 @@ export async function login(username: string): Promise<string> {
         grant_type: 'password',
         client_id: 'customer-app',
         username,
-        password: readFileSync(join(SECRETS_DIR, 'keycloak_dev_user_password'), 'utf8').trim(),
+        password: userPassword(),
       }).toString(),
     },
   );

@@ -62,13 +62,16 @@ x-pg: &pg
     start_period: 20s
 
 # DK-04 (ADR-0017): Keycloak is the IdP of the stack. The dev IdP (`idp`, profile `dev-idp`) is for `pnpm dev:up` and fast tests.
-x-node-env: &node-env
-  TZ: UTC
-  BIND_HOST: 0.0.0.0
+x-idp-env: &idp-env
   IDP_URL: http://keycloak:8080
   IDP_KIND: keycloak
   IDP_REALM: privpay
   IDP_ISSUER: http://keycloak:8080/realms/privpay
+
+x-node-env: &node-env
+  <<: *idp-env
+  TZ: UTC
+  BIND_HOST: 0.0.0.0
 
 # Three zones (NFR-06, DK-03). `edge` is the only network with a way out and carries only Kong, the one published
 # service (and Grafana, which exists only under the monitoring profile). `business` holds the services that see tokens and their databases. `privacy` holds the Privacy Service, its
@@ -422,10 +425,7 @@ services:
     command: ['node', '/app/service/dist/edge/render-main.js']
     environment:
       TZ: UTC
-      IDP_URL: http://keycloak:8080
-      IDP_KIND: keycloak
-      IDP_REALM: privpay
-      IDP_ISSUER: http://keycloak:8080/realms/privpay
+      <<: *idp-env
       KONG_UPSTREAM_URL: http://gateway:4010
       KONG_CONFIG_OUT: /state/kong.json
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
