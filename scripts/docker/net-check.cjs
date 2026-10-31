@@ -34,6 +34,11 @@ function checks(mode) {
     ['gateway reaches transaction-service', 'gateway', tcpProbe('transaction-service', 4002), 'reach'],
     ['transaction-service reaches pg-transaction', 'transaction-service', tcpProbe('pg-transaction', 5432), 'reach'],
     ['no service has a route to the Internet (business is internal)', 'fraud-service', tcpProbe('1.1.1.1', 443), 'refused'],
+    // The edge (DK-02a): Kong is the only way in; TLS only, no admin API.
+    ['gateway adapter is reached through Kong: kong listens on 8443 (TLS)', 'gateway', tcpProbe('kong', 8443), 'reach'],
+    ['kong has no plain HTTP listener (8000)', 'gateway', tcpProbe('kong', 8000), 'refused'],
+    ['kong has no admin API (8001, 8444)', 'gateway', tcpProbe('kong', 8001), 'refused'],
+    ['kong status listener (8100, for Prometheus) is on the internal network only', 'gateway', tcpProbe('kong', 8100), 'reach'],
   ];
 
   if (mode === 'proposed') {
@@ -49,6 +54,7 @@ function checks(mode) {
       ['bank-simulator has no route to pg-privacy', 'bank-simulator', tcpProbe('pg-privacy', 5432), 'refused'],
       ['privacy-service has no route to pg-transaction (other zone)', 'privacy-service', tcpProbe('pg-transaction', 5432), 'refused'],
       ['privacy-service has no route to fraud-service (business only)', 'privacy-service', tcpProbe('fraud-service', 4003), 'refused'],
+      ['privacy-service has no route to kong (edge is not in the privacy zone)', 'privacy-service', tcpProbe('kong', 8443), 'refused'],
       ['privacy-service reaches its own database', 'privacy-service', tcpProbe('pg-privacy', 5432), 'reach'],
     );
   } else {

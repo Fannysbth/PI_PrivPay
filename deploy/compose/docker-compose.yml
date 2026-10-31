@@ -2,8 +2,9 @@
 # the second file: `-f docker-compose.yml -f mode.proposed.yml` or `-f docker-compose.yml -f mode.baseline.yml` (ADR-0003;
 # `pnpm docker:up`). Without a mode file the services refuse to start (PRIVACY_MODE is required).
 #
-# - Services live on internal networks (edge / business / privacy, DK-03); only the Gateway is published, and only on the
-#   loopback of the host (AZ-43, N-05: /health and /metrics of the Gateway stay reachable there until Kong takes the edge, DK-02).
+# - Services live on internal networks (edge / business / privacy, DK-03); only Kong (the edge, DK-02a) is published, and
+#   only on the loopback of the host, over TLS. The gateway adapter is not published: Kong forwards to it, and /metrics of
+#   the adapter is not offered on Kong's listener (N-05).
 # - Same CPU and memory limits in both conditions, because the limits are written here once (Metodologi C.3).
 # - Secrets are Docker secrets: files from secrets/docker/ (made by `pnpm docker:secrets`, git-ignored) mounted under
 #   /run/secrets and named in <NAME>_FILE variables. No secret is in an image, an argument or an environment value.
@@ -65,7 +66,7 @@ x-node-env: &node-env
   BIND_HOST: 0.0.0.0
   IDP_URL: http://idp:4000
 
-# Three zones (NFR-06, DK-03). `edge` is the only network with a way out and carries only the Gateway, the one published
+# Three zones (NFR-06, DK-03). `edge` is the only network with a way out and carries only Kong, the one published
 # service (and Grafana, which exists only under the monitoring profile). `business` holds the services that see tokens and their databases. `privacy` holds the Privacy Service, its
 # database and the services that may call it. A network marked internal has no route to the outside and no published port.
 networks:
@@ -103,10 +104,13 @@ secrets:
   tls_ca_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_ca.crt' }
   tls_privacy_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_privacy.crt' }
   tls_privacy_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_privacy.key' }
+  tls_kong_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.crt' }
+  tls_kong_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.key' }
   grafana_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/grafana_admin_password' }
 
 volumes:
   idp-state: {}
+  kong-config: {}
   pgdata-privacy: {}
   pgdata-transaction: {}
   pgdata-fraud: {}
@@ -251,6 +255,8 @@ services:
       DEV_IDP_ENABLED: 'true'
       DEV_IDP_SECRETS_DIR: /run/secrets
       DEV_IDP_STATE_DIR: /state
+      # DK-02a: shortened only for the edge-check of an expired token (docker:edge-check ... limits); 300 otherwise (ADR-0007).
+      ACCESS_TOKEN_TTL_SECONDS: ${ACCESS_TOKEN_TTL_SECONDS:-300}
     volumes: ['idp-state:/state']
     secrets: [api-gateway_client_secret, transaction_client_secret, fraud_client_secret, notification_client_secret, reconciliation_client_secret]
     networks: [business]
@@ -366,7 +372,7 @@ services:
       BANK_SIMULATOR_TEST_ENDPOINTS: 'true'
     networks: [business]
 
-  # ---- The only published service ----
+  # ---- The gateway adapter: reached through Kong only, not published ----
   gateway:
     <<: [*hardening, *limits, *node-health]
     image: privpay-gateway:dk01a
@@ -381,13 +387,80 @@ services:
       RECONCILIATION_SERVICE_URL: http://reconciliation-service:4005
       NOTIFICATION_SERVICE_URL: http://notification-service:4004
       API_GATEWAY_CLIENT_SECRET_FILE: /run/secrets/api-gateway_client_secret
+      # DK-02a: Kong is the one proxy in front; the address it appended to X-Forwarded-For is the client (K-14).
+      EDGE_PROXY_HOPS: '1'
     secrets: [api-gateway_client_secret]
-    networks: [business, edge]
+    networks: [business]
     depends_on:
       idp: { condition: service_healthy }
       transaction-service: { condition: service_healthy }
       reconciliation-service: { condition: service_healthy }
       notification-service: { condition: service_healthy }
+
+  # ---- The edge (DK-02a): Kong 3.9.4 OSS without a database, the only published service ----
+  # Before Kong starts, the IdP's public key is read and written into Kong's declarative file (a public key, not a
+  # secret). If the dev IdP is recreated it makes a new key: run `up -d --force-recreate kong-config kong` then.
+  kong-config:
+    <<: [*hardening, *limits]
+    restart: 'no'
+    image: privpay-gateway:dk01a
+    command: ['node', '/app/service/dist/edge/render-main.js']
+    environment:
+      TZ: UTC
+      IDP_URL: http://idp:4000
+      KONG_UPSTREAM_URL: http://gateway:4010
+      KONG_CONFIG_OUT: /state/kong.json
+      RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      KONG_RATE_LIMIT_PER_MINUTE: ${KONG_RATE_LIMIT_PER_MINUTE:-300}
+    volumes: ['kong-config:/state']
+    networks: [business]
+    depends_on:
+      idp: { condition: service_healthy }
+
+  kong:
+    <<: *hardening
+    image: kong:3.9.4@sha256:c1f5fbb80cd666b4b29b4e97875ecd64d93b01b23fb3083bc3e424b3bad5fdd5
+    # The image's own user (kong, not root). The prefix (pid, generated nginx config) goes to the tmpfs; /usr/local/kong
+    # itself holds libraries of the image and is read-only.
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+    environment:
+      KONG_DATABASE: 'off'
+      KONG_PREFIX: /tmp/kong
+      KONG_DECLARATIVE_CONFIG: /declarative/kong.json
+      # TLS only: there is no plain HTTP listener (NFR-06). The admin API is off; the status listener (with /metrics for
+      # Prometheus) is on the internal network and is not published.
+      KONG_PROXY_LISTEN: 0.0.0.0:8443 ssl
+      KONG_ADMIN_LISTEN: 'off'
+      KONG_STATUS_LISTEN: 0.0.0.0:8100
+      KONG_SSL_CERT: /run/secrets/tls_kong_crt
+      KONG_SSL_CERT_KEY: /run/secrets/tls_kong_key
+      KONG_SSL_PROTOCOLS: TLSv1.2 TLSv1.3
+      # Only what DK-02a uses is loaded.
+      KONG_PLUGINS: jwt,rate-limiting,request-size-limiting,request-termination,correlation-id,post-function,prometheus
+      KONG_NGINX_WORKER_PROCESSES: '1'
+      # No access log: request lines and addresses stay out of the logs (invariant 6); errors go to stderr.
+      KONG_PROXY_ACCESS_LOG: 'off'
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_LOG_LEVEL: notice
+      # No version or latency headers on answers.
+      KONG_HEADERS: 'off'
+      KONG_ERROR_DEFAULT_TYPE: application/json
+    secrets: [tls_kong_crt, tls_kong_key]
+    volumes: ['kong-config:/declarative:ro']
+    networks: [edge, business]
+    healthcheck:
+      test: [CMD, kong, health]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 15s
+    depends_on:
+      kong-config: { condition: service_completed_successfully }
+      gateway: { condition: service_healthy }
 
   # ---- One-off check from inside the network (`pnpm docker:smoke`): the IdP and the SMS simulator are not published. ----
   smoke:

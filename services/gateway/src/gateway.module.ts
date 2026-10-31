@@ -16,6 +16,7 @@ import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { loadGatewayConfig } from './config';
+import { clientAddress } from './edge/client-address';
 import { baselinePrivacyPort } from './baseline';
 import { ErrorMasker } from './error-masker';
 import { Gateway } from './gateway';
@@ -27,6 +28,7 @@ import { Tokenizer } from './tokenizer/tokenizer';
 import { TransactionIdGenerator } from './tokenizer/transaction-id';
 
 const GATEWAY = Symbol('GATEWAY');
+const EDGE_PROXY_HOPS = Symbol('EDGE_PROXY_HOPS');
 const CLIENT_ID = 'api-gateway';
 /** The audience of the dev IdP's admin API (tools/dev-idp): only the Gateway may ask for it (AZ-38, AZ-39). */
 const DEV_IDP = 'dev-idp';
@@ -44,7 +46,10 @@ const tokenAnswer = z.object({
 
 @Controller()
 class GatewayController {
-  constructor(@Inject(GATEWAY) private readonly gateway: Gateway) {}
+  constructor(
+    @Inject(GATEWAY) private readonly gateway: Gateway,
+    @Inject(EDGE_PROXY_HOPS) private readonly proxyHops: number,
+  ) {}
 
   // The route table decides what exists. This one handler receives everything the other controllers (health,
   // metrics) did not claim and hands it to the gateway, which answers "no such route" itself.
@@ -67,7 +72,12 @@ class GatewayController {
           query: req.query,
           body: req.body as unknown,
           requestId,
-          remoteAddress: req.ip ?? '',
+          // DK-02a, K-14: behind Kong the socket is Kong's; the client is the address Kong appended (EDGE_PROXY_HOPS=1).
+          remoteAddress: clientAddress({
+            socket: req.ip ?? '',
+            forwardedFor: req.headers['x-forwarded-for'],
+            proxyHops: this.proxyHops,
+          }),
         },
         context,
       );
@@ -192,7 +202,10 @@ export function gatewayModules(
       {
         module: GatewayModule,
         controllers: [GatewayController],
-        providers: [{ provide: GATEWAY, useValue: gateway }],
+        providers: [
+          { provide: GATEWAY, useValue: gateway },
+          { provide: EDGE_PROXY_HOPS, useValue: config.EDGE_PROXY_HOPS },
+        ],
       },
     ];
   };

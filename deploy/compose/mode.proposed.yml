@@ -194,8 +194,11 @@ services:
       PRIVACY_MODE: proposed
       PRIVACY_SERVICE_URL: https://privacy-service:4001
       NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
-    ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4010}:4010']
     depends_on: { privacy-service: { condition: service_healthy } }
+
+  # DK-02a: the published edge. The host port is the one Postman and the earlier checks already use.
+  kong:
+    ports: ['127.0.0.1:${GATEWAY_HOST_PORT:-4010}:8443']
 
   smoke:
     environment: { PRIVACY_MODE: proposed }

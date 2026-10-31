@@ -1,5 +1,7 @@
 # DK-02: Plugin Kong `privacy-tokenizer` (P-1)
 
+> **Dipecah (keputusan Fanny, 2026-10-31, ADR-0015):** DK-02a (Kong OSS di depan adapter, selesai), DK-02b, titik keputusan DK-02c. Q-10 dibatalkan. Tiket ini tetap sebagai induk; kriteria plugin Lua dinilai di DK-02b/c.
+
 - Milestone: DK (fase Docker, setelah M4 stabil, ADR-0004)
 - Spec: gateway-tokenizer.md 11
 - Bergantung pada: DK-01, M2-11

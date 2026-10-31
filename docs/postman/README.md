@@ -5,8 +5,8 @@ Koleksi ini untuk **mencoba sistem sendiri**: mendaftar nasabah, membayar, melih
 | Berkas | Isi |
 | --- | --- |
 | `privpay-manual.postman_collection.json` | koleksi: 10 folder, 47 request, tiap request punya Tests yang mencetak yang diharapkan |
-| `privpay-proposed.postman_environment.json` | environment mode usulan (gateway `http://127.0.0.1:4010`) |
-| `privpay-baseline.postman_environment.json` | environment mode baseline (gateway `http://127.0.0.1:4011`) |
+| `privpay-proposed.postman_environment.json` | environment mode usulan (Kong di `https://127.0.0.1:4010`) |
+| `privpay-baseline.postman_environment.json` | environment mode baseline (Kong di `https://127.0.0.1:4011`) |
 | `compose.postman.yml` | override Compose agar Postman (di host) bisa menjangkau dev-idp dan sms-simulator |
 
 ## 1. Prasyarat
@@ -16,18 +16,28 @@ Koleksi ini untuk **mencoba sistem sendiri**: mendaftar nasabah, membayar, melih
 - Sekali saja, dari akar repo: `corepack pnpm docker:secrets` (membuat rahasia Compose di `secrets/docker/`, tidak menimpa; butuh `openssl`). Jika folder itu sudah ada, lewati.
 - Postman (aplikasi desktop atau web dengan agen lokal; **Postman web murni tidak bisa menjangkau 127.0.0.1**).
 
+### Percaya CA dev di Postman (sekali)
+
+Kong melayani TLS dengan sertifikat dari CA pengembangan. Jangan mematikan "SSL certificate verification". Sebagai gantinya:
+
+1. Jalankan `corepack pnpm docker:secrets` sekali lagi bila `secrets/docker/tls_kong.crt` belum ada (hanya menambah pasangan Kong, tidak menimpa yang ada).
+2. Postman: **Settings > Certificates > CA certificates**, nyalakan, pilih `secrets/docker/tls_ca.crt`.
+3. Sertifikat Kong sah untuk `127.0.0.1`, `localhost`, dan `kong`.
+
+Bila dev-idp dibuat ulang (mis. `docker compose ... up -d --force-recreate idp`), ia membuat kunci baru. Ulangi juga tiga layanan di depannya: `up -d --force-recreate idp gateway kong-config kong`.
+
 ## 2. Menyalakan dan mematikan Compose
 
 Jalankan dari akar repo. **Satu mode pada satu waktu** (keduanya memakai port 4000 dan 4007).
 
-Mode usulan (dengan Privacy Service), gateway di `http://127.0.0.1:4010`:
+Mode usulan (dengan Privacy Service), Kong (tepi, TLS) di `https://127.0.0.1:4010`:
 
 ```powershell
 docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f docs/postman/compose.postman.yml up -d --wait --build
 docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f docs/postman/compose.postman.yml down -v
 ```
 
-Mode baseline (tanpa Privacy Service), gateway di `http://127.0.0.1:4011`:
+Mode baseline (tanpa Privacy Service), Kong (tepi, TLS) di `https://127.0.0.1:4011`:
 
 ```powershell
 docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.baseline.yml -f docs/postman/compose.postman.yml up -d --wait --build
@@ -37,7 +47,7 @@ docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.basel
 - `up --wait` baru kembali setelah semua kontainer sehat (usulan 14 kontainer, baseline 12, ditambah migrasi yang selesai). Build pertama beberapa menit; selanjutnya memakai cache.
 - `down -v` mematikan **dan menghapus data** proyek ini saja (volume `privpay-proposed_*` atau `privpay-baseline_*`). Tanpa `-v` data tetap ada untuk dilanjutkan besok.
 - Sebelum berpindah mode, matikan dulu mode yang menyala.
-- Cek cepat: `curl http://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline) harus menjawab `"mode":"proposed"` atau `"mode":"baseline"`.
+- Cek cepat: `curl.exe --ssl-no-revoke --cacert secrets/docker/tls_ca.crt https://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline; `--ssl-no-revoke` hanya karena Windows menanyakan pencabutan sertifikat CA lokal) harus menjawab `"mode":"proposed"` atau `"mode":"baseline"`.
 
 **Tentang `compose.postman.yml`.** Tumpukan resmi hanya mempublikasikan Gateway; dev-idp (penerbit token tiruan) dan sms-simulator sengaja tertutup di jaringan internal. Postman berjalan di host, jadi berkas ini membuka keduanya **hanya di loopback host**: dev-idp di `127.0.0.1:4000` (login tanpa kata sandi, hanya untuk mesin pengembang) dan sms-simulator di `127.0.0.1:4007`. Karena itu keduanya ikut jaringan `edge`. Jangan pakai berkas ini di luar laptop pengembangan, dan jangan dibawa ke fase Keycloak.
 
@@ -115,7 +125,7 @@ npx --yes newman@6.2.1 run docs/postman/privpay-manual.postman_collection.json -
 
 | Gejala | Penyebab dan jalan keluar |
 | --- | --- |
-| `Could not send request` / ECONNREFUSED | tumpukan belum menyala atau salah mode; cek `curl http://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline) |
+| `Could not send request` / ECONNREFUSED | tumpukan belum menyala atau salah mode; cek `curl.exe --ssl-no-revoke --cacert secrets/docker/tls_ca.crt https://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline) |
 | 1.2 gagal `Gagal mengambil token ... dev-idp` | Compose dijalankan tanpa `compose.postman.yml`, sehingga port 4000 tidak terbuka; matikan lalu naikkan lagi dengan tiga `-f` |
 | port 4000 atau 4007 sudah dipakai | mode lain masih menyala, atau proses lokal `pnpm dev:up`; matikan dulu (`dev:down`) |
 | 1.1 gagal "mode gateway = environment" | environment yang dipilih tidak sama dengan mode yang menyala |
@@ -130,4 +140,4 @@ npx --yes newman@6.2.1 run docs/postman/privpay-manual.postman_collection.json -
 
 - Kinerja (latensi, throughput) tidak diukur dan tidak boleh diklaim dari koleksi ini.
 - Fail-closed Privacy Service dengan kontainer dimatikan (NFR-19) tidak ada di koleksi; itu pekerjaan M7.
-- Kong dan Keycloak belum ada; tumpukan memakai `gateway-adapter` dan dev-idp.
+- Keycloak belum ada (dev-idp). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status dan mode.

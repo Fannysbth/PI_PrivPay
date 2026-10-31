@@ -107,7 +107,8 @@ NIK/nama/email tidak pernah sampai ke layanan hilir pada mode proposed (diuji de
 | M2-11 | settlement: validasi sebelum tokenisasi (item tak valid → 422, nol token terbit); token sama dengan alur D2 | FR-32, TF-13 |
 | M4-08 | pendaftaran: urutan A2, A5, A3, A4; tes gagal per langkah dan kompensasi; HP baru tersimpan hanya setelah A3 berhasil; tidak ada PII di log | TF-01, FR-19, FR-42, ADR-0005 |
 | M5-03 | mode baseline: payload identik kecuali identitas diteruskan apa adanya; Privacy tidak dipanggil | FR-23, US-09 |
-| DK-02 | plugin Lua lulus vektor kontrak yang sama (ditunda) | ADR-0004 |
+| DK-02a | Kong 3.9.4 OSS di depan adapter di kedua mode: TLS di tepi, tanda tangan/`exp` JWT, batas ukuran dan laju ditolak Kong dengan bentuk galat ADR-0008; Newman lulus di kedua mode (ADR-0015) | ADR-0015 |
+| DK-02 | plugin Lua lulus vektor kontrak yang sama (ditunda; dipecah menjadi DK-02b dan titik keputusan DK-02c) | ADR-0004, ADR-0015 |
 
 ## 12. Di luar cakupan
 

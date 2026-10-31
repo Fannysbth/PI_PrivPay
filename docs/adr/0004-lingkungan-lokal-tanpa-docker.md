@@ -45,6 +45,10 @@ Satu kontainer `postgres:16.15` (digest sama dengan Compose) dengan peran dan ha
 
 Utang NFR-06 untuk jalur Gateway ke Privacy ditutup di Compose: Privacy melayani TLS 1.2+ dan pemanggil memverifikasi sertifikat dengan CA dev (bukan mTLS: spek hanya menuntut TLS pada jalur itu). Tiga jaringan ditegakkan dan diuji dari dalam kontainer (`pnpm docker:net-check`). **Belum**: TLS klien ke Gateway/Kong (DK-02), `/health` dan `/metrics` Gateway di sisi luar (N-05, DK-02), dan fase lokal tetap HTTP loopback. Keterbatasan: pemanggil Privacy berbagi jaringan `privacy` dengan `pg-privacy`, dan layanan bisnis berbagi `business` dengan database satu sama lain; yang memisahkan database adalah peran dan kata sandi, bukan jaringan (pemisahan per-database butuh jaringan tambahan di luar tiga zona). **Diterima sebagai keterbatasan oleh Fanny (24 Okt 2026): jaringan keempat tidak ditambah** (OPEN_QUESTIONS N-53).
 
+## Tambahan (2026-10-31, ADR-0015)
+
+`gateway-adapter` sebagai pengganti Kong tidak lagi dipandang sebagai kemungkinan permanen (Q-10 dibatalkan, keputusan Fanny). Sejak DK-02a, Kong 3.9.4 OSS berdiri di depan adapter di kedua mode; lihat ADR-0015. Adapter tetap menjadi tempat pemeriksaan khas PrivPay sampai DK-02c memutuskan pembagiannya.
+
 ## Kapan ditinjau ulang
 
 Saat Docker tersedia, atau bila `gateway-adapter` menyimpang dari perilaku yang dirancang untuk plugin Kong.
