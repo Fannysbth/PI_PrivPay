@@ -59,7 +59,7 @@
       "description": "Semua pemanggil memakai JWT dari dev-idp (alamat `idp_url`). Klien `customer-app` untuk nasabah, `admin-console` untuk admin/auditor/analis fraud, `bank-simulator` untuk bank. Token nasabah baru diambil di folder 2 setelah ia terdaftar.",
       "item": [
         {
-          "name": "1.1 Cek gateway hidup dan mode-nya",
+          "name": "1.1 Cek tepi (Kong) hidup",
           "event": [
             {
               "listen": "test",
@@ -67,10 +67,10 @@
                 "type": "text/javascript",
                 "exec": [
                   "const mode = pm.environment.get('mode');",
-                  "console.log('[Diharapkan] 200 dan mode gateway sama dengan environment (\"proposed\" atau \"baseline\")');",
+                  "console.log('[Diharapkan] 200 dan {\"status\":\"ok\"}; mode sengaja tidak disebut di /health publik (N-54b)');",
                   "pm.test('Diharapkan: 200', () => pm.response.to.have.status(200));",
                   "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
-                  "pm.test('Diharapkan: mode gateway = environment (' + mode + ')', () => pm.expect(body.mode).to.eql(mode));"
+                  "pm.test('Diharapkan: status ok dan tanpa mode', () => { pm.expect(body.status).to.eql('ok'); pm.expect(body).to.not.have.property('mode'); });"
                 ]
               }
             }
@@ -87,7 +87,7 @@
                 "health"
               ]
             },
-            "description": "Gateway menjawab `/health` dengan mode yang sedang berjalan. Harus sama dengan variabel environment `mode`."
+            "description": "Kong menjawab `/health` sendiri dengan status saja; mode tidak disebut di rute publik (N-54b). Pastikan environment yang dipilih sama dengan mode yang dinyalakan (lihat nama proyek Compose)."
           }
         },
         {

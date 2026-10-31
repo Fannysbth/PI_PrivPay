@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### N-54b `/health` publik tanpa mode (feat/dk-02b-prep)
+
+- Kong menjawab `GET /health` sendiri (`request-termination`, `{"status":"ok"}`); mode tidak disebut. Request 1.1 koleksi Postman memeriksa status ok dan tidak adanya `mode`. `docker:edge-check` memeriksa hal yang sama.
+
 ### DK-02a Kong 3.9.4 OSS di depan gateway-adapter (feat/dk-02a, ADR-0015)
 
 - Kong tanpa basis data di depan adapter, kedua mode. Plugin OSS: `jwt` (RS256, `exp`, umur ≤ 300 detik, `iss`, token hanya dari `Authorization`), `rate-limiting` (per alamat klien, `KONG_RATE_LIMIT_PER_MINUTE` bawaan 300, ikut `RATE_LIMIT_ENABLED`), `request-size-limiting` (64 KiB), `correlation-id`, `request-termination` (`/metrics` ditolak, N-05), `prometheus` (listener status internal), `post-function` (±25 baris Lua: galat buatan Kong menjadi bentuk ADR-0008, 413 menjadi 422; jawaban adapter tidak disentuh).

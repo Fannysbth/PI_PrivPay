@@ -88,7 +88,7 @@ async function baseChecks(mode, port, ca) {
   const add = (label, got, expected) => results.push([label, got, expected]);
 
   const health = await call(port, { url: '/health', tls: verified });
-  add('TLS with the dev CA: /health answers and names the mode', health.error ?? `${health.status} ${JSON.parse(health.body || '{}').mode}`, `200 ${mode}`);
+  add('TLS with the dev CA: /health answers with status only, and does not name the mode (N-54b)', health.error ?? `${health.status} ${health.body.includes('mode') || health.body.includes(mode) ? 'names-mode' : 'status-only'}`, '200 status-only');
   add('no server, via or x-kong headers on an answer (versions are not told)', Object.keys(health.headers ?? {}).filter((h) => /^(server|via|x-kong)/.test(h)).join(',') || 'none', 'none');
   add('a client without the dev CA rejects the certificate', (await call(port, {})).error, /^(UNABLE_TO_VERIFY_LEAF_SIGNATURE|SELF_SIGNED_CERT_IN_CHAIN)$/);
   add('a certificate for another name is rejected (connect with a wrong server name)', (await call(port, { tls: { ca, servername: 'wrong.example.test' } })).error, 'ERR_TLS_CERT_ALTNAME_INVALID');

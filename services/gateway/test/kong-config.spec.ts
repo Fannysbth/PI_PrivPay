@@ -73,6 +73,16 @@ describe('DK-02a Kong declarative config: who needs a token', () => {
     expect(route(config, 'health').paths).toEqual(['~/health$']);
   });
 
+  it('N-54b /health is answered by Kong itself with status only: no mode, and no hop to the adapter', () => {
+    const health = route(build(), 'health');
+    expect(health.plugins).toEqual([
+      {
+        name: 'request-termination',
+        config: { status_code: 200, content_type: 'application/json', body: '{"status":"ok"}' },
+      },
+    ]);
+  });
+
   it('DK-02a /metrics is not served on the public listener (N-05): a token is asked first, then it is refused', () => {
     const metrics = route(build(), 'metrics-blocked');
     // Express matches /metrics/ and /Metrics too (non-strict, case-insensitive routing), so the block must as well.

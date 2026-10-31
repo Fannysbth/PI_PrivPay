@@ -164,8 +164,23 @@ export function buildKongConfig(input: KongConfigInput): Record<string, unknown>
         routes: [
           // The one call without a token (gateway spec 6); the adapter counts it per address and checks the form in full.
           { name: 'register', methods: ['POST'], paths: ['~/register$'], ...common },
-          // Status and mode only; /metrics is not offered on this listener.
-          { name: 'health', methods: ['GET'], paths: ['~/health$'], ...common },
+          // Answered by Kong itself, status only: the mode is not told to the outside (N-54b); /metrics is not offered either.
+          {
+            name: 'health',
+            methods: ['GET'],
+            paths: ['~/health$'],
+            ...common,
+            plugins: [
+              {
+                name: 'request-termination',
+                config: {
+                  status_code: 200,
+                  content_type: 'application/json',
+                  body: '{"status":"ok"}',
+                },
+              },
+            ],
+          },
           {
             name: 'metrics-blocked',
             paths: ['~/(?i)metrics/*$'],
