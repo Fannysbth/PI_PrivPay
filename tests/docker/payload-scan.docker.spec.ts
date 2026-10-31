@@ -13,17 +13,29 @@ import { call, docker, edge, KONG_PORT, login, logs, MODE, PROJECT, runIndex } f
 const canary = buildCanary(runIndex(0));
 const username = `uji.payload.${canary.nik.slice(-6)}`;
 
+// Each dump and log is taken once, after the payment: the data does not change while the tests read it.
+const taken = new Map<string, string>();
+const once = (key: string, take: () => string): string => {
+  let text = taken.get(key);
+  if (text === undefined) {
+    text = take();
+    taken.set(key, text);
+  }
+  return text;
+};
 const dump = (service: string): string =>
-  docker([
-    'exec',
-    `${PROJECT}-pg-${service}-1`,
-    'pg_dump',
-    '-U',
-    'postgres',
-    '-d',
-    `privpay_${service}`,
-    '--data-only',
-  ]);
+  once(`dump:${service}`, () =>
+    docker([
+      'exec',
+      `${PROJECT}-pg-${service}-1`,
+      'pg_dump',
+      '-U',
+      'postgres',
+      '-d',
+      `privpay_${service}`,
+      '--data-only',
+    ]),
+  );
 const attributes = (text: string): string[] =>
   scanText(text, [canary], { service: 'x', location: 'x' }).map((finding) => finding.attribute);
 
@@ -66,7 +78,10 @@ describe(`DK-02b payload scan of the downstream services (${MODE})`, () => {
       'reconciliation-service',
     ];
     for (const service of services)
-      expect({ service, found: attributes(logs(service)) }).toEqual({ service, found: [] });
+      expect({ service, found: attributes(once(`log:${service}`, () => logs(service))) }).toEqual({
+        service,
+        found: [],
+      });
   });
 
   if (MODE === 'proposed') {

@@ -27,4 +27,4 @@ ADR-0004 memakai `gateway-adapter` NestJS sebagai pengganti Kong sementara. DK-0
 
 ## Kapan ditinjau ulang
 
-Di DK-02c (pembagian Lua vs adapter), dan saat Keycloak menggantikan dev-idp (DK-04).
+DK-02c sudah ditutup tanpa kode (ADR-0016); tinjau saat Keycloak menggantikan dev-idp (DK-04).

@@ -36,6 +36,9 @@ function plan() {
   }
   // DK-02b: proves Kong to the adapter (X-Edge-Auth); only Kong and the adapter in the proposed condition mount it.
   files.set('edge_adapter_secret', () => randomBytes(32).toString('base64url'));
+  // DK-04: the client that manages users in Keycloak (registration, compensation) and the one password of the fictional test users.
+  files.set('idp-admin_client_secret', () => randomBytes(32).toString('base64url'));
+  files.set('keycloak_dev_user_password', () => randomBytes(18).toString('base64url'));
   files.set('grafana_admin_password', () => randomBytes(18).toString('base64url'));
   return files;
 }
