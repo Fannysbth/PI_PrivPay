@@ -1,3 +1,13 @@
+# HANDOFF (2026-10-31): DK-04 sesi B BERHENTI di pintu keluar memori (`feat/dk-04-b`, tanpa kode); Keycloak bukan IdP default
+
+| Butir | Bukti |
+| --- | --- |
+| Pengukuran | Awal sesi: memori bebas 1,53 GB (Docker nyala; satu kontainer proyek lain, `samar-prototype-db-1`, tidak disentuh). Tumpukan penuh mode usulan naik sehat dengan dev-idp, lalu `--profile keycloak up keycloak` dan dev-idp dihentikan (setara tumpukan Keycloak tanpa dev-idp): **memori bebas 0,59 GB** (< 0,9 GB). Keycloak 538,7 MiB dari 768 MiB; kontainer lain 19 sampai 98 MiB. Tidak ada proses dibunuh sistem. Setelah `down`: 3,64 GB |
+| Keputusan | Sesuai instruksi Fanny: berhenti, turunkan tumpukan, tiket 3 tidak dikerjakan. Keycloak terbukti klaimnya (15 tes) tetapi tidak dijadikan IdP default karena batas memori; dev-idp tetap IdP Compose dan `dev:up`. Profil `keycloak` tetap tersedia sebagai pembuktian terpisah |
+| Catatan | WSL dibatasi 4 GB (`.wslconfig`); menaikkan batas atau menutup proyek lain tidak dicoba tanpa izin. Pengukuran ulang layak bila RAM bertambah atau batas Keycloak/heap diturunkan |
+
+Skill: tidak ada yang dijalankan (/tdd, /simplify, /code-review, /security-review, /run tidak dipakai karena tidak ada kode). Tidak dikerjakan: tiket 3, DK-06, M6, M7. Belum teruji: Newman, mutasi, payload scan di atas Keycloak.
+
 # HANDOFF (2026-10-31): DK-04 sesi A SELESAI di `feat/dk-04-a` (pengambil token/JWKS bersama + profil Compose Keycloak); tiket 3 (sesi B) menunggu
 
 | Butir | Bukti |
