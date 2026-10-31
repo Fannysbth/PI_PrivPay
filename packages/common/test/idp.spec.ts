@@ -194,14 +194,16 @@ describe('DK-04 idpJwksSource', () => {
     expect(seen[0]).toMatchObject({ path: '/realms/privpay/protocol/openid-connect/certs' });
   });
 
-  it('DK-04 Keycloak: no signing key at all, or two of them, is not a usable JWKS', async () => {
+  it('DK-04 Keycloak: no signing key at all is not a usable JWKS, and two (a rotation) are both kept', async () => {
     await expect(
       idpJwksSource(recorder({ status: 200, body: { keys: [enc] } }).http, KEYCLOAK).fetch(),
     ).rejects.toMatchObject({ reason: 'SERVICE_UNAVAILABLE' });
     const two = { ...sig, kid: 'sig-2' };
-    await expect(
-      idpJwksSource(recorder({ status: 200, body: { keys: [sig, two] } }).http, KEYCLOAK).fetch(),
-    ).rejects.toMatchObject({ reason: 'SERVICE_UNAVAILABLE' });
+    const kept = (await idpJwksSource(
+      recorder({ status: 200, body: { keys: [sig, two] } }).http,
+      KEYCLOAK,
+    ).fetch()) as { keys: { kid: string }[] };
+    expect(kept.keys.map((key) => key.kid)).toEqual(['sig-1', 'sig-2']);
   });
 
   it('DK-04 a key with a private member is never copied out of the answer', async () => {
@@ -250,6 +252,20 @@ describe('DK-04 the shared HTTP client sends a form', () => {
         body: { b: 2 },
         idempotent: true,
       }),
+    ).rejects.toMatchObject({ reason: 'INTERNAL_ERROR' });
+  });
+});
+
+describe('DK-04 review fixes', () => {
+  it('DK-04 a form with no field is a caller bug, not an empty request', async () => {
+    const client = createHttpClient({
+      baseUrls: { idp: 'http://idp.test' },
+      timeoutMs: 1000,
+      maxRetries: 0,
+      fetch: () => Promise.resolve(new Response('{}')),
+    });
+    await expect(
+      client.request({ service: 'idp', method: 'POST', path: '/t', form: {}, idempotent: true }),
     ).rejects.toMatchObject({ reason: 'INTERNAL_ERROR' });
   });
 });

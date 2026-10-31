@@ -2,7 +2,7 @@ import { createPublicKey, type KeyObject } from 'node:crypto';
 import type { Clock } from './clock';
 import { DomainError } from './errors';
 import type { HttpClient } from './http';
-import { DEV_IDP, idpChoiceShape, idpEndpoints, signingKeysOf, type IdpChoice } from './idp';
+import { DEV_IDP, idpChoiceShape, idpEndpoints, jwksBodyFor, type IdpChoice } from './idp';
 import { z } from 'zod';
 
 /**
@@ -32,8 +32,7 @@ export function idpJwksSource(http: HttpClient, idp: IdpChoice = DEV_IDP): JwksS
         idempotent: true,
       });
       if (answer.status !== 200) throw new DomainError('SERVICE_UNAVAILABLE', 'jwks');
-      // Keycloak publishes more than the signing key; the dev IdP's answer is read as it is, strictly.
-      return idp.kind === 'keycloak' ? signingKeysOf(answer.body) : answer.body;
+      return jwksBodyFor(idp, answer.body);
     },
   };
 }

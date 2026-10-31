@@ -188,6 +188,8 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
       const url = urlFor(request);
       if (request.form !== undefined && request.body !== undefined)
         throw callerBug('body_and_form');
+      if (request.form !== undefined && Object.keys(request.form).length === 0)
+        throw callerBug('empty_form');
       const body =
         request.form === undefined
           ? serialise(request.body)

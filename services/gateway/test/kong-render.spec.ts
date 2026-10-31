@@ -172,3 +172,10 @@ describe('DK-04 renderKongConfig with Keycloak', () => {
     ).rejects.toThrow(/exactly one/);
   });
 });
+
+describe('DK-04 review fixes for the render step', () => {
+  it('DK-04 Keycloak without the issuer of the realm stops the start (the dev IdP default would reject every token)', async () => {
+    const keycloak = { ...ENV, IDP_KIND: 'keycloak', IDP_URL: 'http://keycloak:8080' };
+    await expect(renderKongConfig(keycloak, answer(keycloakKeys))).rejects.toThrow(/IDP_ISSUER/);
+  });
+});

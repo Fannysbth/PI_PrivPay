@@ -5,7 +5,6 @@
 // refused. It runs in a throwaway container of the keycloak-realm service (it has the secrets mounted). Nothing printed
 // holds a token, a secret or a password; only claim names and checks.
 const { spawnSync } = require('node:child_process');
-const path = require('node:path');
 
 const script = `
 const fs = require('node:fs');
@@ -34,13 +33,16 @@ const check = (label, ok) => results.push([label, ok]);
 })().catch(() => { console.log('FAIL  Keycloak could not be reached'); process.exit(1); });
 `;
 
-const dir = path.join(__dirname, '..', '..', 'deploy', 'compose');
+const { composeArgs } = require('./compose.cjs');
+
 const result = spawnSync(
   'docker',
-  ['compose', '-p', process.env['KEYCLOAK_COMPOSE_PROJECT'] ?? 'privpay-kc', '-f', path.join(dir, 'docker-compose.yml'), '-f', path.join(dir, 'mode.baseline.yml'),
-    '--profile', 'keycloak', 'run', '--rm', '--no-deps', '-T', '--entrypoint', 'node', 'keycloak-realm', '-e', script],
+  composeArgs('baseline', ['-p', process.env['KEYCLOAK_COMPOSE_PROJECT'] ?? 'privpay-kc', '--profile', 'keycloak', 'run', '--rm', '--no-deps', '-T', '--entrypoint', 'node', 'keycloak-realm', '-e', script]),
   { encoding: 'utf8', timeout: 120_000 },
 );
+if (result.error !== undefined || result.stdout === null) {
+  process.stderr.write('could not run the check (is docker running and the profile up?)\n');
+  process.exit(1);
+}
 process.stdout.write(result.stdout);
-if (result.status !== 0 && !/PASS|FAIL/.test(result.stdout)) process.stderr.write('could not run the check (is the profile up?)\n');
 process.exitCode = result.status ?? 1;

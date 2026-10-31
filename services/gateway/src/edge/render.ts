@@ -3,7 +3,7 @@ import {
   idpConfigShape,
   idpEndpoints,
   idpOf,
-  signingKeysOf,
+  jwksBodyFor,
   loadConfig,
   modeConfigShape,
   privacyUrlMatchesMode,
@@ -44,7 +44,17 @@ const schema = z
     // ADR-0007 item 7.
     ACCESS_TOKEN_MAX_LIFETIME_SECONDS: z.coerce.number().int().min(1).max(3600).default(300),
   })
-  .superRefine(privacyUrlMatchesMode);
+  .superRefine(privacyUrlMatchesMode)
+  .superRefine((config, ctx) => {
+    // The issuer of Keycloak is the address of its realm; the default belongs to the dev IdP and would reject every token.
+    if (config.IDP_KIND === 'keycloak' && config.IDP_ISSUER === 'privpay-dev-idp') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['IDP_ISSUER'],
+        message: 'set it to the issuer of the realm',
+      });
+    }
+  });
 
 const jwks = z.object({ keys: z.array(z.record(z.string(), z.unknown())) });
 const FETCH_TIMEOUT_MS = 3000;
@@ -76,14 +86,11 @@ export async function renderKongConfig(
   const config = loadConfig(schema, env);
   const idp = idpOf(config);
   const answer = await fetchJwks(config.IDP_URL, idpEndpoints(idp).jwks, fetchImpl);
-  let body = answer;
-  if (idp.kind === 'keycloak') {
-    // Keycloak publishes a signing and an encryption key; only the one RS256 signing key is read (ADR-0017).
-    try {
-      body = signingKeysOf(answer);
-    } catch {
-      throw new Error('the IdP must publish exactly one signing key');
-    }
+  let body: unknown;
+  try {
+    body = jwksBodyFor(idp, answer);
+  } catch {
+    throw new Error('the IdP must publish exactly one signing key');
   }
   const parsed = jwks.safeParse(body);
   if (!parsed.success) throw new Error('the IdP answer is not a JWKS');

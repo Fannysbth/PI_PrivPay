@@ -150,7 +150,7 @@ const signingKey = z.looseObject({
 /**
  * What a JWKS answer is reduced to before the services read it. Keycloak publishes a signing key and an encryption key
  * and extra members (certificates): only the one RS256 signing key is kept, and only its public members, so nothing
- * else is ever imported. Exactly one is required (Kong finds the key by issuer, so two cannot both be served).
+ * else is ever imported. At least one is required: the services choose by `kid`, so a rotation that leaves two is fine; Kong's render step requires exactly one.
  */
 export function signingKeysOf(body: unknown): { keys: Record<string, string>[] } {
   const keys = z.object({ keys: z.array(z.unknown()) }).safeParse(body);
@@ -171,6 +171,10 @@ export function signingKeysOf(body: unknown): { keys: Record<string, string>[] }
           : [];
       })
     : [];
-  if (signing.length !== 1) throw new DomainError('SERVICE_UNAVAILABLE', 'jwks');
+  if (signing.length === 0) throw new DomainError('SERVICE_UNAVAILABLE', 'jwks');
   return { keys: signing };
 }
+
+/** The JWKS answer of this IdP as the services read it: Keycloak's is reduced to its signing key, the dev IdP's is read as it is. */
+export const jwksBodyFor = (idp: IdpChoice, body: unknown): unknown =>
+  idp.kind === 'keycloak' ? signingKeysOf(body) : body;
