@@ -40,6 +40,7 @@ pnpm test:security                # kasus TK-xx sisi Privacy, dua lapis (layanan
 pnpm audit --prod --audit-level high
 gitleaks detect --log-opts="--all" --redact -v --config .gitleaks.toml   # secret scan; v8.30.1, sama dengan CI dan pre-commit
 pnpm docker:secrets               # sekali: semua rahasia Compose ke secrets/docker/, termasuk CA dan sertifikat TLS dev (butuh `openssl`; tidak menimpa, tidak membaca, hanya nama berkas dicetak)
+pnpm test:edge                    # DK-02b: spec *.docker.spec.ts (butuh Docker): vektor kontrak Lua + luacheck di kontainer sekali pakai; payload scan hilir dan fail-closed Privacy dimatikan butuh tumpukan menyala (PRIVPAY_STACK_MODE=proposed|baseline, dengan docs/postman/compose.postman.yml)
 pnpm docker:edge-check <mode> [base|expiry|limits]   # DK-02a: mutasi atas tepi Kong dari host (token rusak/kedaluwarsa, ukuran, laju, TLS); butuh Compose + docs/postman/compose.postman.yml; fase expiry/limits butuh tumpukan dinyalakan dengan ACCESS_TOKEN_TTL_SECONDS=2 / KONG_RATE_LIMIT_PER_MINUTE=20 dan idp, gateway, kong-config, kong dibuat ulang bersama
 pnpm docker:newman <mode>         # koleksi Postman lewat Kong (kontainer Newman terpin di jaringan edge, TLS diverifikasi dengan CA dev)
 pnpm docker:net-check <mode>      # tumpukan menyala: jangkauan antarjaringan dan jalur TLS Gateway-Privacy dari dalam kontainer (DK-03)

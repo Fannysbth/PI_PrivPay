@@ -48,8 +48,28 @@ local function claims_of_request()
   return type(claims) == "table" and claims or nil
 end
 
--- The same split as the adapter's mayCall: a customer for payments and phone changes, the bank for settlement.
+-- The audience the adapter requires of every token it accepts (authenticate, service api-gateway).
+local function for_this_gateway(claims)
+  local aud = claims.aud
+  if aud == "api-gateway" then
+    return true
+  end
+  if type(aud) == "table" then
+    for _, value in ipairs(aud) do
+      if value == "api-gateway" then
+        return true
+      end
+    end
+  end
+  return false
+end
+
+-- The same split as the adapter's mayCall: a customer for payments and phone changes, the bank for settlement. A token
+-- for another audience is left for the adapter to refuse, before any token is asked of Privacy on its behalf.
 local function caller_fits(route, claims)
+  if not for_this_gateway(claims) then
+    return false
+  end
   if route == "settlement" then
     return claims.azp == "bank-simulator"
   end

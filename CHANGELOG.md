@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-02b plugin Kong privacy-tokenizer (feat/dk-02b, ADR-0016)
+
+- Plugin Lua (`services/gateway/plugins/privacy-tokenizer`, di-mount baca-saja ke Kong) menokenisasi `POST /transaction`, `/settlement/report`, `/notification/register` di kondisi usulan: minta pseudonim ke Privacy (TLS, token layanan, tanpa `K_token`), gagal tertutup, lalu teruskan body bertoken dengan rahasia bersama `X-Edge-Auth`. Baseline: passthrough. `/register` tetap di adapter.
+- Adapter: `EDGE_TOKENIZATION` (dengan `PRIVACY_SERVICE_URL`) menerima hanya bentuk bertoken dari Kong, tidak pernah pengenal mentah (raw valid tanpa rahasia: 503). Jalur `Tokenizer` lama tetap untuk baseline dan `dev:up`.
+- Vektor kontrak (ditambah rute notification) lulus di TypeScript dan Lua. `pnpm test:edge` (spec `*.docker.spec.ts`, di luar `pnpm test`): vektor Lua + luacheck (`ghcr.io/lunarmodules/luacheck@sha256:46601a79…`), payload scan hilir (`PRIVPAY_STACK_MODE`), fail-closed dengan Privacy dimatikan. Rahasia baru `edge_adapter_secret` (`pnpm docker:secrets`).
+- Bukti: Newman proposed 149 request / 115 asersi / 0 gagal, baseline 149 / 103 / 0; mutasi penjaga fail-closed dan penjaga passthrough terbunuh lalu pulih; Kong 80 sampai 87 MiB.
+
 ### N-54b `/health` publik tanpa mode (feat/dk-02b-prep)
 
 - Kong menjawab `GET /health` sendiri (`request-termination`, `{"status":"ok"}`); mode tidak disebut. Request 1.1 koleksi Postman memeriksa status ok dan tidak adanya `mode`. `docker:edge-check` memeriksa hal yang sama.

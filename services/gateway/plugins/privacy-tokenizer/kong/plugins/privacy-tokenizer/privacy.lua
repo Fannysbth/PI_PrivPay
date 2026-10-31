@@ -74,14 +74,13 @@ local function refusal(conf, response)
 end
 
 --- Asks Privacy for the pseudonym of one subject (POST /pseudonymize, form 1; idempotent, so it may be repeated).
--- request: { subject_type, subject_id, target_service, purpose, transaction_id? }
+-- request: { subject_type, subject_id, target_service, purpose, transaction_id? }; `refreshed` is internal.
 -- Returns the pseudonym, or nil and a reason.
-function privacy.pseudonymize(conf, request)
+function privacy.pseudonymize(conf, request, refreshed)
   local body = cjson.encode({
     subject_type = request.subject_type, subject_id = request.subject_id,
     target_service = request.target_service, purpose = request.purpose, transaction_id = request.transaction_id,
   })
-  local refreshed = false
   for attempt = 0, conf.retries do
     local token = service_token(conf)
     if not token then
@@ -102,10 +101,14 @@ function privacy.pseudonymize(conf, request)
       end
       return nil, "SERVICE_UNAVAILABLE"
     end
-    if response and response.status == 401 and not refreshed then
-      -- The cached service token may have ended early (a restarted IdP): fetch a new one once.
-      refreshed = true
+    if response and response.status == 401 then
+      -- The cached service token may have ended early (a restarted IdP): fetch a new one once, outside the retries.
+      -- A second 401 is a fault of our own credentials, not of the client: unavailable, never a refusal.
+      if refreshed then
+        return nil, "SERVICE_UNAVAILABLE"
+      end
       kong.cache:invalidate_local(TOKEN_KEY)
+      return privacy.pseudonymize(conf, request, true)
     elseif response and response.status < 500 then
       return nil, refusal(conf, response)
     end

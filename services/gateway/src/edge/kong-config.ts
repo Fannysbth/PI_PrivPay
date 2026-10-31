@@ -146,7 +146,8 @@ function tokenizerPlugin(input: TokenizerInput): Plugin {
     name: 'privacy-tokenizer',
     config: {
       action: 'tokenize',
-      privacy_url: input.privacyUrl,
+      // No trailing slash: the plugin appends /pseudonymize.
+      privacy_url: input.privacyUrl.replace(/\/+$/, ''),
       idp_url: input.idpUrl,
       client_secret_file: input.clientSecretFile,
       edge_secret_file: input.edgeSecretFile,
