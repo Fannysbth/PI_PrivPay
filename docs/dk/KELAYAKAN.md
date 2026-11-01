@@ -4,6 +4,8 @@ Tanggal: 2026-10-24. Sifat: pengukuran dan rencana. Tidak ada berkas Docker, Com
 
 **Catatan sumber:** yang ada di repo adalah Bab Metodologi **v8**; berkas v9 yang disebut dalam permintaan tidak ada di `docs/reference/`. Butir Docker pada v8 (Kong plugin Lua, Keycloak, Docker Compose, `PRIVACY_MODE` di Compose, batas CPU dan memori sama untuk kedua konfigurasi, satu VPS) sudah dipakai di sini; bila v9 berbeda, laporan ini perlu dibaca ulang terhadapnya.
 
+**Lingkungan pengukuran laptop (keputusan Fanny, 2026-11-01):** WSL 2 dibatasi 6 GB (`memory=6GB`, `processors=4`, `swap=2GB` di `.wslconfig`). Semua angka memori di dokumen ini dan di HANDOFF diambil dengan batas itu; dengan 4 GB tumpukan penuh bersama Keycloak hanya menyisakan 0,59 GB bebas dan berhenti.
+
 **Batas klaim:** semua angka di bawah adalah memori mesin pengembangan ini. Tidak ada angka latensi atau throughput, dan tidak boleh dikutip ke laporan skripsi (ADR-0004, aturan proyek).
 
 ## 1. Lingkungan terukur

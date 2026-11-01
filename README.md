@@ -22,6 +22,7 @@ Butuh Node 24 (`.nvmrc`), pnpm lewat corepack, dan PostgreSQL lokal. Bila `pnpm`
 
 ```
 pnpm install --frozen-lockfile
+pnpm hooks:install       # sekali per klon: hook pre-commit gitleaks (butuh gitleaks; tanpa gitleaks commit ditolak)
 pnpm lint
 pnpm typecheck
 pnpm test

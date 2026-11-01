@@ -12,8 +12,11 @@ Koleksi ini untuk **mencoba sistem sendiri**: mendaftar nasabah, membayar, melih
 ## 1. Prasyarat
 
 - Docker Desktop menyala (`docker info` menjawab). Tumpukan penuh (dengan Keycloak, DK-04) butuh batas memori WSL sekitar 6 GB (`.wslconfig`, `memory=6GB`, lalu `wsl --shutdown`); tutup aplikasi berat lain. Dengan batas 4 GB memori bebas laptop turun di bawah 0,6 GB.
+- Node 24 (`.nvmrc`) dengan corepack: semua perintah di bawah ditulis `corepack pnpm <perintah>`. `corepack enable` tidak perlu (di Windows butuh hak admin); `corepack pnpm` mengunduh pnpm sekali (butuh internet) dan memasang dependensi otomatis saat skrip pertama dijalankan (±30 detik; langkah `install` terpisah tidak perlu).
 - Disk C: dan tempat Docker punya ruang beberapa GB (disk penuh pernah merusak volume PostgreSQL, lihat `docs/HANDOFF.md`).
-- Sekali saja, dari akar repo: `corepack pnpm docker:secrets` (membuat rahasia Compose di `secrets/docker/`, tidak menimpa; butuh `openssl`). Jika folder itu sudah ada, lewati.
+- Sekali saja, dari akar repo: `corepack pnpm docker:secrets` (membuat rahasia Compose di `secrets/docker/`, tidak menimpa; butuh `openssl`, yang ikut terpasang dengan Git for Windows). Jika folder itu sudah ada, lewati. Isinya fiktif dan tidak pernah masuk git.
+- Waktu yang wajar dari klon baru sampai request pertama berhasil: sekitar 5 menit bila lapisan Docker sudah ada di cache (rahasia ±30 detik, `up --wait` ±3 menit, Newman ±30 detik); build pertama di mesin yang belum pernah membangun citra memakan lebih lama (mengunduh citra dasar dan memasang dependensi di dalam citra).
+- Hanya bila akan melakukan commit: `corepack pnpm hooks:install` memasang hook pre-commit gitleaks (butuh gitleaks, `winget install Gitleaks.Gitleaks`; tanpa gitleaks commit ditolak).
 - Postman (aplikasi desktop atau web dengan agen lokal; **Postman web murni tidak bisa menjangkau 127.0.0.1**).
 
 ### Percaya CA dev di Postman (sekali)
@@ -47,7 +50,7 @@ docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.basel
 - `up --wait` baru kembali setelah semua kontainer sehat (usulan 14 kontainer, baseline 12, ditambah migrasi yang selesai). Build pertama beberapa menit; selanjutnya memakai cache.
 - `down -v` mematikan **dan menghapus data** proyek ini saja (volume `privpay-proposed_*` atau `privpay-baseline_*`). Tanpa `-v` data tetap ada untuk dilanjutkan besok.
 - Sebelum berpindah mode, matikan dulu mode yang menyala.
-- Cek cepat: `curl.exe --ssl-no-revoke --cacert secrets/docker/tls_ca.crt https://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline; `--ssl-no-revoke` hanya karena Windows menanyakan pencabutan sertifikat CA lokal) harus menjawab `"mode":"proposed"` atau `"mode":"baseline"`.
+- Cek cepat: `curl.exe --ssl-no-revoke --cacert secrets/docker/tls_ca.crt https://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline; `--ssl-no-revoke` hanya karena Windows menanyakan pencabutan sertifikat CA lokal) harus menjawab `{"status":"ok"}`. Lewat Kong `/health` sengaja tidak menyebut mode (N-54b); mode terlihat di request 1.1 koleksi, atau di `/health` adapter dari dalam jaringan (dipakai smoke).
 
 **Tentang `compose.postman.yml`.** Tumpukan resmi hanya mempublikasikan Gateway; Keycloak (penerbit token, DK-04) dan sms-simulator sengaja tertutup di jaringan internal. Postman berjalan di host, jadi berkas ini membuka keduanya **hanya di loopback host**: Keycloak di `127.0.0.1:8080` (password grant dengan kata sandi uji fiktif, hanya untuk mesin pengembang; konsol administrasi tidak punya akun) dan sms-simulator di `127.0.0.1:4007`. Karena itu keduanya ikut jaringan `edge`. Jangan pakai berkas ini di luar laptop pengembangan.
 
@@ -103,7 +106,7 @@ Perhatikan bahwa Notification menyimpan nomor HP di kedua mode (ia perlu mengiri
 
 ## 6. Memantau Grafana dan Prometheus (belum diuji di sesi ini)
 
-Definisinya ada (`deploy/compose/docker-compose.monitoring.yml`, profil `monitoring`) tetapi **belum pernah dijalankan** dan citranya belum diunduh; memorinya belum diukur dan dapat menekan batas 4 GB. Bila ingin mencoba setelah tumpukan menyala:
+Definisinya ada (`deploy/compose/docker-compose.monitoring.yml`, profil `monitoring`) tetapi **belum pernah dijalankan** dan citranya belum diunduh; memorinya belum diukur dan dapat menekan batas WSL 6 GB. Bila ingin mencoba setelah tumpukan menyala:
 
 ```powershell
 docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f docs/postman/compose.postman.yml -f deploy/compose/docker-compose.monitoring.yml --profile monitoring up -d
@@ -113,13 +116,21 @@ docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.propo
 - Prometheus tidak dipublikasikan ke host; ia hanya terjangkau dari Grafana. Tambahkan sumber data Prometheus dengan URL `http://prometheus:9090`. Belum ada dasbor siap pakai; buat panel dari metrik layanan (`/metrics`).
 - Mematikannya: tambahkan `--profile monitoring` pada perintah `down` yang sama.
 
-## 7. Newman (opsional, tanpa Postman)
+## 7. Bukti otomatis tanpa Postman (Newman, smoke, edge-check)
 
-Newman bukan dependensi repo. Contoh sekali jalan:
+Semua perintah dijalankan dari akar repo, setelah tumpukan menyala (bagian 2) dengan set berkas `-f` yang sama. Tiap perintah mencetak ringkasan dan keluar dengan kode 0 bila lulus.
 
-```powershell
-npx --yes newman@6.2.1 run docs/postman/privpay-manual.postman_collection.json -e docs/postman/privpay-proposed.postman_environment.json
-```
+| Perintah | Yang dibuktikan | Hasil yang diharapkan |
+| --- | --- | --- |
+| `corepack pnpm docker:newman proposed` (atau `baseline`) | koleksi Postman dijalankan Newman dalam kontainer sekali pakai di jaringan `edge`, lewat Kong dengan TLS terverifikasi (CA dev) dan kata sandi uji dibaca dari `secrets/docker` | 149 request, 0 gagal; 115 asersi (usulan) atau 103 (baseline). koleksi punya 47 request yang kamu klik; Newman melaporkan 149 karena skrip koleksi ikut mengirim request (mis. pengambilan token) |
+| `docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f docs/postman/compose.postman.yml run --rm smoke` (ganti `proposed` dengan `baseline`) | daftar, bayar (selesai dan ditahan), daftar ditahan, SMS, dari dalam jaringan, lewat Kong | `9/9 checks passed` |
+| `corepack pnpm docker:edge-check proposed base` (fase lain: `claims`, `expiry` ±5 menit, `limits`) | tepi Kong: token rusak atau kedaluwarsa, ukuran, TLS, `/metrics` tertutup | `all checks passed` |
+| `PRIVPAY_STACK_MODE=proposed corepack pnpm test:edge tests/docker/fail-closed` | Privacy dimatikan: 503 `SERVICE_UNAVAILABLE`, pulih saat dinyalakan | 1 tes lulus |
+| `PRIVPAY_STACK_MODE=proposed corepack pnpm test:edge tests/docker/payload-scan` (`baseline` juga) | tidak ada nilai uji asli di basis data, log, dan payload hilir (usulan); di baseline pemindai wajib menemukannya (kontrol positif) | 3 tes (usulan), 2 tes (baseline) |
+
+Tidak ada dependensi baru: perintah `docker:*` adalah skrip Node biasa di `scripts/docker/` dan Newman berjalan dari citra terpin.
+
+Memakai Newman sendiri dari host (`npx newman`) memang bisa, tetapi butuh dua hal yang tidak ada di perintah polos: sertifikat CA dev (`--ssl-extra-ca-certs secrets/docker/tls_ca.crt`; tanpanya "unable to verify the first certificate") dan enam variabel kata sandi (`--env-var password_nasabah=...` dan seterusnya, bagian 3). Karena kata sandi ikut terlihat di baris perintah, lebih baik pakai `docker:newman`.
 
 ## 8. Masalah umum
 
@@ -140,4 +151,4 @@ npx --yes newman@6.2.1 run docs/postman/privpay-manual.postman_collection.json -
 
 - Kinerja (latensi, throughput) tidak diukur dan tidak boleh diklaim dari koleksi ini.
 - Fail-closed Privacy Service dengan kontainer dimatikan (NFR-19) tidak ada di koleksi; itu pekerjaan M7.
-- Keycloak 26.4.0 mode dev (H2, bukan konfigurasi produksi) adalah IdP tumpukan (ADR-0017). Audiens token akun layanan lebih lebar daripada dev-idp (satu token memuat semua layanan yang boleh dipanggil akun itu; keputusan Fanny, keterbatasan dicatat). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status (tanpa mode); pastikan environment sama dengan mode yang dinyalakan.
+- Keycloak 26.4.0 mode dev (H2, bukan konfigurasi produksi) adalah IdP tumpukan (ADR-0017). Token akun layanan memuat satu audiens (scope `aud-<layanan>`, DK-04c) dan kata sandi uji terpisah per kelas pengguna; `idp-admin` tidak dapat dibatasi di Keycloak 26.4 (ADR-0017). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status (tanpa mode); pastikan environment sama dengan mode yang dinyalakan.
