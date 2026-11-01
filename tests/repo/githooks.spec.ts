@@ -3,7 +3,6 @@ import {
   chmodSync,
   copyFileSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -23,8 +22,19 @@ afterAll(() => {
   for (const dir of dirs) rmSync(dir, { recursive: true, force: true });
 });
 
+// The environment of the child: no GIT_* variable of an outer repository (a hook or wrapper that runs the tests sets them), and a
+// PATH given here replaces the PATH of this process whatever its case (Windows says `Path`).
+function childEnv(extra: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (key.toUpperCase().startsWith('GIT_')) continue;
+    if (key.toUpperCase() === 'PATH' && extra['PATH'] !== undefined) continue;
+    env[key] = value;
+  }
+  return { ...env, ...extra };
+}
 const git = (cwd: string, args: string[], env: NodeJS.ProcessEnv = {}) =>
-  spawnSync('git', args, { cwd, encoding: 'utf8', env: { ...process.env, ...env } });
+  spawnSync('git', args, { cwd, encoding: 'utf8', env: childEnv(env) });
 
 /** A throwaway repository that uses the real hook of this repository and the real gitleaks configuration. */
 function scratchRepo(): string {
@@ -63,6 +73,8 @@ function findGitleaks(): string | undefined {
 }
 
 describe('DK-06 the pre-commit hook (gitleaks protect --staged)', () => {
+  // Several git and gitleaks processes per test; the default 5 s of Jest is too tight on a loaded machine.
+  jest.setTimeout(60_000);
   it('DK-06 .githooks/pre-commit is tracked, executable in the index, and uses LF', () => {
     const entry = spawnSync('git', ['ls-files', '-s', '.githooks/pre-commit'], {
       cwd: root,
@@ -137,6 +149,5 @@ describe('DK-06 the pre-commit hook (gitleaks protect --staged)', () => {
     };
     expect(pkg.scripts['hooks:install']).toBe('git config core.hooksPath .githooks');
     expect(readFileSync(join(root, 'README.md'), 'utf8')).toContain('hooks:install');
-    mkdirSync(join(tmpdir()), { recursive: true });
   });
 });

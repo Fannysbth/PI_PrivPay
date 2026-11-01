@@ -19,4 +19,5 @@ if [ -z "$bin" ]; then
 fi
 
 root=$(git rev-parse --show-toplevel) || exit 1
-exec "$bin" protect --staged --redact --config "$root/.gitleaks.toml"
+# --source makes the repository explicit; .gitleaksignore is read from there, as in CI.
+exec "$bin" protect --staged --redact --source "$root" --config "$root/.gitleaks.toml"
