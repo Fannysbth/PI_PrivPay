@@ -57,7 +57,7 @@ docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.basel
 2. Pojok kanan atas, pilih environment **privpay-proposed** atau **privpay-baseline** sesuai mode yang menyala. Salah pilih membuat request 1.1 gagal (mode tidak cocok), itu disengaja.
 3. Buka **View > Show Postman Console** (Ctrl+Alt+C). Tests mencetak `[Diharapkan] ...` dan angka penting di sana.
 
-Environment berisi `base_url`, `idp_url`, `sms_url`, `mode`, `compose_project`. **Tambahkan sendiri variabel `dev_password` (tipe secret)** di environment: isinya kata sandi uji fiktif yang dibuat `pnpm docker:secrets` di `secrets/docker/keycloak_dev_user_password` (satu kata sandi untuk semua pengguna uji; berkas itu tidak pernah di-commit dan tidak disalin ke koleksi). Token, nilai uji, dan id disimpan otomatis sebagai variabel koleksi (fiktif; token Keycloak berlaku 300 detik dan diperbarui sendiri). Folder 1 (token pertama) memakai password grant ke `{{idp_url}}/realms/privpay/protocol/openid-connect/token`.
+Environment berisi `base_url`, `idp_url`, `sms_url`, `mode`, `compose_project`. **Tambahkan sendiri enam variabel bertipe secret** di environment (DK-04c: satu kata sandi per kelas pengguna): `password_nasabah`, `password_admin`, `password_auditor`, `password_analis`, `password_bank`, dan `admin_console_secret` (rahasia klien `admin-console`, wajib untuk password grant admin, auditor, dan analis). Isinya kata sandi uji fiktif yang dibuat `pnpm docker:secrets` di `secrets/docker/keycloak_password_customer`, `_admin`, `_auditor`, `_analyst`, `_bank`, dan `admin-console_client_secret` (berkas itu tidak pernah di-commit dan tidak disalin ke koleksi). Nasabah yang didaftarkan lewat `/register` memakai kata sandi kelas nasabah yang sama (fixture uji: Gateway hanya memegang kelas itu). Token, nilai uji, dan id disimpan otomatis sebagai variabel koleksi (fiktif; token Keycloak berlaku 300 detik dan diperbarui sendiri). Folder 1 (token pertama) memakai password grant ke `{{idp_url}}/realms/privpay/protocol/openid-connect/token`.
 
 ## 4. Urutan klik
 
@@ -126,7 +126,7 @@ npx --yes newman@6.2.1 run docs/postman/privpay-manual.postman_collection.json -
 | Gejala | Penyebab dan jalan keluar |
 | --- | --- |
 | `Could not send request` / ECONNREFUSED | tumpukan belum menyala atau salah mode; cek `curl.exe --ssl-no-revoke --cacert secrets/docker/tls_ca.crt https://127.0.0.1:4010/health` (usulan) atau `:4011` (baseline) |
-| 1.2 gagal 401 atau `Gagal mengambil token ... Keycloak` | variabel `dev_password` kosong atau salah (isi dari `secrets/docker/keycloak_dev_user_password`), atau Compose dijalankan tanpa `compose.postman.yml` sehingga port 8080 tidak terbuka; matikan lalu naikkan lagi dengan tiga `-f` |
+| 1.2 gagal 401 atau `Gagal mengambil token ... Keycloak` | salah satu variabel `password_<kelas>` atau `admin_console_secret` kosong atau salah (isi dari `secrets/docker/keycloak_password_*` dan `admin-console_client_secret`), atau Compose dijalankan tanpa `compose.postman.yml` sehingga port 8080 tidak terbuka; matikan lalu naikkan lagi dengan tiga `-f` |
 | port 8080 atau 4007 sudah dipakai | mode lain masih menyala, atau proses lokal `pnpm dev:up`; matikan dulu (`dev:down`) |
 | 1.1 gagal "mode gateway = environment" | environment yang dipilih tidak sama dengan mode yang menyala |
 | "Peran token tidak dikenal atau nasabah belum didaftarkan" | folder 3 atau 4 dijalankan sebelum 2.1 dan 2.2 |

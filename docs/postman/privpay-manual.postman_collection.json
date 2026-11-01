@@ -12,20 +12,20 @@
         "type": "text/javascript",
         "exec": [
           "// Token Keycloak berlaku 300 detik. Setiap request yang memakai header \"Authorization: Bearer {{token_<peran>}}\" otomatis",
-          "// mendapat token segar bila belum ada atau sudah lebih dari 200 detik. Kata sandi uji (fiktif) ada di variabel dev_password, tidak ada di berkas ini.",
+          "// mendapat token segar bila belum ada atau sudah lebih dari 200 detik. Kata sandi uji (fiktif) ada di variabel password_<kelas> dan rahasia klien admin-console di admin_console_secret (DK-04c: satu kata sandi per kelas pengguna); tidak ada di berkas ini.",
           "const auth = pm.request.headers.get('Authorization') || '';",
           "const m = /\\{\\{token_([a-z0-9]+)\\}\\}/.exec(auth);",
           "if (m) {",
           "  const role = m[1];",
           "  const custName = pm.collectionVariables.get('cust_username');",
           "  const map = {",
-          "    analis: ['admin-console', 'analis.uji.1'],",
-          "    auditor: ['admin-console', 'auditor.uji.1'],",
-          "    admin: ['admin-console', 'admin.uji.1'],",
-          "    admin2: ['admin-console', 'admin.uji.2'],",
-          "    bank: ['bank-simulator', 'bank.uji.1'],",
-          "    nasabah103: ['customer-app', 'nasabah.uji.103'],",
-          "    customer: ['customer-app', custName],",
+          "    analis: ['admin-console', 'analis.uji.1', 'password_analis'],",
+          "    auditor: ['admin-console', 'auditor.uji.1', 'password_auditor'],",
+          "    admin: ['admin-console', 'admin.uji.1', 'password_admin'],",
+          "    admin2: ['admin-console', 'admin.uji.2', 'password_admin'],",
+          "    bank: ['bank-simulator', 'bank.uji.1', 'password_bank'],",
+          "    nasabah103: ['customer-app', 'nasabah.uji.103', 'password_nasabah'],",
+          "    customer: ['customer-app', custName, 'password_nasabah'],",
           "  };",
           "  const who = map[role];",
           "  if (!who || !who[1]) {",
@@ -38,7 +38,7 @@
           "        url: pm.variables.get('idp_url') + '/realms/privpay/protocol/openid-connect/token',",
           "        method: 'POST',",
           "        header: { 'Content-Type': 'application/x-www-form-urlencoded' },",
-          "        body: { mode: 'urlencoded', urlencoded: [{ key: 'grant_type', value: 'password' }, { key: 'client_id', value: who[0] }, { key: 'username', value: who[1] }, { key: 'password', value: pm.variables.get('dev_password') }] },",
+          "        body: { mode: 'urlencoded', urlencoded: [{ key: 'grant_type', value: 'password' }, { key: 'client_id', value: who[0] }, { key: 'username', value: who[1] }, { key: 'password', value: pm.variables.get(who[2]) }].concat(who[0] === 'admin-console' ? [{ key: 'client_secret', value: pm.variables.get('admin_console_secret') }] : []) },",
           "      },",
           "      (err, res) => {",
           "        if (err || res.code !== 200) throw new Error('Gagal mengambil token ' + role + ' dari Keycloak (' + pm.variables.get('idp_url') + ').');",
@@ -142,7 +142,12 @@
                 },
                 {
                   "key": "password",
-                  "value": "{{dev_password}}",
+                  "value": "{{password_analis}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{admin_console_secret}}",
                   "type": "text"
                 }
               ]
@@ -160,7 +165,7 @@
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari Keycloak untuk analis fraud. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk analis fraud. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel password_<kelas>. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         },
         {
@@ -215,7 +220,12 @@
                 },
                 {
                   "key": "password",
-                  "value": "{{dev_password}}",
+                  "value": "{{password_auditor}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{admin_console_secret}}",
                   "type": "text"
                 }
               ]
@@ -233,7 +243,7 @@
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari Keycloak untuk auditor. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk auditor. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel password_<kelas>. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         },
         {
@@ -288,7 +298,12 @@
                 },
                 {
                   "key": "password",
-                  "value": "{{dev_password}}",
+                  "value": "{{password_admin}}",
+                  "type": "text"
+                },
+                {
+                  "key": "client_secret",
+                  "value": "{{admin_console_secret}}",
                   "type": "text"
                 }
               ]
@@ -306,7 +321,7 @@
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari Keycloak untuk admin. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk admin. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel password_<kelas>. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         },
         {
@@ -361,7 +376,7 @@
                 },
                 {
                   "key": "password",
-                  "value": "{{dev_password}}",
+                  "value": "{{password_bank}}",
                   "type": "text"
                 }
               ]
@@ -379,7 +394,7 @@
                 "token"
               ]
             },
-            "description": "Mengambil JWT dari Keycloak untuk bank. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel dev_password. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
+            "description": "Mengambil JWT dari Keycloak untuk bank. Klien dan pengguna uji berasal dari realm privpay (fiktif); kata sandi uji ada di variabel password_<kelas>. Token berlaku 300 detik; koleksi memperbaruinya otomatis."
           }
         }
       ]
@@ -509,7 +524,7 @@
                 },
                 {
                   "key": "password",
-                  "value": "{{dev_password}}",
+                  "value": "{{password_nasabah}}",
                   "type": "text"
                 }
               ]

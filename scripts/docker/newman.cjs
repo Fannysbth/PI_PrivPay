@@ -29,10 +29,23 @@ function run(tmp) {
     process.stderr.write('usage: newman.cjs <proposed|baseline>\n');
     return 2;
   }
-  const password = fs.readFileSync(path.join(secretsDir(), 'keycloak_dev_user_password'), 'utf8').trim();
+  // DK-04c: one password per class of user and the secret of the privileged human client, as secret variables (never printed).
+  // The harness holds all of them; no service does. password_nasabah is the one password of the test customers, the ones
+  // seeded and the ones that /register makes (a fixture of the test: the Gateway holds only this class).
+  const read = (name) => fs.readFileSync(path.join(secretsDir(), name), 'utf8').trim();
+  const secret = (key, value) => ({ key, value, type: 'secret', enabled: true });
   fs.writeFileSync(
     path.join(tmp, 'globals.json'),
-    JSON.stringify({ values: [{ key: 'dev_password', value: password, type: 'secret', enabled: true }] }),
+    JSON.stringify({
+      values: [
+        secret('password_nasabah', read('keycloak_password_customer')),
+        secret('password_admin', read('keycloak_password_admin')),
+        secret('password_auditor', read('keycloak_password_auditor')),
+        secret('password_analis', read('keycloak_password_analyst')),
+        secret('password_bank', read('keycloak_password_bank')),
+        secret('admin_console_secret', read('admin-console_client_secret')),
+      ],
+    }),
     { mode: 0o600 },
   );
   const args = [

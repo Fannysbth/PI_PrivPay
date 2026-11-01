@@ -38,9 +38,14 @@ async function call(method, url, { token, body, headers } = {}) {
   return { status: response.status, json, text };
 }
 
-// DK-04: Keycloak signs a user in by password grant (the one test password is read from a file, never printed); the dev IdP by name.
+// DK-04: Keycloak signs a user in by password grant (passwords are read from files, never printed); the dev IdP by name.
+// DK-04c: one password per class. This container is a test fixture: it holds the customer class (the people it registers) and
+// the analyst class with the secret of admin-console (to read the held list); nothing of the other classes.
 const KEYCLOAK = process.env.IDP_KIND === 'keycloak';
-const userPassword = KEYCLOAK ? require('node:fs').readFileSync(process.env.IDP_USER_PASSWORD_FILE, 'utf8').trim() : undefined;
+const fromFile = (variable) => (KEYCLOAK ? require('node:fs').readFileSync(process.env[variable], 'utf8').trim() : undefined);
+const userPassword = fromFile('IDP_USER_PASSWORD_FILE');
+const analystPassword = fromFile('IDP_ANALYST_PASSWORD_FILE');
+const adminConsoleSecret = fromFile('IDP_ADMIN_CONSOLE_SECRET_FILE');
 const login = async (client, username) => {
   if (!KEYCLOAK) {
     return (await call('POST', `${IDP}/token`, { body: { grant_type: 'dev_login', client_id: client, username } })).json
@@ -49,7 +54,11 @@ const login = async (client, username) => {
   const response = await fetch(`${IDP}/realms/${process.env.IDP_REALM}/protocol/openid-connect/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'password', client_id: client, username, password: userPassword }).toString(),
+    body: new URLSearchParams(
+      client === 'admin-console'
+        ? { grant_type: 'password', client_id: client, client_secret: adminConsoleSecret, username, password: analystPassword }
+        : { grant_type: 'password', client_id: client, username, password: userPassword },
+    ).toString(),
   });
   return (await response.json().catch(() => undefined))?.access_token;
 };

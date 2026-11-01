@@ -24,7 +24,7 @@ const check = (label, ok) => results.push([label, ok]);
     sc.azp === 'api-gateway' && ['privacy-service', 'transaction-service', 'notification-service', 'reconciliation-service'].every((a) => sc.aud.includes(a)) && sc.roles === undefined && sc.customer_id === undefined && sc.exp - sc.iat <= 300);
   const wrong = await form({ grant_type: 'client_credentials', client_id: 'api-gateway', client_secret: 'not-the-secret-0123456789' });
   check('a wrong client secret is refused', wrong.status === 401);
-  const customer = await form({ grant_type: 'password', client_id: 'customer-app', username: 'nasabah.uji.101', password: secret('keycloak_dev_user_password') });
+  const customer = await form({ grant_type: 'password', client_id: 'customer-app', username: 'nasabah.uji.101', password: secret('keycloak_password_customer') });
   const cc = claims((await customer.json()).access_token);
   check('customer: one role, aud api-gateway, customer_id of the form CUST-nnnnnn', JSON.stringify(cc.roles) === '["customer"]' && cc.aud.includes('api-gateway') && /^CUST-[0-9]{6}$/.test(cc.customer_id));
   check('issuer is the fixed name of the realm, whatever address was used', sc.iss === 'http://keycloak:8080/realms/privpay');

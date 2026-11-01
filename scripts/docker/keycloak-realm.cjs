@@ -76,6 +76,19 @@ const basicScope = {
   ],
 };
 
+// DK-04c, ADR-0017 item 5: one password per class of user, so that a component holding one cannot sign in as another class.
+// The file of each class under the secrets directory; the gateway reads only the customer one and the bank simulator only the
+// bank one. `admin-console` is a confidential client: the password grant of an administrator, auditor, or analyst also needs
+// its client secret, which neither of them holds.
+const PASSWORD_FILES = {
+  customer: 'keycloak_password_customer',
+  admin: 'keycloak_password_admin',
+  auditor: 'keycloak_password_auditor',
+  fraud_analyst: 'keycloak_password_analyst',
+  bank: 'keycloak_password_bank',
+};
+const CONFIDENTIAL_HUMAN_CLIENTS = ['admin-console'];
+
 const audienceResolve = {
   name: 'audience-from-roles',
   protocol: 'openid-connect',
@@ -95,12 +108,21 @@ const customerIdClaim = {
   config: { 'user.attribute': 'customer_id', 'claim.name': 'customer_id', 'jsonType.label': 'String', 'access.token.claim': 'true', 'id.token.claim': 'false', 'userinfo.token.claim': 'false', 'introspection.token.claim': 'true' },
 };
 
-/** `secrets`: { clients: { <client>: secret }, password: string }. Returns the realm representation (Keycloak import format). */
-function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) {
-  for (const name of [...Object.keys(SERVICE_CLIENTS), adminClient]) {
+/**
+ * `clientSecrets`: { <client>: secret } for the service accounts, the admin client, and `admin-console`.
+ * `passwords`: { <class>: password }, the five classes of PASSWORD_FILES, all different.
+ * Returns the realm representation (Keycloak import format).
+ */
+function renderRealm({ clientSecrets, passwords, adminClient = 'idp-admin' }) {
+  for (const name of [...Object.keys(SERVICE_CLIENTS), adminClient, ...CONFIDENTIAL_HUMAN_CLIENTS]) {
     if (typeof clientSecrets[name] !== 'string' || clientSecrets[name].length < 16) throw new Error(`secret of client ${name} is missing or too short`);
   }
-  if (typeof devPassword !== 'string' || devPassword.length < 16) throw new Error('the dev password is missing or too short');
+  for (const klass of Object.keys(PASSWORD_FILES)) {
+    if (typeof passwords?.[klass] !== 'string' || passwords[klass].length < 16) throw new Error(`the password of class ${klass} is missing or too short`);
+  }
+  if (new Set(Object.keys(PASSWORD_FILES).map((klass) => passwords[klass])).size !== Object.keys(PASSWORD_FILES).length) {
+    throw new Error('the passwords of the classes must be distinct');
+  }
 
   const clients = [];
   // Bearer-only resources: they exist only so that an audience can be named after them (aud of the token).
@@ -125,7 +147,9 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
   // Humans: password grant (dev only). A client signs only the roles of its own kind in (a customer never gets an admin token).
   for (const [client, roles] of Object.entries(CLIENT_ROLES)) {
     clients.push({
-      clientId: client, enabled: true, publicClient: true, protocol: 'openid-connect', directAccessGrantsEnabled: true,
+      clientId: client, enabled: true, protocol: 'openid-connect', directAccessGrantsEnabled: true,
+      // The client of the privileged classes needs its secret for the password grant; the others stay public (dev only).
+      ...(CONFIDENTIAL_HUMAN_CLIENTS.includes(client) ? { publicClient: false, secret: clientSecrets[client] } : { publicClient: true }),
       standardFlowEnabled: false, implicitFlowEnabled: false, serviceAccountsEnabled: false, fullScopeAllowed: false,
       defaultClientScopes: ['basic'], optionalClientScopes: [],
       protocolMappers: [audienceResolve, rolesClaim, ...(roles.includes('customer') ? [customerIdClaim] : [])],
@@ -148,7 +172,7 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
   for (const [username, role, customerId] of USERS) {
     users.push({
       username, enabled: true, emailVerified: true,
-      credentials: [{ type: 'password', value: devPassword, temporary: false }],
+      credentials: [{ type: 'password', value: passwords[role], temporary: false }],
       realmRoles: [role],
       ...(customerId ? { attributes: { customer_id: [customerId] } } : {}),
     });
@@ -182,7 +206,7 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
 
 const readSecret = (dir, name) => readFileSync(path.join(dir, name), 'utf8').trim();
 
-module.exports = { renderRealm, audienceScope, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
+module.exports = { renderRealm, audienceScope, PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
 
 if (require.main === module) {
   const [dir, out] = process.argv.slice(2);
@@ -193,7 +217,9 @@ if (require.main === module) {
   const clientSecrets = {};
   for (const name of Object.keys(SERVICE_CLIENTS)) clientSecrets[name] = readSecret(dir, `${name}_client_secret`);
   clientSecrets['idp-admin'] = readSecret(dir, 'idp-admin_client_secret');
-  const realm = renderRealm({ clientSecrets, devPassword: readSecret(dir, 'keycloak_dev_user_password') });
+  for (const name of CONFIDENTIAL_HUMAN_CLIENTS) clientSecrets[name] = readSecret(dir, `${name}_client_secret`);
+  const passwords = Object.fromEntries(Object.entries(PASSWORD_FILES).map(([klass, file]) => [klass, readSecret(dir, file)]));
+  const realm = renderRealm({ clientSecrets, passwords });
   mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(realm), { mode: 0o644 });
   process.stdout.write('keycloak realm written\n');
