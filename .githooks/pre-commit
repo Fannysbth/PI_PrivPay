@@ -1,0 +1,22 @@
+#!/bin/sh
+# PrivPay pre-commit (DK-06): refuses a commit whose staged changes hold a secret (gitleaks protect --staged, with the same
+# .gitleaks.toml and .gitleaksignore as CI and the manual gates). Fail-closed: no gitleaks, no commit.
+# Install (once per clone): pnpm hooks:install   (that is: git config core.hooksPath .githooks)
+# Skipping it with --no-verify needs the permission of the owner (project rules).
+set -u
+
+bin="${PRIVPAY_GITLEAKS:-}"
+if [ -z "$bin" ]; then
+  if command -v gitleaks >/dev/null 2>&1; then
+    bin=gitleaks
+  elif [ -n "${LOCALAPPDATA:-}" ] && [ -x "$LOCALAPPDATA/Microsoft/WinGet/Links/gitleaks.exe" ]; then
+    bin="$LOCALAPPDATA/Microsoft/WinGet/Links/gitleaks.exe"
+  fi
+fi
+if [ -z "$bin" ]; then
+  echo "pre-commit: gitleaks was not found, so the commit is refused. Install it (Windows: winget install Gitleaks.Gitleaks)." >&2
+  exit 1
+fi
+
+root=$(git rev-parse --show-toplevel) || exit 1
+exec "$bin" protect --staged --redact --config "$root/.gitleaks.toml"

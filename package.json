@@ -8,6 +8,7 @@
     "node": ">=24 <25"
   },
   "scripts": {
+    "hooks:install": "git config core.hooksPath .githooks",
     "lint": "eslint . && prettier --check .",
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
