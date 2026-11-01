@@ -173,7 +173,7 @@ export function buildKongConfig(input: KongConfigInput): Record<string, unknown>
       key_claim_name: 'iss',
       claims_to_verify: ['exp'],
       maximum_expiration: input.maxTokenLifetimeSeconds,
-      // Only the Authorization header carries a token. A token in a URL or a cookie is not read (CLAUDE.md).
+      // Only the Authorization header carries a token. A token in a URL or a cookie is not read (project rules).
       header_names: ['authorization'],
       uri_param_names: [],
       cookie_names: [],

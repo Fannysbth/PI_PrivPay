@@ -35,7 +35,7 @@ PRD 10 menyatakan daftar endpoint adalah sumber tunggal dan endpoint di luar daf
 | 20 | `POST /reconciliation/disclosure` (via Gateway, auditor) | alur E3 membutuhkan pemicu bagi Reconciliation untuk memanggil `/de-pseudonymize` | `reconciliation.md` 3.4 | E-25 |
 | 21 | `POST /register` di Gateway | alur A1 tidak menamai rute pendaftaran | `gateway-tokenizer.md` 3, 6 | E-26 |
 | 22 | filter `action` dan `disclosure_id` pada `GET /audit-log` | admin perlu menemukan `disclosure_id` yang menunggu tanpa endpoint daftar baru | `privacy-service.md` 4.8 | E-27 |
-| 23 | env baru: `FRAUD_HOLD_THRESHOLD`, `FRAUD_BLOCK_THRESHOLD`, `TX_SWEEP_INTERVAL_SECONDS`, `RECON_DAILY_RUN_UTC`, `RETENTION_JOB_RUN_UTC`, `PG_HOST`, `PG_PORT`, `*_FILE`, `SMS_SIMULATOR_*`, `DEV_IDP_ENABLED` (katalog di `platform-dan-ci.md` 3.1) | nilai ambang dan jadwal harus dari env (CLAUDE.md) | `fraud.md`, `transaction.md`, `reconciliation.md`, `platform-dan-ci.md` | E-28 |
+| 23 | env baru: `FRAUD_HOLD_THRESHOLD`, `FRAUD_BLOCK_THRESHOLD`, `TX_SWEEP_INTERVAL_SECONDS`, `RECON_DAILY_RUN_UTC`, `RETENTION_JOB_RUN_UTC`, `PG_HOST`, `PG_PORT`, `*_FILE`, `SMS_SIMULATOR_*`, `DEV_IDP_ENABLED` (katalog di `platform-dan-ci.md` 3.1) | nilai ambang dan jadwal harus dari env (aturan proyek) | `fraud.md`, `transaction.md`, `reconciliation.md`, `platform-dan-ci.md` | E-28 |
 | 24 | pembatasan `aud` token aktor ke layanan di jalur peran | mengurangi pemakaian ulang token aktor oleh layanan hilir yang diretas (T-15) | `platform-dan-ci.md` 7.6 | W-03 |
 
 Tiap butir "keputusan spec" lain (reason baru, pola validasi, aturan status batch, dst.) tercantum sebagai K-01..K-24 di `OPEN_QUESTIONS.md` bagian F dengan nilai bawaan yang dipakai spec sampai Fanny memutuskan.

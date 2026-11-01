@@ -26,7 +26,7 @@ import {
 
 /**
  * The statements of buat_token and of the two forms that read a source row, exported so the tests can ask PostgreSQL
- * for their plans (NFR-04). Every value is a bind parameter (CLAUDE.md).
+ * for their plans (NFR-04). Every value is a bind parameter (project rules).
  */
 export const TOKEN_SQL = {
   // Spec privacy 7.2 step 2: the lock that keeps parallel requests for one combination in line (ADR-0010). A row that

@@ -14,7 +14,7 @@ const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname })
 
 /**
  * What the gateway reads from the environment, on top of the shared bootstrap (platform spec 6, PRD 17). The client
- * secret is not here: it is a file named by API_GATEWAY_CLIENT_SECRET_FILE (CLAUDE.md, secrets).
+ * secret is not here: it is a file named by API_GATEWAY_CLIENT_SECRET_FILE (project rules, secrets).
  */
 export const gatewayConfigSchema = z
   .object({

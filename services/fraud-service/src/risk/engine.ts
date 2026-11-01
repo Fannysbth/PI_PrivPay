@@ -19,7 +19,7 @@ export interface RiskInput {
   readonly geohash: string;
 }
 
-/** Values that come from the environment, never from a literal here (CLAUDE.md, K-20). */
+/** Values that come from the environment, never from a literal here (project rules, K-20). */
 export interface RiskConfig {
   readonly amountThreshold: number;
   /** From this hour on the night starts (22). */

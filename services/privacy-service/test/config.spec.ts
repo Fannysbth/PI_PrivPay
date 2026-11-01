@@ -1,7 +1,7 @@
 import { loadPrivacyConfig } from '../src/config';
 
 // The settings the privacy service refuses to start without: no default for a TTL, the grace period or the approval
-// window (CLAUDE.md: fail fast). Values are invented.
+// window (project rules: fail fast). Values are invented.
 const env = (): Record<string, string> => ({
   PRIVACY_MODE: 'proposed',
   PG_HOST: '127.0.0.1',

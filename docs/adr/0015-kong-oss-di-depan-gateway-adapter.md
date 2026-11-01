@@ -23,7 +23,7 @@ ADR-0004 memakai `gateway-adapter` NestJS sebagai pengganti Kong sementara. DK-0
 
 - Positif: tepi memakai komponen standar; kegagalan token, ukuran, dan laju terjadi sebelum adapter menerima permintaan; bentuk galat satu.
 - Negatif / utang: ini Lua pertama di repo, tanpa kerangka uji Lua (dibuktikan lewat mutasi HTTP `pnpm docker:edge-check` dan pembanding teks pada tabel kode). Kunci dev-idp yang berubah membuat Kong menolak sampai dibuat ulang. Titik tambahan di jalur: latensi tidak diklaim dari lingkungan lokal.
-- Yang harus diubah: Postman (base_url `https`, CA dev), net-check, tes statis Compose, CLAUDE.md, spek gateway-tokenizer 11.
+- Yang harus diubah: Postman (base_url `https`, CA dev), net-check, tes statis Compose, aturan proyek, spek gateway-tokenizer 11.
 
 ## Kapan ditinjau ulang
 

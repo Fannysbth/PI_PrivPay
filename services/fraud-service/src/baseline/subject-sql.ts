@@ -1,7 +1,7 @@
 import type { SubjectSql } from '../risk/repository';
 
 /** ADR-0006, the baseline mode: the history is keyed by the customer_id itself (spec data 9). */
-// Every value is a bind parameter (CLAUDE.md); the column name is fixed text, never input.
+// Every value is a bind parameter (project rules); the column name is fixed text, never input.
 export const SUBJECT_SQL: SubjectSql = {
   history: `SELECT amount, geohash FROM fraud_assessments WHERE customer_id = $1 AND assessed_at >= $2 ORDER BY assessed_at DESC, id DESC`,
   insert: `INSERT INTO fraud_assessments

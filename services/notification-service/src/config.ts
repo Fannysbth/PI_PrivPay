@@ -15,7 +15,7 @@ const serviceUrl = z.url({ protocol: /^https?$/, hostname: z.regexes.hostname })
 
 /**
  * What the notification service reads from the environment, on top of the shared bootstrap (spec notification 3). The
- * database password and the client secret at the IdP are not here: they are files named by `<NAME>_FILE` (CLAUDE.md,
+ * database password and the client secret at the IdP are not here: they are files named by `<NAME>_FILE` (project rules,
  * secrets), read by `createPool` and `loadNotificationConfig`.
  */
 export const notificationConfigSchema = z

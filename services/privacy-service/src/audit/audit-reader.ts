@@ -80,7 +80,7 @@ const ROW_COLUMNS = `id, created_at, action, status, reason, requesting_service,
        to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS exact_at`;
 
 /**
- * Every value is a bind parameter (CLAUDE.md); the only interpolated text is the constant column list above. The cursor
+ * Every value is a bind parameter (project rules); the only interpolated text is the constant column list above. The cursor
  * compares (created_at, id) as a pair, and `exact_at` carries the microseconds a JavaScript Date drops, so a page
  * boundary never skips or repeats a row.
  */

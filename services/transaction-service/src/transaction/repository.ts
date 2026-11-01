@@ -75,7 +75,7 @@ export interface Reviewed {
   readonly amount: number;
 }
 
-/** Every value is a bind parameter (CLAUDE.md). */
+/** Every value is a bind parameter (project rules). */
 export const TRANSACTION_SQL = {
   merchant: 'SELECT 1 FROM merchants WHERE merchant_id = $1',
   // The move is guarded by the status the caller saw ($2): a row that someone else moved meanwhile is not rewritten,

@@ -1,4 +1,4 @@
-# CI for PrivPay. The local gate (CLAUDE.md, Perintah) runs here too; tests/repo/ci-workflow.spec.ts checks this file.
+# CI for PrivPay. The local gate (project rules, Perintah) runs here too; tests/repo/ci-workflow.spec.ts checks this file.
 # Every action is pinned to a commit SHA and every image to a digest (S-08); Dependabot proposes the updates.
 # The compose-based end-to-end job stays switched off until Docker is part of the project (ADR-0004, DK-01).
 name: ci
@@ -20,7 +20,7 @@ concurrency:
 jobs:
   secrets:
     # Runs the pinned gitleaks CLI with the same .gitleaks.toml and .gitleaksignore as pre-commit and the local command
-    # (CLAUDE.md, Perintah). The tarball is verified against the checksum published for v8.30.1.
+    # (project rules, Perintah). The tarball is verified against the checksum published for v8.30.1.
     name: secret scan (full history)
     runs-on: ubuntu-latest
     env:
@@ -87,7 +87,7 @@ jobs:
           umask 077
           password="$(openssl rand -base64 24 | tr -d '/+=')"
           echo "::add-mask::${password}"
-          # The password lives in a file that only the bootstrap step reads (PG_ADMIN_PASSWORD_FILE, CLAUDE.md), not in
+          # The password lives in a file that only the bootstrap step reads (PG_ADMIN_PASSWORD_FILE, project rules), not in
           # GITHUB_ENV, so no later step or third-party action sees it. docker run takes it from its own environment.
           printf '%s' "$password" > "${RUNNER_TEMP}/pg_admin_password"
           POSTGRES_PASSWORD="$password" docker run -d --name privpay-pg -p 127.0.0.1:5432:5432 -e POSTGRES_PASSWORD "$POSTGRES_IMAGE"

@@ -137,7 +137,7 @@ Berlaku pada kedua mode kecuali dinyatakan; TF khusus lapisan privasi hanya pada
 | M6-03 | uji penautan baseline vs proposed, join lintas basis data nol baris, jendela TTL dilaporkan | S-71, S-72 |
 | M6-04 | gagal tertutup dengan proses Privacy dimatikan | TK-16, NFR-11, S-50 |
 | M7-01 | k6 sesuai bagian 8; syarat validitas ADR-0004 | NFR-01, NFR-02, NFR-03, US-11 |
-| semua tiket | gerbang lokal: lint, typecheck, test, test:integration, audit, gitleaks | CLAUDE.md |
+| semua tiket | gerbang lokal: lint, typecheck, test, test:integration, audit, gitleaks | aturan proyek |
 
 ## 10. Di luar cakupan
 

@@ -1,7 +1,7 @@
 import type { SubjectSql } from '../transaction/repository';
 
 /** ADR-0006, the proposed mode: the subject is stored as the tokens of this service. */
-// Every value is a bind parameter (CLAUDE.md); the column names are fixed text, never input.
+// Every value is a bind parameter (project rules); the column names are fixed text, never input.
 export const SUBJECT_SQL: SubjectSql = {
   insertPending: `INSERT INTO transactions
        (transaction_id, idempotency_key, customer_pseudonym, account_pseudonym, merchant_id, amount, geohash,

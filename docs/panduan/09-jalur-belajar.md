@@ -153,4 +153,4 @@ Aturan main latihan:
 
 1. Tulis satu halaman penjelasan sistem dengan kata-katamu sendiri; bandingkan dengan [00](00-peta-besar.md).
 2. Pilih satu temuan dari bagian "Temuan baru" di [08](08-batasan-dan-pertanyaan-dosen.md) (mis. harapan E(s) baseline) dan putuskan apakah akan diubah di spek atau di kode. Keputusan FINAL tidak berubah tanpa ADR yang kamu setujui.
-3. Bila akan menulis kode, baca dulu [`CLAUDE.md`](../../CLAUDE.md): larangan keras (tidak ada PII di mana pun, tidak ada rahasia di git, tidak melonggarkan tes) dan alur kerja (tes dulu, satu tiket satu PR kecil).
+3. Bila akan menulis kode, baca dulu aturan proyek: larangan keras (tidak ada PII di mana pun, tidak ada rahasia di git, tidak melonggarkan tes) dan alur kerja (tes dulu, satu tiket satu PR kecil).

@@ -36,7 +36,7 @@ describe('M0-01 the lint configuration enforces the project conventions', () => 
     expect(await rulesReportedFor('uses-console.ts')).toContain('no-console');
   });
 
-  it('M0-01 reports explicit any (CLAUDE.md conventions)', async () => {
+  it('M0-01 reports explicit any (project rules conventions)', async () => {
     expect(await rulesReportedFor('uses-any.ts')).toContain('@typescript-eslint/no-explicit-any');
   });
 
@@ -50,7 +50,7 @@ describe('M0-01 the lint configuration enforces the project conventions', () => 
     );
   });
 
-  it('M0-01 reports focused and skipped tests (CLAUDE.md, qa-checklist Q-05)', async () => {
+  it('M0-01 reports focused and skipped tests (project rules, qa-checklist Q-05)', async () => {
     const rules = await rulesReportedFor('focused-test.ts');
     expect(rules.filter((rule) => rule === 'no-restricted-properties')).toHaveLength(2);
     expect(rules).toContain('no-restricted-globals');

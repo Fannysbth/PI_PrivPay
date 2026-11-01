@@ -1,7 +1,7 @@
 import { loadConfig } from '../src/config';
 import { httpConfigSchema } from '../src/http';
 
-describe('M0-03 timeout and retries come from the environment, not from literals in code (CLAUDE.md, NFR-12)', () => {
+describe('M0-03 timeout and retries come from the environment, not from literals in code (project rules, NFR-12)', () => {
   it('M0-03 defaults to a 3000 ms timeout and 2 retries', () => {
     expect(loadConfig(httpConfigSchema, {})).toEqual({ HTTP_TIMEOUT_MS: 3000, HTTP_MAX_RETRY: 2 });
   });

@@ -3,7 +3,7 @@ import { toClientError, DomainError } from '@privpay/common';
 import { buildKongConfig, jwkToPem, type KongConfigInput } from '../src/edge/kong-config';
 
 // DK-02a: Kong 3.9.4 (DB-less) in front of the gateway adapter. The declarative file is built at start from the IdP's
-// public key, so it holds no secret and no literal key (CLAUDE.md, secrets).
+// public key, so it holds no secret and no literal key (project rules, secrets).
 const pair = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const publicJwk = pair.publicKey.export({ format: 'jwk' });
 const input = (over: Partial<KongConfigInput> = {}): KongConfigInput => ({
@@ -121,7 +121,7 @@ describe('DK-02a Kong declarative config: the JWT plugin', () => {
       claims_to_verify: ['exp'],
       maximum_expiration: 300,
       header_names: ['authorization'],
-      // A token in a URL or a cookie is never read (CLAUDE.md: no JWT in the URL).
+      // A token in a URL or a cookie is never read (project rules: no JWT in the URL).
       uri_param_names: [],
       cookie_names: [],
     });

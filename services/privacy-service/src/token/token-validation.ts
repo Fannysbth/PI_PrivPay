@@ -21,7 +21,7 @@ export function textMatching(value: unknown, pattern: RegExp): void {
   if (!isText(value) || !pattern.test(value)) throw invalid();
 }
 
-/** The text fields are checked as text first: the type says string, but the data comes from outside (CLAUDE.md). */
+/** The text fields are checked as text first: the type says string, but the data comes from outside (project rules). */
 export function assertCommon(request: CommonRequest): void {
   textMatching(request.requestingService, SERVICE_ID);
   if (request.actorId !== undefined) textMatching(request.actorId, AUDIT_FORMATS.actorId);

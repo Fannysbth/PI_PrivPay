@@ -37,7 +37,7 @@ flowchart LR
   recon --> trx
 ```
 
-Aturan yang membuat diagram ini bukan kebetulan (invarian arsitektur, [`CLAUDE.md`](../../CLAUDE.md)):
+Aturan yang membuat diagram ini bukan kebetulan (invarian arsitektur, aturan proyek):
 
 1. Hanya Gateway dan Privacy Service yang boleh menerima `customer_id` atau nomor rekening mentah.
 2. Layanan hilir meminta token baru lewat `source_pseudonym`, tidak pernah lewat `subject_id`.

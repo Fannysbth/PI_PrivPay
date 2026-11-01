@@ -1,5 +1,5 @@
 # Extends gitleaks default rules. Keep allowlists narrow and justified.
-# Used by pre-commit, CI, and the manual command in CLAUDE.md (same file everywhere).
+# Used by pre-commit, CI, and the manual command in project rules (same file everywhere).
 # Syntax needs gitleaks >= 8.25 ([[allowlists]] with condition); pinned to 8.30.1 in CI and pre-commit.
 title = "PrivPay gitleaks"
 

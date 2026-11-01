@@ -4,7 +4,7 @@ Tanggal: 2026-10-24. Sifat: pengukuran dan rencana. Tidak ada berkas Docker, Com
 
 **Catatan sumber:** yang ada di repo adalah Bab Metodologi **v8**; berkas v9 yang disebut dalam permintaan tidak ada di `docs/reference/`. Butir Docker pada v8 (Kong plugin Lua, Keycloak, Docker Compose, `PRIVACY_MODE` di Compose, batas CPU dan memori sama untuk kedua konfigurasi, satu VPS) sudah dipakai di sini; bila v9 berbeda, laporan ini perlu dibaca ulang terhadapnya.
 
-**Batas klaim:** semua angka di bawah adalah memori mesin pengembangan ini. Tidak ada angka latensi atau throughput, dan tidak boleh dikutip ke laporan skripsi (ADR-0004, CLAUDE.md).
+**Batas klaim:** semua angka di bawah adalah memori mesin pengembangan ini. Tidak ada angka latensi atau throughput, dan tidak boleh dikutip ke laporan skripsi (ADR-0004, aturan proyek).
 
 ## 1. Lingkungan terukur
 
@@ -63,7 +63,7 @@ Terukur pada `postgres:16.15`: `gen_random_uuid()` ada, `scram-sha-256`, `data_c
 Alasan dari angka:
 
 - Compose penuh pada akhirnya wajib: DK-01 ("seluruh sistem lewat satu `docker compose up`"), DK-03 (tiga jaringan hanya bermakna bila semua layanan di dalamnya), DK-06 (NFR-19 dari mesin bersih), dan pengukuran M7 hanya sah pada konfigurasi final. Jadi hibrida bukan tujuan akhir.
-- Biaya tetap Docker 2,2 GB bebas (M2) dan VM WSL yang melebar sampai batas 4 GB (M5: 3180 MB) membuat bebas tinggal ±2,7 GB dengan sembilan layanan di host, Kong, dan satu PG16. Memindahkan sembilan layanan ke kontainer tidak menghemat memori host: memorinya pindah ke dalam VM yang sudah dibatasi 4 GB, jadi hasilnya serupa, ditambah beban 5 instans PostgreSQL (CLAUDE.md: satu instans per layanan; 32 MiB menganggur tiap instans, belum di bawah beban) dan Keycloak yang belum diukur.
+- Biaya tetap Docker 2,2 GB bebas (M2) dan VM WSL yang melebar sampai batas 4 GB (M5: 3180 MB) membuat bebas tinggal ±2,7 GB dengan sembilan layanan di host, Kong, dan satu PG16. Memindahkan sembilan layanan ke kontainer tidak menghemat memori host: memorinya pindah ke dalam VM yang sudah dibatasi 4 GB, jadi hasilnya serupa, ditambah beban 5 instans PostgreSQL (aturan proyek: satu instans per layanan; 32 MiB menganggur tiap instans, belum di bawah beban) dan Keycloak yang belum diukur.
 - Menaikkan `.wslconfig` melewati 4 GB mengorbankan Windows pada mesin 14 GB (bebas M1 hanya 6,9 GB), jadi tidak disarankan.
 - Hibrida membuat DK-02 (Lua), DK-05 (PG16), dan sebagian DK-04 dapat dikerjakan tanpa seluruh tumpukan menyala, sehingga siklus uji lebih pendek dan jauh dari ambang memori.
 - Pengukuran kinerja (k6) dan klaim NFR-19 tidak diambil di laptop ini (ADR-0004; metodologi: satu VPS, batas sumber daya sama).
@@ -87,7 +87,7 @@ Urutan mengikuti kolom "Bergantung pada" di tiket. Tiap sesi: satu tiket, satu c
 Catatan urutan dan ketergantungan:
 
 - DK-06 bergantung pada **M6-04**, dan DK-02/pengukuran bergantung pada M6 (Newman M6-01). M6 belum dikerjakan. DK-06 tidak dapat ditutup sebelum M6-01 dan M6-04 ada; DK-01 sampai DK-05 tidak bergantung padanya.
-- "Dua putaran penuh hijau berturut-turut" dijalankan sesudah semua sesi DK digabung, pada konfigurasi final, bukan per sesi. Tiap putaran sama dengan gerbang lengkap CLAUDE.md ditambah e2e Compose pada kedua mode. Satu putaran integrasi penuh memakan ±1 jam (3810 detik tercatat), jadi dua putaran berarti dua jendela panjang yang terpisah dari pekerjaan lain, dengan mesin dicegah tidur dan memori diperiksa.
+- "Dua putaran penuh hijau berturut-turut" dijalankan sesudah semua sesi DK digabung, pada konfigurasi final, bukan per sesi. Tiap putaran sama dengan gerbang lengkap aturan proyek ditambah e2e Compose pada kedua mode. Satu putaran integrasi penuh memakan ±1 jam (3810 detik tercatat), jadi dua putaran berarti dua jendela panjang yang terpisah dari pekerjaan lain, dengan mesin dicegah tidur dan memori diperiksa.
 - Putaran penuh pada DK-05 menguji skema di 16 saja; ia tidak menggantikan dua putaran penutup.
 
 ## 6. Risiko
@@ -125,5 +125,5 @@ Catatan urutan dan ketergantungan:
 6. **Q-10:** Lua atau `gateway-adapter` permanen. Diputuskan di DK-02 sesudah paritas teruji; apakah pengukuran M7 memakai Kong atau adapter harus disebut (ADR-0004).
 7. **v9 Metodologi** tidak ada di repo (hanya v8); tolong sediakan bila berbeda dari v8 pada bagian Docker.
 8. **VPS:** pengukuran sah hanya di konfigurasi akhir, dan metodologi menyebut satu VPS. Apakah VPS sudah tersedia untuk DK-06 dan M7? Bila tidak, NFR-19 dari "mesin bersih" dilakukan di mesin apa?
-9. **Satu PostgreSQL per layanan** (CLAUDE.md) berarti 5 instans PG16 di Compose; apakah satu instans dengan lima basis data dapat diterima untuk lingkungan Docker, atau tetap lima kontainer?
+9. **Satu PostgreSQL per layanan** (aturan proyek) berarti 5 instans PG16 di Compose; apakah satu instans dengan lima basis data dapat diterima untuk lingkungan Docker, atau tetap lima kontainer?
 10. **Syarat penutup DK** (N-52): dua putaran penuh berturut-turut pada konfigurasi final di Compose; konfirmasi bahwa putaran penuh DK-05 (di 16) tidak dihitung salah satunya.

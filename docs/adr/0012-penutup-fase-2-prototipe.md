@@ -11,7 +11,7 @@ Fase 2 menjawab ketidakpastian teknis yang dapat merusak desain: konkurensi `bua
 
 ## Keputusan
 
-Prototipe dihapus dari pohon kerja pada commit terpisah, sesuai CLAUDE.md ("kode sekali pakai, dihapus setelah ADR"). Kodenya tetap menjadi sumber primer di riwayat git:
+Prototipe dihapus dari pohon kerja pada commit terpisah, sesuai aturan proyek ("kode sekali pakai, dihapus setelah ADR"). Kodenya tetap menjadi sumber primer di riwayat git:
 
 - `a887931` dan `2755840` (branch `chore/phase2-prototypes`): `prototypes/idempotency-check/`, `prototypes/identity-check/`, `prototypes/p2-p3-privacy-db/`.
 - Menjalankan ulang: checkout `2755840`, pastikan `scripts/db/bootstrap.ps1` sudah dijalankan, lalu di `prototypes/p2-p3-privacy-db/` jalankan `corepack pnpm install` dan `PG_HOST=localhost PG_PORT=5432 node --test p2.test.mjs p3.test.mjs`; dua cek awal dijalankan dengan `node --test <berkas>` tanpa database.

@@ -24,7 +24,7 @@ const P7 = {
   subjectType: 'CUSTOMER',
 } as const;
 
-/** Every value is a bind parameter (CLAUDE.md). */
+/** Every value is a bind parameter (project rules). */
 export const DISCLOSURE_SQL = {
   // FOR SHARE: a revocation or a purge cannot commit between the checks and the insert (as in exchange).
   findToken: `SELECT id, service_id, purpose, subject_type, status, expires_at, purged_at, key_version

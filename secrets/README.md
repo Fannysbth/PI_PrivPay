@@ -16,4 +16,4 @@ done
 chmod 600 secrets/*
 ```
 
-Aturan: tiga kunci Privacy Service harus berbeda satu sama lain; aplikasi menolak start bila hilang, kosong, atau sama. Claude Code tidak boleh membaca isi folder ini.
+Aturan: tiga kunci Privacy Service harus berbeda satu sama lain; aplikasi menolak start bila hilang, kosong, atau sama. Perkakas otomatis tidak boleh membaca isi folder ini.

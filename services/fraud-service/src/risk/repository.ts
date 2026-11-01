@@ -15,7 +15,7 @@ export interface NewAssessment {
   readonly assessedAt: Date;
 }
 
-/** Every value is a bind parameter (CLAUDE.md). */
+/** Every value is a bind parameter (project rules). */
 export const ASSESSMENT_SQL = {
   rules: 'SELECT rule, parameter, weight, active FROM risk_rules ORDER BY rule',
 } as const;

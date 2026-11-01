@@ -16,7 +16,7 @@ Langkah 1 (build), 3 (migrasi: `up to date`), 4 (rahasia, di direktori sementara
 | Kebutuhan | Keterangan |
 | --- | --- |
 | Node 24 | `.nvmrc` berisi `24`; `package.json` mensyaratkan `>=24 <25` |
-| pnpm lewat corepack | pakai `corepack pnpm <perintah>`. `corepack enable` butuh hak admin di mesin ini (EPERM), jadi jangan mengandalkan `pnpm` langsung ([`CLAUDE.md`](../../CLAUDE.md), bagian Perintah) |
+| pnpm lewat corepack | pakai `corepack pnpm <perintah>`. `corepack enable` butuh hak admin di mesin ini (EPERM), jadi jangan mengandalkan `pnpm` langsung (aturan proyek, bagian Perintah) |
 | PostgreSQL | target 16; fase lokal memakai versi yang terpasang (18 di mesin pengembang, ADR-0004). Perlu `psql` di `PATH` untuk `bootstrap.ps1` |
 | PowerShell 5.1+ | untuk `scripts/db/bootstrap.ps1` dan skrip peluncur contoh. Git Bash dipakai untuk `curl` |
 | `curl` dan `node` | untuk mencoba alurnya |

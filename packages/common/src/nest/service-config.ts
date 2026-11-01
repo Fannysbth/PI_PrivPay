@@ -33,7 +33,7 @@ export const serviceConfigSchema = z.object({
   // Names the files, never their content. Setting only one of the two is refused where they are read (service-app).
   TLS_CERT_FILE: z.string().min(1).optional(),
   TLS_KEY_FILE: z.string().min(1).optional(),
-  // Switching certificate verification off for the whole process is forbidden (CLAUDE.md): refused at start-up.
+  // Switching certificate verification off for the whole process is forbidden (project rules): refused at start-up.
   NODE_TLS_REJECT_UNAUTHORIZED: z
     .string()
     .refine((value) => value !== '0')

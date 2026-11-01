@@ -19,7 +19,7 @@ Ada banyak tes di repo ini (pada gerbang terakhir: 1.340 tes unit, 1.134 integra
 Penjelasan singkat beberapa istilah di kolom pertama:
 
 - **TF-xx** = kasus fungsional (misalnya TF-04 token kedaluwarsa di tengah transaksi); **TK-xx** = kasus keamanan (misalnya TK-08 aktor `admin` tidak boleh membuka identitas); **AZ-xx** = tes otorisasi negatif per endpoint ([`docs/spec/endpoints.md`](../spec/endpoints.md)): tanpa kredensial 401, pemanggil atau peran salah 403, field tak dikenal 422, `requesting_service` palsu diabaikan.
-- Nama tes memuat ID-nya (`TK-07 rejects raw subject_id from TRANSACTION`), supaya kriteria penerimaan bisa dilacak ke tes ([`CLAUDE.md`](../../CLAUDE.md), bagian Pengujian).
+- Nama tes memuat ID-nya (`TK-07 rejects raw subject_id from TRANSACTION`), supaya kriteria penerimaan bisa dilacak ke tes (aturan proyek, bagian Pengujian).
 
 ## Menjalankan
 
@@ -52,7 +52,7 @@ Keduanya terverifikasi. Konfigurasi: unit di [`jest.config.cjs`](../../jest.conf
 Aturan etiket saat menjalankan tes yang berat:
 
 - **Satu proses pada satu waktu.** Jangan menjalankan dua rangkaian integrasi bersamaan; database tes bertabrakan dan memori habis.
-- **Periksa memori bebas lebih dulu.** Beberapa kegagalan "Connection terminated due to connection timeout" di riwayat proyek ternyata karena memori hampir habis; baru dianggap bug bila terulang saat memori longgar ([`CLAUDE.md`](../../CLAUDE.md), pelajaran retro M3).
+- **Periksa memori bebas lebih dulu.** Beberapa kegagalan "Connection terminated due to connection timeout" di riwayat proyek ternyata karena memori hampir habis; baru dianggap bug bila terulang saat memori longgar (aturan proyek, pelajaran retro M3).
 - **Jangan biarkan klien lain terhubung ke database `privpay_*`** (pgAdmin, psql, IDE) saat tes jalan: `createTestDb` gagal dengan `TestDatabaseBusyError` karena sesi superuser tidak bisa diakhiri `privpay_test_admin`.
 - Tes tidak pernah memakai nama database layanan asli. Mereka membuat `privpay_<layanan>_test_<sufiks>` lewat `createTestDb` ([`packages/common/src/testing/test-db.ts`](../../packages/common/src/testing/test-db.ts)), yang **membuat ulang** database itu di awal tiap tes dan **tidak menghapusnya** sesudahnya (supaya tes yang gagal bisa diperiksa). Sisa tes dilihat dengan `corepack pnpm db:test-databases` dan dihapus dengan `corepack pnpm db:test-databases drop` (meminta ketikan `DROP <jumlah>`; butuh terminal interaktif).
 - Laptop yang tidur di tengah gerbang membuat tes lain habis waktu. Bila gagal tak stabil, **baca stempel waktu log lebih dulu**: lompatan jam berarti mesin tidur, bukan bug.
@@ -108,7 +108,7 @@ Pada gerbang M5 sesi 1, `expectDenied` di `services/privacy-service/test/de-pseu
 
 ## Membaca hasil gerbang
 
-"Gerbang" adalah rangkaian pemeriksaan yang harus hijau sebelum sebuah tiket atau milestone dinyatakan selesai ([`CLAUDE.md`](../../CLAUDE.md)): lint, typecheck, test, test:integration, test:smoke, audit, gitleaks, pii-scan. Contoh keluaran ringkas gerbang M5 sesi 2 (dari [`docs/HANDOFF.md`](../HANDOFF.md)):
+"Gerbang" adalah rangkaian pemeriksaan yang harus hijau sebelum sebuah tiket atau milestone dinyatakan selesai (aturan proyek): lint, typecheck, test, test:integration, test:smoke, audit, gitleaks, pii-scan. Contoh keluaran ringkas gerbang M5 sesi 2 (dari [`docs/HANDOFF.md`](../HANDOFF.md)):
 
 | Langkah | Hasil | Cara membaca |
 | --- | --- | --- |

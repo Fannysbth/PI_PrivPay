@@ -26,7 +26,7 @@ export interface ContextRow {
   readonly requiredRole: RequiredRole;
 }
 
-/** Tabel 1. TTLs are not here: they are configuration (CLAUDE.md), injected per purpose. */
+/** Tabel 1. TTLs are not here: they are configuration (project rules), injected per purpose. */
 export const TABLE_1: readonly ContextRow[] = [
   {
     id: 'P1',

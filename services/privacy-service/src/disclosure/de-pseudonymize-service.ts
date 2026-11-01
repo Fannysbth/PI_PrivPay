@@ -19,7 +19,7 @@ const SERVICE_ID = /^[A-Z][A-Z0-9_]{0,31}$/;
 const ROLE = 'auditor';
 
 /**
- * Every value is a bind parameter (CLAUDE.md). Only the three columns of Tabel 5 are selected from the vault: the phone
+ * Every value is a bind parameter (project rules). Only the three columns of Tabel 5 are selected from the vault: the phone
  * and the account number are never read here, so they cannot be decrypted by mistake (spec privacy 7.8).
  */
 export const DE_PSEUDONYMIZE_SQL = {

@@ -1,7 +1,7 @@
 import { loadTransactionConfig } from '../src/config';
 
 // The settings of the jobs of the transaction service (M4-10): when they run comes from the environment, with no default, and a
-// value that cannot work stops the start by name (CLAUDE.md: fail fast). Values are invented.
+// value that cannot work stops the start by name (project rules: fail fast). Values are invented.
 const env = (): Record<string, string> => ({
   PRIVACY_MODE: 'proposed',
   PG_HOST: '127.0.0.1',

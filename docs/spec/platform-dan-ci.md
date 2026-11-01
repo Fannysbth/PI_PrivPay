@@ -1,6 +1,6 @@
 # Spesifikasi: platform dan CI
 
-Sumber: PRD 10, 14, 17; ADR-0002, 0004, 0006, 0007, 0008; CLAUDE.md; SECURITY.md. Bagian yang berbeda dari teks PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`. Butir bertanda **[K-nn]** adalah keputusan spec yang diterima Fanny (bawaan, Gerbang 3) (daftar di `OPEN_QUESTIONS.md` bagian F).
+Sumber: PRD 10, 14, 17; ADR-0002, 0004, 0006, 0007, 0008; aturan proyek; SECURITY.md. Bagian yang berbeda dari teks PRD ditandai **[Δ PRD]** dan dirangkum di `01-perubahan-prd.md`. Butir bertanda **[K-nn]** adalah keputusan spec yang diterima Fanny (bawaan, Gerbang 3) (daftar di `OPEN_QUESTIONS.md` bagian F).
 
 ## 1. Tanggung jawab
 
@@ -17,7 +17,7 @@ scripts/db/                                                       # bootstrap ba
 tests/{functional,security,pii-scan,performance}/
 ```
 
-`services/auth` pada struktur CLAUDE.md dipakai untuk Keycloak pada fase Docker; pada fase lokal digantikan `tools/dev-idp` (ADR-0004).
+`services/auth` pada struktur aturan proyek dipakai untuk Keycloak pada fase Docker; pada fase lokal digantikan `tools/dev-idp` (ADR-0004).
 
 Prinsip desain (skill `codebase-design`): modul dalam dengan interface kecil, seam hanya di tempat sesuatu benar-benar bervariasi. Seam yang dibenarkan: **repositori per mode** (dua adapter: baseline dan proposed, ADR-0006), **Clock** (sistem dan palsu), **HttpClient** (nyata dan palsu untuk tes). Tidak ada seam lain yang dibuat "untuk jaga-jaga".
 
@@ -153,13 +153,13 @@ Penerbit JWT tiruan khusus dev. Menolak start bila `NODE_ENV=production` atau `D
 | SAST dan lain-lain | CodeQL, Semgrep, Trivy, hadolint, dependency-review | CI (Trivy image dan hadolint aktif bila ada Dockerfile) |
 | e2e compose | Newman + `pii-scan` pada kedua mode | **ditunda** sampai Docker (DK-01) |
 
-Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (CLAUDE.md). Semua Action dipin ke SHA commit dan semua image ke digest (M0-07); `tests/repo/ci-workflow.spec.ts` menjaganya. Job `integration` membangkitkan kata sandi admin PostgreSQL 16 per run dan menjalankan `scripts/ci/bootstrap-twice.sh` (bootstrap dua kali, snapshot katalog identik).
+Dependensi baru: alasan, lisensi, hasil `pnpm audit` di PR (aturan proyek). Semua Action dipin ke SHA commit dan semua image ke digest (M0-07); `tests/repo/ci-workflow.spec.ts` menjaganya. Job `integration` membangkitkan kata sandi admin PostgreSQL 16 per run dan menjalankan `scripts/ci/bootstrap-twice.sh` (bootstrap dua kali, snapshot katalog identik).
 
 ## 15. Kriteria penerimaan
 
 | Tiket | Kriteria | ID |
 | --- | --- | --- |
-| M0-01 | `pnpm install --frozen-lockfile`, `lint`, `typecheck`, `test` berjalan dari root pada skeleton; `.nvmrc` Node 24 | CLAUDE.md |
+| M0-01 | `pnpm install --frozen-lockfile`, `lint`, `typecheck`, `test` berjalan dari root pada skeleton; `.nvmrc` Node 24 | aturan proyek |
 | M0-02 | `config`: start gagal tanpa/kosong/salah panjang rahasia, pesan tanpa nilai; `clock`: `FakeClock`; `logger`: tes bahwa nilai kenari di field terlarang tidak muncul pada keluaran; `errors`: bentuk seragam, 8 kode klien | NFR-10, NFR-15, NFR-20, NFR-22, NFR-25, E-09 |
 | M0-03 | timeout 3 detik, maks 2 retry dengan jitter, tidak ada retry untuk non-idempoten, `X-Request-Id` diteruskan (uji injeksi keterlambatan) | NFR-12, NFR-16 |
 | M0-04 | runner migrasi (bagian 10) | ADR-0002 |

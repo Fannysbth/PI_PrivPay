@@ -6,7 +6,7 @@ import { BlindIndex, FieldCipher, createKeys, vaultBinding } from '../src/crypto
 import { IdentityVault, type StoreIdentityRequest } from '../src/identity';
 
 // Seam: IdentityVault.store on the real privacy database, as the real runtime roles. Every value is invented and
-// obviously false (CLAUDE.md). Needs PostgreSQL and scripts/db/bootstrap.ps1.
+// obviously false (project rules). Needs PostgreSQL and scripts/db/bootstrap.ps1.
 const config = loadConfig(pgConfigSchema, process.env);
 const migrations = join(__dirname, '..', 'migrations');
 

@@ -1,6 +1,6 @@
 'use strict';
 // Development CA and server certificates for the TLS path Gateway -> Privacy Service (DK-03, NFR-06). Everything is
-// made with the `openssl` program (never with code of ours: CLAUDE.md forbids writing cryptography), into a folder that
+// made with the `openssl` program (never with code of ours: the project rules forbid writing cryptography), into a folder that
 // is git-ignored; no key is printed or committed. `openssl ca` is used for every certificate because it is the one
 // command that can set the validity dates, which the tests need for an expired certificate.
 //

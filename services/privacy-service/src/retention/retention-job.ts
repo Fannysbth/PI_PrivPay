@@ -2,7 +2,7 @@ import { DAY_MS, type Clock } from '@privpay/common';
 import type { Pool } from 'pg';
 import { AuditWriter } from '../audit';
 
-/** Every value is a bind parameter (CLAUDE.md). The predicates are those of PRD 6.2. */
+/** Every value is a bind parameter (project rules). The predicates are those of PRD 6.2. */
 export const RETENTION_SQL = {
   // Step 1: an active row past its TTL and grace period. $1 is now minus the grace period. Rows another transaction holds
   // are skipped too (marked by the next run): a plain UPDATE would queue behind an exchange or a re-issue while holding

@@ -1,7 +1,7 @@
 import type { SubjectSql } from '../notification/contacts';
 
 /** ADR-0006, the proposed mode: the contact is keyed by the domain token. */
-// Every value is a bind parameter (CLAUDE.md); the column names are fixed text, never input.
+// Every value is a bind parameter (project rules); the column names are fixed text, never input.
 export const SUBJECT_SQL: SubjectSql = {
   upsert: `INSERT INTO contact_registry (pseudonym, phone, channel, registered_at)
      VALUES ($1, $2, $3, $4)

@@ -1,4 +1,4 @@
-> **Salinan baca-saja** dari Claude Doc "PRD PrivPay v2" (rev 186, v2.4, diekspor 19 Okt 2026). Diagram yang tertanam di dokumen asli (use case, arsitektur, DFD, sequence, ERD, flowchart, deployment, milestone) tidak ikut; gambar arsitektur ada di berkas PNG sebelah. Selisih dan kontradiksi internal yang sudah ditemukan: lihat ../OPEN_QUESTIONS.md. Jangan ubah berkas ini; usulan koreksi ditulis di docs/PRD_ERRATA.md.
+> **Salinan baca-saja** dari dokumen "PRD PrivPay v2" (rev 186, v2.4, diekspor 19 Okt 2026). Diagram yang tertanam di dokumen asli (use case, arsitektur, DFD, sequence, ERD, flowchart, deployment, milestone) tidak ikut; gambar arsitektur ada di berkas PNG sebelah. Selisih dan kontradiksi internal yang sudah ditemukan: lihat ../OPEN_QUESTIONS.md. Jangan ubah berkas ini; usulan koreksi ditulis di docs/PRD_ERRATA.md.
 
 # PRD PrivPay v2 — Privacy-by-Design Prototype
 

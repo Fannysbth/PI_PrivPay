@@ -1,4 +1,4 @@
-// Flat ESLint config. Rules mirror CLAUDE.md (conventions, forbidden practices) and the QA checklist.
+// Flat ESLint config. Rules mirror project rules (conventions, forbidden practices) and the QA checklist.
 import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
@@ -46,7 +46,7 @@ export default tseslint.config(
       '@typescript-eslint/no-extraneous-class': ['error', { allowWithDecorator: true }],
       // Express recognises an error handler by its four parameters, so a leading underscore marks an unused one.
       '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
-      // Skipping or focusing tests to get a green run is forbidden (CLAUDE.md, qa-checklist Q-05).
+      // Skipping or focusing tests to get a green run is forbidden (project rules, qa-checklist Q-05).
       'no-restricted-properties': [
         'error',
         ...testFunctions.flatMap((object) =>

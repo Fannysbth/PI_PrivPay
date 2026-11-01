@@ -4,7 +4,7 @@ import type { BlindIndex } from '../crypto';
 import type { IdentityVault } from '../identity';
 import { ACCOUNT_NUMBER, CUSTOMER_ID, assertCommon, textMatching } from '../token/token-validation';
 
-/** Every value is a bind parameter (CLAUDE.md). */
+/** Every value is a bind parameter (project rules). */
 export const REVOCATION_SQL = {
   // Spec privacy 4.5: the row is locked so a parallel revocation or an exchange that holds it settles in order.
   findToken: `SELECT id, status, revoked_at, purpose, key_version FROM pseudonym_mapping

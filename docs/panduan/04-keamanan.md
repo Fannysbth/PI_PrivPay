@@ -72,7 +72,7 @@ Pemetaan alasan penolakan ke Tabel PRD:
 | Tabel 5 (atribut yang boleh dibuka: `customer_id`, `nik`, `nama` untuk P7) | `DISCLOSABLE_ATTRIBUTES`, `attributesFor` | `ATTRIBUTE_NOT_ALLOWED` (422) |
 | Tabel 6 (dasar: `DISPUTE`, `FRAUD_CONFIRMED`, `LEGAL_REQUEST`) | `DISCLOSURE_BASES`, `isValidBasis` | `INVALID_BASIS` (422) |
 
-Mengubah baris Tabel 1/2/3/5/6, panjang token, tiga kunci, atau TTL membutuhkan ADR ([`CLAUDE.md`](../../CLAUDE.md), larangan keras).
+Mengubah baris Tabel 1/2/3/5/6, panjang token, tiga kunci, atau TTL membutuhkan ADR (aturan proyek, larangan keras).
 
 ## 6. Persetujuan empat mata
 
@@ -129,7 +129,7 @@ Ini bukan kelalaian; semuanya tercatat sebagai batas atau keputusan, dan dosen m
 
 1. **Bukan anonimisasi.** Ini pseudonimisasi *regular* (bukan *blind*): Privacy Service mengetahui identitas asli, jadi ia adalah titik tunggal yang menarik bagi penyerang ("honeypot"). Diakui di PRD 20. Pseudonim tetap data pribadi.
 2. **Tidak ada rotasi kunci otomatis, tidak ada job enkripsi ulang.** Hanya `key_version` dan prosedur tertulis. Rotasi `K_index` memerlukan prosedur sendiri (PRD 2).
-3. **Tidak ada pustaka kripto tambahan dan tidak ada kripto buatan sendiri.** Hanya `node:crypto` (HMAC-SHA256, AES-256-GCM), larangan keras di [`CLAUDE.md`](../../CLAUDE.md), S-32.
+3. **Tidak ada pustaka kripto tambahan dan tidak ada kripto buatan sendiri.** Hanya `node:crypto` (HMAC-SHA256, AES-256-GCM), larangan keras di aturan proyek, S-32.
 4. **Tidak ada ORM.** SQL tulisan tangan dan selalu berparameter; identifier tabel/kolom tetap teks tetap.
 5. **Rantai hash audit tidak diimplementasikan** (hanya dirancang, Q-12). Pertanyaan itu juga dikembalikan ke dosen.
 6. **Tidak ada TLS antar-layanan dan tidak ada tiga jaringan Docker.** Fase lokal mengandalkan loopback dan daftar izin; TLS adalah utang NFR-06 untuk fase Docker (Q-09).

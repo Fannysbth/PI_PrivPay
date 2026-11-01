@@ -22,7 +22,7 @@ export type AuditReason = 'AMOUNT_MISMATCH' | 'DISPUTE' | 'OTHER';
 
 export const batchIdOf = (date: string): string => `B-${date.replaceAll('-', '')}`;
 
-/** Every value is a bind parameter (CLAUDE.md). */
+/** Every value is a bind parameter (project rules). */
 export const RECON_SQL = {
   // A batch exists as soon as there is a report or a run for its date. Until a run says more it counts nothing, which
   // is the weakest status (the column has no "not run yet", PRD 11); the run overwrites all three values.

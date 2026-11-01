@@ -21,7 +21,7 @@ PRD 10 menyatakan klien eksternal hanya melihat enam `code`: `UNAUTHENTICATED` (
 
 - Dampak pada keamanan dan privasi: tidak menambah informasi yang bisa dipakai menebak token; tidak ada perubahan pada NFR-10.
 - Dampak pada pengujian: skema JSON respons error divalidasi untuk delapan kode (NFR-25).
-- Yang harus diubah: `CLAUDE.md`, `PRD_RINGKAS.md`, `qa-checklist.md`, `security-checklist.md`, `docs/PRD_ERRATA.md`.
+- Yang harus diubah: aturan proyek, `PRD_RINGKAS.md`, `qa-checklist.md`, `security-checklist.md`, `docs/PRD_ERRATA.md`.
 
 ## Tambahan (2026-10-31, ADR-0015)
 
