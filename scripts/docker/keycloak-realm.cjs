@@ -48,6 +48,34 @@ const USERS = [
   ['bank.uji.1', 'bank'],
 ];
 
+// DK-04c, ADR-0017: the audience of a service token is not written from the roles of the account but asked for, one service at
+// a time, by an optional client scope `aud-<service>` (mapper `oidc-audience-mapper`). A client may ask only for the scopes
+// of its own row in SERVICE_CLIENTS (anything else is `invalid_scope`), and the token then names that one service.
+const audienceScope = (service) => `aud-${service}`;
+const audienceScopes = () =>
+  [...new Set(Object.values(SERVICE_CLIENTS).flat())].sort().map((service) => ({
+    name: audienceScope(service),
+    protocol: 'openid-connect',
+    attributes: { 'include.in.token.scope': 'false', 'display.on.consent.screen': 'false' },
+    protocolMappers: [
+      {
+        name: 'audience',
+        protocol: 'openid-connect',
+        protocolMapper: 'oidc-audience-mapper',
+        config: { 'included.client.audience': service, 'access.token.claim': 'true', 'id.token.claim': 'false', 'introspection.token.claim': 'true' },
+      },
+    ],
+  }));
+// Declaring the client scopes of the realm replaces the built-in ones, so `basic` (the `sub` claim) is declared here too.
+const basicScope = {
+  name: 'basic',
+  protocol: 'openid-connect',
+  attributes: { 'include.in.token.scope': 'false', 'display.on.consent.screen': 'false' },
+  protocolMappers: [
+    { name: 'sub', protocol: 'openid-connect', protocolMapper: 'oidc-sub-mapper', config: { 'access.token.claim': 'true', 'introspection.token.claim': 'true' } },
+  ],
+};
+
 const audienceResolve = {
   name: 'audience-from-roles',
   protocol: 'openid-connect',
@@ -77,13 +105,13 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
   const clients = [];
   // Bearer-only resources: they exist only so that an audience can be named after them (aud of the token).
   for (const name of RESOURCES) clients.push({ clientId: name, enabled: true, bearerOnly: true, publicClient: false, protocol: 'openid-connect' });
-  // Service accounts: client credentials, an audience per allowed service, no `roles`, no `customer_id`.
+  // Service accounts: client credentials, no `roles`, no `customer_id`, and no audience unless one is asked for by scope.
   for (const name of Object.keys(SERVICE_CLIENTS)) {
     const existing = clients.find((client) => client.clientId === name);
     const entry = {
       clientId: name, enabled: true, publicClient: false, secret: clientSecrets[name], protocol: 'openid-connect',
       serviceAccountsEnabled: true, standardFlowEnabled: false, directAccessGrantsEnabled: false, implicitFlowEnabled: false,
-      fullScopeAllowed: true, defaultClientScopes: ['basic'], optionalClientScopes: [], protocolMappers: [audienceResolve],
+      fullScopeAllowed: true, defaultClientScopes: ['basic'], optionalClientScopes: SERVICE_CLIENTS[name].map(audienceScope),
     };
     if (existing) Object.assign(existing, entry, { bearerOnly: false });
     else clients.push(entry);
@@ -110,11 +138,8 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
   const clientRoles = Object.fromEntries(RESOURCES.map((name) => [name, [{ name: 'access' }]]));
 
   const users = [];
-  for (const [name, targets] of Object.entries(SERVICE_CLIENTS)) {
-    users.push({
-      username: `service-account-${name}`, enabled: true, serviceAccountClientId: name,
-      clientRoles: Object.fromEntries(targets.map((target) => [target, ['access']])),
-    });
+  for (const name of Object.keys(SERVICE_CLIENTS)) {
+    users.push({ username: `service-account-${name}`, enabled: true, serviceAccountClientId: name });
   }
   users.push({
     username: `service-account-${adminClient}`, enabled: true, serviceAccountClientId: adminClient,
@@ -146,6 +171,7 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
     roles: { realm: realmRoles, client: clientRoles },
     scopeMappings: Object.entries(CLIENT_ROLES).map(([client, roles]) => ({ client, roles })),
     clients, users,
+    clientScopes: [basicScope, ...audienceScopes()],
     components: {
       'org.keycloak.userprofile.UserProfileProvider': [
         { providerId: 'declarative-user-profile', subComponents: {}, config: { 'kc.user.profile.config': [JSON.stringify(profile)] } },
@@ -156,7 +182,7 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
 
 const readSecret = (dir, name) => readFileSync(path.join(dir, name), 'utf8').trim();
 
-module.exports = { renderRealm, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
+module.exports = { renderRealm, audienceScope, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
 
 if (require.main === module) {
   const [dir, out] = process.argv.slice(2);

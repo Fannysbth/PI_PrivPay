@@ -167,11 +167,10 @@ export function gatewayModules(
         },
       });
 
-    // Keycloak ignores the audience asked for (ADR-0017): one token names every service the account may call, so one cache
-    // serves all upstreams instead of five identical token requests.
-    const sharedKeycloakToken = idp.kind === 'keycloak' ? tokenFor('privacy-service') : undefined;
+    // DK-04c, ADR-0017: one cache per audience, at either IdP. A token is made for the one service it is sent to, so a
+    // service that is taken over cannot replay it at another (T-15).
     const serviceTokens = Object.fromEntries(
-      UPSTREAMS.map((upstream) => [upstream, sharedKeycloakToken ?? tokenFor(upstream)]),
+      UPSTREAMS.map((upstream) => [upstream, tokenFor(upstream)]),
     ) as Record<Upstream, TokenCache>;
     const users = userDirectoryFor(config, idp, http, clock, () => tokenFor(DEV_IDP));
     const masker = new ErrorMasker();

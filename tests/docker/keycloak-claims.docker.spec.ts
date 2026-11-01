@@ -60,12 +60,19 @@ async function form(body: Record<string, string>): Promise<string> {
 }
 const human = (client: string, username: string): Promise<string> =>
   form({ grant_type: 'password', client_id: client, username, password: devPassword });
-const service = (client: string): Promise<string> =>
+// DK-04c: a service token is asked for one audience, by the optional scope aud-<service>; `scopes` may name more or none.
+const service = (client: string, ...scopes: string[]): Promise<string> =>
   form({
     grant_type: 'client_credentials',
     client_id: client,
     client_secret: clientSecrets[client] ?? '',
+    ...(scopes.length === 0 ? {} : { scope: scopes.map((name) => `aud-${name}`).join(' ') }),
   });
+const claimsOf = (token: string): Record<string, unknown> =>
+  JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as Record<
+    string,
+    unknown
+  >;
 
 const options = (serviceName: string): AuthenticateOptions => ({
   clock: { now: () => new Date() },
@@ -184,18 +191,58 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
     });
   });
 
-  it('DK-04 a service account: its own requesting service, the audiences of its table, no roles, no customer_id', async () => {
-    const token = await service('transaction');
+  it('DK-04c a service account: its own requesting service, ONE audience, no roles, no customer_id', async () => {
+    const token = await service('transaction', 'privacy-service');
+    expect(claimsOf(token)['aud']).toEqual('privacy-service');
+    expect(claimsOf(token)).not.toHaveProperty('roles');
+    expect(claimsOf(token)).not.toHaveProperty('customer_id');
     expect(who(token, 'privacy-service')).toMatchObject({ requestingService: 'TRANSACTION' });
-    expect(refused(token, 'reconciliation-service')).not.toBe('accepted');
-    const gateway = await service('api-gateway');
+    const gateway = await service('api-gateway', 'privacy-service');
     expect(who(gateway, 'privacy-service')).toMatchObject({ requestingService: 'API_GATEWAY' });
-    expect(refused(gateway, 'fraud-service')).not.toBe('accepted');
+  });
+
+  it('DK-04c a token made for Transaction is refused at Privacy (403), and the reverse (T-15)', async () => {
+    const forTransaction = await service('api-gateway', 'transaction-service');
+    expect(who(forTransaction, 'transaction-service')).toMatchObject({
+      requestingService: 'API_GATEWAY',
+    });
+    expect(refused(forTransaction, 'privacy-service')).toBe('FORBIDDEN_ROLE');
+    const forPrivacy = await service('api-gateway', 'privacy-service');
+    expect(refused(forPrivacy, 'transaction-service')).toBe('FORBIDDEN_ROLE');
+    expect(refused(forPrivacy, 'notification-service')).toBe('FORBIDDEN_ROLE');
+  });
+
+  it('DK-04c without a scope a service token names no audience and no service takes it', async () => {
+    const bare = await service('api-gateway');
+    expect(claimsOf(bare)).not.toHaveProperty('aud');
+    for (const name of ['privacy-service', 'transaction-service', 'api-gateway']) {
+      expect(refused(bare, name)).not.toBe('accepted');
+    }
+  });
+
+  it('DK-04c an audience the account may not call cannot be asked for at all (no token)', async () => {
+    // Fraud calls nobody; Transaction does not call Reconciliation (the table of SERVICE_CLIENTS).
+    await expect(service('fraud', 'privacy-service')).rejects.toThrow('no token (400)');
+    await expect(service('transaction', 'reconciliation-service')).rejects.toThrow(
+      'no token (400)',
+    );
+    await expect(service('idp-admin', 'privacy-service')).rejects.toThrow('no token (400)');
+  });
+
+  it('DK-04c two audiences asked at once give a wide token, and the receiver still refuses it at both', async () => {
+    const wide = await service('api-gateway', 'privacy-service', 'transaction-service');
+    expect(claimsOf(wide)['aud']).toEqual(
+      expect.arrayContaining(['privacy-service', 'transaction-service']),
+    );
+    expect(refused(wide, 'privacy-service')).toBe('FORBIDDEN_ROLE');
+    expect(refused(wide, 'transaction-service')).toBe('FORBIDDEN_ROLE');
   });
 
   it('DK-04 a person carried by a service: Authorization of the service plus X-Actor-Token of the person (ADR-0007)', async () => {
     const actor = await human('admin-console', 'admin.uji.1');
-    const result = who(await service('api-gateway'), 'privacy-service', { 'x-actor-token': actor });
+    const result = who(await service('api-gateway', 'privacy-service'), 'privacy-service', {
+      'x-actor-token': actor,
+    });
     expect(result).toMatchObject({ requestingService: 'API_GATEWAY', actor: { role: 'admin' } });
   });
 
