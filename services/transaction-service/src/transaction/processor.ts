@@ -1,6 +1,7 @@
 import { DomainError, type Clock, type Delay, type Logger } from '@privpay/common';
 import { Followups, reasonOf, type MutableSubject, type Settled } from './followups';
 import type {
+  ClientIdentity,
   FraudClient,
   NotificationClient,
   PrivacyStatusClient,
@@ -22,6 +23,8 @@ export interface TransactionRequest {
   readonly merchantId: string;
   readonly amount: number;
   readonly geohash: string;
+  /** G3, G6: the NIK and the name the edge passed on; only a mode whose edge accepts them ever sets this. */
+  readonly clientIdentity?: ClientIdentity;
 }
 
 export interface ProcessResult {
@@ -95,6 +98,7 @@ export class TransactionProcessor {
       amount: request.amount,
       geohash: request.geohash,
       createdAt: this.deps.clock.now(),
+      ...(request.clientIdentity === undefined ? {} : { clientIdentity: request.clientIdentity }),
     });
     if (created) return this.orchestrate(request);
     return this.replay(request);
@@ -106,6 +110,7 @@ export class TransactionProcessor {
       transactionId: request.transactionId,
       customerSubjectRef: request.customerSubjectRef,
       accountSubjectRef: request.accountSubjectRef,
+      ...(request.clientIdentity === undefined ? {} : { clientIdentity: request.clientIdentity }),
     };
     const decision = await this.decide(request, subject);
     const completedAt = decision.status === 'COMPLETED' ? this.deps.clock.now() : null;
@@ -135,14 +140,16 @@ export class TransactionProcessor {
       return { status: 'COMPLETED', fraudDecision: null, riskScore: null };
     }
     try {
-      const verdict = await this.followups.withReissue(subject, async (row) =>
-        this.deps.fraud.assess({
+      const verdict = await this.followups.withReissue(subject, async (row) => {
+        const identity = await this.deps.subjects.identityForFraud(row);
+        return this.deps.fraud.assess({
           subject: await this.deps.subjects.forFraud(row),
           amount: request.amount,
           txHour: this.deps.clock.now().getUTCHours(),
           geohash: request.geohash,
-        }),
-      );
+          ...(identity === undefined ? {} : { identity }),
+        });
+      });
       const status =
         verdict.decision === 'ALLOW'
           ? 'COMPLETED'

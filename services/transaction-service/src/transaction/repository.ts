@@ -1,11 +1,15 @@
 import { DomainError } from '@privpay/common';
 import type { Pool } from 'pg';
+import type { ClientIdentity } from './ports';
 import { assertTransition } from './status-machine';
 
 export type TransactionStatus = 'PENDING' | 'COMPLETED' | 'HELD' | 'FAILED';
 export type FraudDecision = 'ALLOW' | 'HOLD_FOR_VERIFICATION' | 'BLOCK' | 'FRAUD_UNAVAILABLE';
 
-/** What a request stores: tokens and non-identity attributes only (FR-16, S-38). */
+/**
+ * What a request stores: the references of the mode and non-identity attributes (FR-16, S-38). `clientIdentity` is
+ * written only by a mode whose SQL has the columns for it (G6); the others never bind it.
+ */
 export interface NewTransaction {
   readonly transactionId: string;
   readonly idempotencyKey: string;
@@ -15,6 +19,7 @@ export interface NewTransaction {
   readonly amount: number;
   readonly geohash: string;
   readonly createdAt: Date;
+  readonly clientIdentity?: ClientIdentity;
 }
 
 export interface StoredTransaction {
@@ -25,6 +30,7 @@ export interface StoredTransaction {
   readonly amount: number;
   readonly geohash: string | null;
   readonly status: TransactionStatus;
+  readonly clientIdentity?: ClientIdentity;
 }
 
 export interface Outcome {
@@ -129,6 +135,9 @@ export const TRANSACTION_SQL = {
  * both. The subject comes back as `customer_ref` and `account_ref`: a token in proposed, the identity itself in baseline.
  */
 export interface SubjectSql {
+  // G6: true when `insertPending` has two more parameters, `$9` (nik) and `$10` (nama). pg refuses a statement bound to
+  // more values than it names, so the repository binds them only for the SQL that has the columns.
+  readonly storesClientIdentity: boolean;
   // ADR-0009: no conflict target. A clash on the idempotency key and a clash on the transaction id both end as "no row
   // inserted"; the caller then reads by key and treats a row it cannot find as a conflict, never as a server error.
   readonly insertPending: string;
@@ -149,6 +158,9 @@ interface Row {
   amount: string;
   geohash: string | null;
   status: TransactionStatus;
+  // The two reads that return a Row select these in both modes (NULL where nothing is stored), so the row has one shape.
+  holder_nik: string | null;
+  holder_nama: string | null;
 }
 
 /**
@@ -169,7 +181,7 @@ export class TransactionRepository {
 
   /** True when this call created the row, false when another request holds the key (or the id). */
   async insertPending(row: NewTransaction): Promise<boolean> {
-    const inserted = await this.pool.query(this.subject.insertPending, [
+    const values: unknown[] = [
       row.transactionId,
       row.idempotencyKey,
       row.customerSubjectRef,
@@ -178,7 +190,11 @@ export class TransactionRepository {
       row.amount,
       row.geohash,
       row.createdAt,
-    ]);
+    ];
+    if (this.subject.storesClientIdentity) {
+      values.push(row.clientIdentity?.nik ?? null, row.clientIdentity?.nama ?? null);
+    }
+    const inserted = await this.pool.query(this.subject.insertPending, values);
     return inserted.rowCount === 1;
   }
 
@@ -418,6 +434,10 @@ export class TransactionRepository {
 }
 
 function toStored(row: Row): StoredTransaction {
+  const clientIdentity: ClientIdentity = {
+    ...(row.holder_nik === null ? {} : { nik: row.holder_nik }),
+    ...(row.holder_nama === null ? {} : { nama: row.holder_nama }),
+  };
   return {
     transactionId: row.transaction_id,
     customerSubjectRef: row.customer_ref,
@@ -427,5 +447,6 @@ function toStored(row: Row): StoredTransaction {
     amount: Number(row.amount),
     geohash: row.geohash,
     status: row.status,
+    ...(Object.keys(clientIdentity).length === 0 ? {} : { clientIdentity }),
   };
 }

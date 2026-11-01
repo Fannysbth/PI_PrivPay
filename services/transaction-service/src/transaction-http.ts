@@ -33,14 +33,18 @@ const GEOHASH = /^[0-9b-hjkmnp-z]{1,12}$/;
 
 // The two references are tokens in proposed and the customer id and the account number in baseline (N-44); the field
 // names are the wire contract of the Gateway and stay the same.
+const clientIdentityFields = {
+  nik: z.string().max(64).optional(),
+  nama: z.string().max(200).optional(),
+};
+const noClientIdentity: Partial<typeof clientIdentityFields> = {};
+const clientIdentitySchema = z.object(clientIdentityFields);
 const newTransaction = (
   refs: { customer: RegExp; account: RegExp },
   acceptClientIdentity: boolean,
 ) =>
   z.strictObject({
-    ...(acceptClientIdentity
-      ? { nik: z.string().max(64).optional(), nama: z.string().max(200).optional() }
-      : {}),
+    ...(acceptClientIdentity ? clientIdentityFields : noClientIdentity),
     transaction_id: z.string().regex(TRANSACTION_ID),
     idempotency_key: z.string().regex(IDEMPOTENCY_KEY),
     customer_token: z.string().regex(refs.customer),
@@ -91,8 +95,8 @@ export interface TransactionHttpDeps {
   /** The forms of the references to the customer and the account in this mode (N-44). */
   readonly subjectRefs: { readonly customer: RegExp; readonly account: RegExp };
   /**
-   * G1: baseline only. The Gateway passes the NIK and the name of the request on, and this edge lets them through so the
-   * payment is not refused; they are read by no one and kept nowhere. Proposed refuses them like any unknown field.
+   * G1, G3, G6: baseline only. The Gateway passes the NIK and the name of the request on, and this edge lets them through;
+   * the processor keeps them and the baseline port hands them to Fraud. Proposed refuses them like any unknown field.
    */
   readonly acceptClientIdentity?: boolean;
 }
@@ -135,6 +139,9 @@ export class TransactionHttp {
     const parsed = this.newTransactionSchema.safeParse(body);
     if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
     const input = parsed.data;
+    // The strict schema above already refused any other field; this one only reads the two that proposed never lets in.
+    const sent = clientIdentitySchema.parse(input);
+    const identity = sent.nik === undefined && sent.nama === undefined ? undefined : sent;
     return this.deps.processor.process({
       transactionId: input.transaction_id,
       idempotencyKey: input.idempotency_key,
@@ -143,6 +150,7 @@ export class TransactionHttp {
       merchantId: input.merchant_id,
       amount: input.amount,
       geohash: input.geohash,
+      ...(identity === undefined ? {} : { clientIdentity: identity }),
     });
   }
 

@@ -1,5 +1,5 @@
 import { HttpPrivacyClient } from '../transaction/clients';
-import type { SubjectReferencePort, SubjectRow } from '../transaction/ports';
+import type { FraudAttributes, SubjectReferencePort, SubjectRow } from '../transaction/ports';
 
 /**
  * The proposed adapter of the port (ADR-0006): customer tokens go to Fraud (P3) and Notification (P4) by exchange, and
@@ -24,6 +24,11 @@ export class ProposedSubjectReferences implements SubjectReferencePort {
       purpose: 'NOTIFICATION',
       transactionId: row.transactionId,
     });
+  }
+
+  /** G3: Fraud receives the token and nothing else. */
+  identityForFraud(_row: SubjectRow): Promise<FraudAttributes | undefined> {
+    return Promise.resolve(undefined);
   }
 
   async reissue(row: SubjectRow) {

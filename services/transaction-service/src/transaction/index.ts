@@ -8,6 +8,8 @@ export {
   privacyStatusOf,
   PrivacyRejectedError,
   TokenExpiredError,
+  type ClientIdentity,
+  type FraudAttributes,
   type FraudClient,
   type FraudVerdict,
   type NotificationClient,

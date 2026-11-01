@@ -51,7 +51,9 @@ describe('M5-01 FR-23 the baseline schema keeps the identity where proposed keep
     expect(names.filter((name) => name.includes('pseudonym'))).toEqual([]);
   });
 
-  it('M5-01 FR-23 apart from the two identity columns the schema and the grants are those of proposed', async () => {
+  // Changed with the owner's decision on Tabel IV (G6): baseline also keeps nik and nama, so they are the only columns
+  // it adds; before, the report had to be empty.
+  it('M5-01 FR-23 G6 apart from the two identity columns and the NIK and name copy the schema and the grants are those of proposed', async () => {
     other = await createTestDb(config, { service: 'transaction', suffix: 'm501p' });
     await migrate(other.owner, { root: migrations, mode: 'proposed' });
     const report = await compareSchemas(
@@ -63,7 +65,12 @@ describe('M5-01 FR-23 the baseline schema keeps the identity where proposed keep
       },
       { proposed: 'privpay_transaction_app', baseline: 'privpay_transaction_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
+    expect(report).toEqual({
+      missing: ['baseline adds transactions.nik', 'baseline adds transactions.nama'],
+      different: [],
+      indexes: [],
+      grants: [],
+    });
   });
 
   it('M5-01 NFR-09 the runtime role can read and write but not delete, as in proposed', async () => {
