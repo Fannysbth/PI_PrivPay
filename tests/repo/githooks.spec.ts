@@ -84,7 +84,7 @@ describe('DK-06 the pre-commit hook (gitleaks protect --staged)', () => {
       .join(delimiter);
     const result = commit(dir, { PATH: without, LOCALAPPDATA: '', PRIVPAY_GITLEAKS: '' });
     expect(result.status).not.toBe(0);
-    expect(`${result.stderr}`).toContain('gitleaks');
+    expect(result.stderr).toContain('gitleaks');
   });
 
   it('DK-06 it calls `gitleaks protect --staged` with the shared configuration and passes its exit code on', () => {
