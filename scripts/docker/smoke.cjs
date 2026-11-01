@@ -5,6 +5,10 @@
 const { randomUUID } = require('node:crypto');
 
 const GATEWAY = process.env.GATEWAY_URL;
+// DK-02b: in the proposed condition the adapter takes tokenized bodies from Kong only (X-Edge-Auth), so the flow goes to the edge
+// over TLS verified against the CA of the stack (NODE_EXTRA_CA_CERTS), with tokens of the real IdP. The adapter is only asked
+// for its health (it reports the mode). Without EDGE_URL (dev:up, EDGE_TOKENIZATION=false) the flow goes to the adapter itself.
+const FLOW = process.env.EDGE_URL ?? GATEWAY;
 const IDP = process.env.IDP_URL;
 const SMS = process.env.SMS_URL;
 const MODE = process.env.PRIVACY_MODE;
@@ -79,7 +83,7 @@ async function main() {
     rekening: `9999${n}`,
     username: `smoke.uji.${n}`,
   };
-  const registered = await call('POST', `${GATEWAY}/register`, { body: person });
+  const registered = await call('POST', `${FLOW}/register`, { body: person });
   check('register through the Gateway is 201', registered.status === 201);
   const leaked = [person.nik, person.nama, person.hp, person.email, person.rekening].filter((v) =>
     registered.text.includes(v),
@@ -90,7 +94,7 @@ async function main() {
   check('the new customer can sign in at the IdP', typeof token === 'string');
 
   const pay = (amount, geohash) =>
-    call('POST', `${GATEWAY}/transaction`, {
+    call('POST', `${FLOW}/transaction`, {
       token,
       headers: { 'idempotency-key': randomUUID() },
       body: { source_account: person.rekening, merchant_id: 'MRC-001', amount, geohash },
@@ -104,7 +108,7 @@ async function main() {
   check('a suspicious payment is held', suspicious.status === 201 && suspicious.json?.status === 'HELD');
 
   const analyst = await login('admin-console', 'analis.uji.1');
-  const held = await call('GET', `${GATEWAY}/transaction/held`, { token: analyst });
+  const held = await call('GET', `${FLOW}/transaction/held`, { token: analyst });
   const items = Array.isArray(held.json?.items) ? held.json.items : [];
   check(
     'the analyst sees the held payment in the list',

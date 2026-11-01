@@ -559,6 +559,9 @@ services:
     environment:
       TZ: UTC
       GATEWAY_URL: http://gateway:4010
+      # DK-02b: the flow goes through Kong over TLS verified against the CA of the stack (the adapter takes only Kong's bodies).
+      EDGE_URL: https://kong:8443
+      NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
       IDP_URL: http://keycloak:8080
       IDP_KIND: keycloak
       IDP_REALM: privpay
@@ -566,8 +569,9 @@ services:
       IDP_ANALYST_PASSWORD_FILE: /run/secrets/keycloak_password_analyst
       IDP_ADMIN_CONSOLE_SECRET_FILE: /run/secrets/admin-console_client_secret
       SMS_URL: http://sms-simulator:4007
-    secrets: [keycloak_password_customer, keycloak_password_analyst, admin-console_client_secret]
+    secrets: [keycloak_password_customer, keycloak_password_analyst, admin-console_client_secret, tls_ca_crt]
     volumes: ['../../scripts/docker/smoke.cjs:/smoke/smoke.cjs:ro']
     networks: [business]
     depends_on:
       gateway: { condition: service_healthy }
+      kong: { condition: service_healthy }

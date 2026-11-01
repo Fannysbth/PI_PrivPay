@@ -156,6 +156,22 @@ describe.each(MODES)(
       );
     });
 
+    it('DK-04c the smoke flow goes through Kong over verified TLS with real IdP tokens; the adapter is only asked for its health', () => {
+      // In the proposed condition the adapter takes tokenized bodies from Kong only (DK-02b, X-Edge-Auth): a smoke that
+      // posts raw to the adapter is refused by design (503 edge_untokenized), so the flow goes to the edge.
+      const smoke = services['smoke'];
+      expect(smoke?.environment).toMatchObject({
+        EDGE_URL: 'https://kong:8443',
+        GATEWAY_URL: 'http://gateway:4010',
+        NODE_EXTRA_CA_CERTS: '/run/secrets/tls_ca_crt',
+      });
+      expect((smoke?.secrets ?? []).map(String)).toContain('tls_ca_crt');
+      expect(JSON.stringify(smoke?.depends_on)).toContain('kong');
+      const text = readFileSync(join(root, 'scripts', 'docker', 'smoke.cjs'), 'utf8');
+      expect(text).toContain('EDGE_URL');
+      expect(text).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|rejectUnauthorized/);
+    });
+
     it('DK-04c the Gateway holds the customer password and the bank simulator the bank password, nothing of the privileged classes', () => {
       const mounted = (name: string): string[] => (services[name]?.secrets ?? []).map(String);
       const privileged = [
