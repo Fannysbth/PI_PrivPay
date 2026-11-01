@@ -380,7 +380,8 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
       const log = docker(['logs', NAME]);
       // Plain booleans, so that a failure names the rule that broke (a log can be long).
       expect({
-        debugOrTrace: /(DEBUG|TRACE)/.test(log),
+        // A log line is `<date> <time> LEVEL [logger]`: the level is read there, not anywhere in the text.
+        debugOrTrace: /^\d{4}-\d\d-\d\d \S+ (DEBUG|TRACE)\s/m.test(log),
         info: log.includes('INFO'),
         candidate: log.includes(candidate),
         query: log.includes('customer_id:'),

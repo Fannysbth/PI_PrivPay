@@ -27,16 +27,14 @@ const readSecretFile = (name) => fs.readFileSync(path.join(secretsDir(), name), 
 // DK-04c: one invented password per class of user (the files of PASSWORD_FILES), read once per run; the privileged human client
 // also needs its secret. The class of a test user follows from its name.
 const { PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS, classOfUser } = require('./keycloak-realm.cjs');
-const passwordCache = new Map();
-const classPassword = (klass) => {
-  if (!passwordCache.has(klass)) passwordCache.set(klass, readSecretFile(PASSWORD_FILES[klass]));
-  return passwordCache.get(klass);
+const secretCache = new Map();
+const readOnce = (file) => {
+  if (!secretCache.has(file)) secretCache.set(file, readSecretFile(file));
+  return secretCache.get(file);
 };
+const classPassword = (klass) => readOnce(PASSWORD_FILES[klass]);
 // The secret of the privileged human client, read once like the passwords.
-const consoleSecret = () => {
-  if (!passwordCache.has('console')) passwordCache.set('console', readSecretFile('admin-console_client_secret'));
-  return passwordCache.get('console');
-};
+const consoleSecret = () => readOnce('admin-console_client_secret');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** One HTTPS request to the edge. Resolves to { status, headers, body } or { error: code }. */
@@ -108,8 +106,11 @@ const claimSummary = (token) => {
   return `aud=${JSON.stringify(claims.aud)} azp=${String(claims.azp)} roles=${JSON.stringify(claims.roles ?? null)}`;
 };
 
-async function serviceToken(client) {
-  const answer = await idpCall('POST', REALM_PATH, { form: { grant_type: 'client_credentials', client_id: client, client_secret: readSecretFile(`${client}_client_secret`) } });
+// `audience` is the one service the token is for (scope aud-<service>, DK-04c); without it the token names none.
+async function serviceToken(client, audience) {
+  const form = { grant_type: 'client_credentials', client_id: client, client_secret: readSecretFile(`${client}_client_secret`) };
+  if (audience !== undefined) form.scope = `aud-${audience}`;
+  const answer = await idpCall('POST', REALM_PATH, { form });
   if (typeof answer.json?.access_token !== 'string') throw new Error('Keycloak gave no service token');
   return answer.json.access_token;
 }
@@ -200,7 +201,7 @@ async function claimChecks(mode, port, ca) {
 
   const analyst = await mintToken();
   add('control: an analyst of the console is let in', (await held(analyst)).status, 200);
-  const reconciliation = await serviceToken('reconciliation');
+  const reconciliation = await serviceToken('reconciliation', 'transaction-service');
   add(`a service account whose audience does not include api-gateway (reconciliation: ${claimSummary(reconciliation)})`, refused(await held(reconciliation)), '403 ACCESS_DENIED');
   add('a customer asking for a token at the admin client (azp admin-console) gets no usable role', refused(await held(await mintToken('nasabah.uji.103', 'admin-console'))), '401 UNAUTHENTICATED');
   add('an administrator asking for a token at the customer client (azp customer-app) gets no usable role', refused(await held(await mintToken('admin.uji.1', 'customer-app'))), '401 UNAUTHENTICATED');

@@ -7,6 +7,7 @@ const { randomBytes } = require('node:crypto');
 const { mkdirSync, writeFileSync } = require('node:fs');
 const path = require('node:path');
 const { CLIENT_SECRET_FILES, PRIVACY_KEY_FILES } = require('../dev/services.cjs');
+const { PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS } = require('./keycloak-realm.cjs');
 
 /** Owner, runtime and audit roles of each service database (SERVICE_DBS in packages/common/src/db.ts). */
 const DB_ROLES = Object.freeze([
@@ -22,7 +23,6 @@ const DB_ROLES = Object.freeze([
   'privpay_reconciliation_owner',
   'privpay_reconciliation_app',
 ]);
-const { PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS } = require('./keycloak-realm.cjs');
 const SERVICES = Object.freeze(['privacy', 'transaction', 'fraud', 'notification', 'reconciliation']);
 
 /** name -> how to generate it. Keys are hex, the rest base64url, like the local phase. */

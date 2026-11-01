@@ -18,10 +18,10 @@ const check = (label, ok) => results.push([label, ok]);
   const jwks = await (await fetch(base + '/certs')).json();
   const sig = jwks.keys.filter((k) => k.use === 'sig' && k.alg === 'RS256');
   check('JWKS: exactly one RS256 signing key, and an encryption key that must be ignored', sig.length === 1 && jwks.keys.some((k) => k.use === 'enc'));
-  const service = await form({ grant_type: 'client_credentials', client_id: 'api-gateway', client_secret: secret('api-gateway_client_secret') });
+  const service = await form({ grant_type: 'client_credentials', client_id: 'api-gateway', client_secret: secret('api-gateway_client_secret'), scope: 'aud-privacy-service' });
   const sc = claims((await service.json()).access_token);
-  check('service account: azp api-gateway, audiences of its table, no roles, no customer_id, lifetime <= 300 s',
-    sc.azp === 'api-gateway' && ['privacy-service', 'transaction-service', 'notification-service', 'reconciliation-service'].every((a) => sc.aud.includes(a)) && sc.roles === undefined && sc.customer_id === undefined && sc.exp - sc.iat <= 300);
+  check('service account: azp api-gateway, ONE audience (the one asked for by scope), no roles, no customer_id, lifetime <= 300 s',
+    sc.azp === 'api-gateway' && sc.aud === 'privacy-service' && sc.roles === undefined && sc.customer_id === undefined && sc.exp - sc.iat <= 300);
   const wrong = await form({ grant_type: 'client_credentials', client_id: 'api-gateway', client_secret: 'not-the-secret-0123456789' });
   check('a wrong client secret is refused', wrong.status === 401);
   const customer = await form({ grant_type: 'password', client_id: 'customer-app', username: 'nasabah.uji.101', password: secret('keycloak_password_customer') });
