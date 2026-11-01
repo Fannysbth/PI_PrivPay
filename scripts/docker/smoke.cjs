@@ -1,10 +1,14 @@
 'use strict';
-// Compose smoke (DK-01a): register, pay, and list what is held, all through the Gateway, from inside the Compose network
+// Compose smoke (DK-01a): register, pay, and list what is held, through Kong (EDGE_URL; the adapter itself when it is unset), from inside the Compose network
 // (the IdP and the SMS simulator are not published, `pnpm docker:smoke`). Same flow in both conditions. Every value below is
 // invented; the script prints verdicts and counts only, never a token, an identity or a response body.
 const { randomUUID } = require('node:crypto');
 
 const GATEWAY = process.env.GATEWAY_URL;
+// DK-02b: in the proposed condition the adapter takes tokenized bodies from Kong only (X-Edge-Auth), so the flow goes to the edge
+// over TLS verified against the CA of the stack (NODE_EXTRA_CA_CERTS), with tokens of the real IdP. The adapter is only asked
+// for its health (it reports the mode). Without EDGE_URL (dev:up, EDGE_TOKENIZATION=false) the flow goes to the adapter itself.
+const FLOW = process.env.EDGE_URL || GATEWAY;
 const IDP = process.env.IDP_URL;
 const SMS = process.env.SMS_URL;
 const MODE = process.env.PRIVACY_MODE;
@@ -38,9 +42,14 @@ async function call(method, url, { token, body, headers } = {}) {
   return { status: response.status, json, text };
 }
 
-// DK-04: Keycloak signs a user in by password grant (the one test password is read from a file, never printed); the dev IdP by name.
+// DK-04: Keycloak signs a user in by password grant (passwords are read from files, never printed); the dev IdP by name.
+// DK-04c: one password per class. This container is a test fixture: it holds the customer class (the people it registers) and
+// the analyst class with the secret of admin-console (to read the held list); nothing of the other classes.
 const KEYCLOAK = process.env.IDP_KIND === 'keycloak';
-const userPassword = KEYCLOAK ? require('node:fs').readFileSync(process.env.IDP_USER_PASSWORD_FILE, 'utf8').trim() : undefined;
+const fromFile = (variable) => (KEYCLOAK ? require('node:fs').readFileSync(process.env[variable], 'utf8').trim() : undefined);
+const userPassword = fromFile('IDP_USER_PASSWORD_FILE');
+const analystPassword = fromFile('IDP_ANALYST_PASSWORD_FILE');
+const adminConsoleSecret = fromFile('IDP_ADMIN_CONSOLE_SECRET_FILE');
 const login = async (client, username) => {
   if (!KEYCLOAK) {
     return (await call('POST', `${IDP}/token`, { body: { grant_type: 'dev_login', client_id: client, username } })).json
@@ -49,7 +58,11 @@ const login = async (client, username) => {
   const response = await fetch(`${IDP}/realms/${process.env.IDP_REALM}/protocol/openid-connect/token`, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'password', client_id: client, username, password: userPassword }).toString(),
+    body: new URLSearchParams(
+      client === 'admin-console'
+        ? { grant_type: 'password', client_id: client, client_secret: adminConsoleSecret, username, password: analystPassword }
+        : { grant_type: 'password', client_id: client, username, password: userPassword },
+    ).toString(),
   });
   return (await response.json().catch(() => undefined))?.access_token;
 };
@@ -70,7 +83,7 @@ async function main() {
     rekening: `9999${n}`,
     username: `smoke.uji.${n}`,
   };
-  const registered = await call('POST', `${GATEWAY}/register`, { body: person });
+  const registered = await call('POST', `${FLOW}/register`, { body: person });
   check('register through the Gateway is 201', registered.status === 201);
   const leaked = [person.nik, person.nama, person.hp, person.email, person.rekening].filter((v) =>
     registered.text.includes(v),
@@ -81,7 +94,7 @@ async function main() {
   check('the new customer can sign in at the IdP', typeof token === 'string');
 
   const pay = (amount, geohash) =>
-    call('POST', `${GATEWAY}/transaction`, {
+    call('POST', `${FLOW}/transaction`, {
       token,
       headers: { 'idempotency-key': randomUUID() },
       body: { source_account: person.rekening, merchant_id: 'MRC-001', amount, geohash },
@@ -95,7 +108,7 @@ async function main() {
   check('a suspicious payment is held', suspicious.status === 201 && suspicious.json?.status === 'HELD');
 
   const analyst = await login('admin-console', 'analis.uji.1');
-  const held = await call('GET', `${GATEWAY}/transaction/held`, { token: analyst });
+  const held = await call('GET', `${FLOW}/transaction/held`, { token: analyst });
   const items = Array.isArray(held.json?.items) ? held.json.items : [];
   check(
     'the analyst sees the held payment in the list',

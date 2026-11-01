@@ -20,6 +20,8 @@ export interface IdpChoice {
 export const DEV_IDP: IdpChoice = { kind: 'dev-idp', realm: 'privpay' };
 
 const REALM = /^[A-Za-z0-9_-]{1,64}$/;
+/** The service a token is for becomes the name of a scope in the realm, so only a plain service name is accepted. */
+const AUDIENCE = /^[a-z0-9-]{1,64}$/;
 
 /** Part of `idpConfigShape`: every service that reads the issuer's keys or asks it for a token gets the same two settings. */
 export const idpChoiceShape = {
@@ -45,8 +47,9 @@ export type TokenGrant =
       readonly clientId: string;
       readonly clientSecret: string;
       /**
-       * The service the token is for. The dev IdP narrows `aud` to it. Keycloak ignores it: the audiences of an account
-       * come from its roles in the realm (ADR-0017), so a token names every service the account may call.
+       * The service the token is for. The dev IdP narrows `aud` to it; Keycloak does the same through the optional client
+       * scope `aud-<service>` (ADR-0017, DK-04c), so a token names that one service. Without it a Keycloak token names none
+       * (the admin client, whose token no service accepts).
        */
       readonly audience?: string;
     }
@@ -98,6 +101,7 @@ function requestFor(
           grant_type: 'client_credentials',
           client_id: grant.clientId,
           client_secret: grant.clientSecret,
+          ...(grant.audience === undefined ? {} : { scope: `aud-${grant.audience}` }),
         },
       }
     : {
@@ -115,6 +119,14 @@ function requestFor(
 export function createIdpTokenCache({ http, clock, idp, grant }: Options): TokenCache {
   if (idp.kind === 'keycloak' && grant.type === 'login' && (grant.password ?? '') === '') {
     throw new RangeError('Keycloak needs the password of the user');
+  }
+  if (
+    idp.kind === 'keycloak' &&
+    grant.type === 'client-credentials' &&
+    grant.audience !== undefined &&
+    !AUDIENCE.test(grant.audience)
+  ) {
+    throw new RangeError('the audience must be a plain service name');
   }
   const request = requestFor(idp, grant);
   return createTokenCache({

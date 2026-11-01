@@ -27,7 +27,12 @@ import { docker } from './helpers';
 // scripts/docker/keycloak-realm.cjs from random secrets made here) is started on its own, apart from the Compose stack.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const realmModule = require('../../scripts/docker/keycloak-realm.cjs') as {
-  renderRealm(input: { clientSecrets: Record<string, string>; devPassword: string }): object;
+  renderRealm(input: {
+    clientSecrets: Record<string, string>;
+    passwords: Record<string, string>;
+  }): object;
+  PASSWORD_FILES: Record<string, string>;
+  classOfUser(username: string): string;
   SERVICE_CLIENTS: Record<string, string[]>;
 };
 
@@ -40,9 +45,17 @@ const ISSUER = 'http://keycloak:8080/realms/privpay';
 const TOKEN = `${BASE}/realms/privpay/protocol/openid-connect/token`;
 const secret = (): string => randomBytes(24).toString('base64url');
 const clientSecrets: Record<string, string> = Object.fromEntries(
-  [...Object.keys(realmModule.SERVICE_CLIENTS), 'idp-admin'].map((name) => [name, secret()]),
+  [...Object.keys(realmModule.SERVICE_CLIENTS), 'idp-admin', 'admin-console'].map((name) => [
+    name,
+    secret(),
+  ]),
 );
-const devPassword = secret();
+// DK-04c: one password per class of user, as in the Compose stack (customer, admin, auditor, fraud_analyst, bank).
+const passwords: Record<string, string> = Object.fromEntries(
+  Object.keys(realmModule.PASSWORD_FILES).map((klass) => [klass, secret()]),
+);
+// The class of a fictional test user comes from the table that renders the realm (USERS); an unknown name is an error.
+const classOf = (username: string): string => realmModule.classOfUser(username);
 const adminPassword = secret();
 
 let work = '';
@@ -58,14 +71,34 @@ async function form(body: Record<string, string>): Promise<string> {
   if (answer.access_token === undefined) throw new Error(`no token (${String(response.status)})`);
   return answer.access_token;
 }
-const human = (client: string, username: string): Promise<string> =>
-  form({ grant_type: 'password', client_id: client, username, password: devPassword });
-const service = (client: string): Promise<string> =>
+// The privileged client needs its secret for a password grant (ADR-0017 item 5); the others are public.
+const loginForm = (
+  client: string,
+  username: string,
+  password: string,
+  withSecret = client === 'admin-console',
+): Record<string, string> => ({
+  grant_type: 'password',
+  client_id: client,
+  username,
+  password,
+  ...(withSecret ? { client_secret: clientSecrets[client] ?? '' } : {}),
+});
+const human = (client: string, username: string, klass = classOf(username)): Promise<string> =>
+  form(loginForm(client, username, passwords[klass] ?? ''));
+// DK-04c: a service token is asked for one audience, by the optional scope aud-<service>; `scopes` may name more or none.
+const service = (client: string, ...scopes: string[]): Promise<string> =>
   form({
     grant_type: 'client_credentials',
     client_id: client,
     client_secret: clientSecrets[client] ?? '',
+    ...(scopes.length === 0 ? {} : { scope: scopes.map((name) => `aud-${name}`).join(' ') }),
   });
+const claimsOf = (token: string): Record<string, unknown> =>
+  JSON.parse(Buffer.from(token.split('.')[1] ?? '', 'base64url').toString('utf8')) as Record<
+    string,
+    unknown
+  >;
 
 const options = (serviceName: string): AuthenticateOptions => ({
   clock: { now: () => new Date() },
@@ -90,7 +123,7 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
     work = mkdtempSync(join(tmpdir(), 'privpay-kc-'));
     writeFileSync(
       join(work, 'privpay-realm.json'),
-      JSON.stringify(realmModule.renderRealm({ clientSecrets, devPassword })),
+      JSON.stringify(realmModule.renderRealm({ clientSecrets, passwords })),
     );
     docker([
       'run',
@@ -109,6 +142,8 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
       `KC_BOOTSTRAP_ADMIN_PASSWORD=${adminPassword}`,
       '-e',
       'JAVA_OPTS_KC_HEAP=-Xms128m -Xmx320m',
+      '-e',
+      'KC_LOG_LEVEL=info',
       '-e',
       'KC_HOSTNAME=http://keycloak:8080',
       '-e',
@@ -184,18 +219,58 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
     });
   });
 
-  it('DK-04 a service account: its own requesting service, the audiences of its table, no roles, no customer_id', async () => {
-    const token = await service('transaction');
+  it('DK-04c a service account: its own requesting service, ONE audience, no roles, no customer_id', async () => {
+    const token = await service('transaction', 'privacy-service');
+    expect(claimsOf(token)['aud']).toEqual('privacy-service');
+    expect(claimsOf(token)).not.toHaveProperty('roles');
+    expect(claimsOf(token)).not.toHaveProperty('customer_id');
     expect(who(token, 'privacy-service')).toMatchObject({ requestingService: 'TRANSACTION' });
-    expect(refused(token, 'reconciliation-service')).not.toBe('accepted');
-    const gateway = await service('api-gateway');
+    const gateway = await service('api-gateway', 'privacy-service');
     expect(who(gateway, 'privacy-service')).toMatchObject({ requestingService: 'API_GATEWAY' });
-    expect(refused(gateway, 'fraud-service')).not.toBe('accepted');
+  });
+
+  it('DK-04c a token made for Transaction is refused at Privacy (403), and the reverse (T-15)', async () => {
+    const forTransaction = await service('api-gateway', 'transaction-service');
+    expect(who(forTransaction, 'transaction-service')).toMatchObject({
+      requestingService: 'API_GATEWAY',
+    });
+    expect(refused(forTransaction, 'privacy-service')).toBe('FORBIDDEN_ROLE');
+    const forPrivacy = await service('api-gateway', 'privacy-service');
+    expect(refused(forPrivacy, 'transaction-service')).toBe('FORBIDDEN_ROLE');
+    expect(refused(forPrivacy, 'notification-service')).toBe('FORBIDDEN_ROLE');
+  });
+
+  it('DK-04c without a scope a service token names no audience and no service takes it', async () => {
+    const bare = await service('api-gateway');
+    expect(claimsOf(bare)).not.toHaveProperty('aud');
+    for (const name of ['privacy-service', 'transaction-service', 'api-gateway']) {
+      expect(refused(bare, name)).not.toBe('accepted');
+    }
+  });
+
+  it('DK-04c an audience the account may not call cannot be asked for at all (no token)', async () => {
+    // Fraud calls nobody; Transaction does not call Reconciliation (the table of SERVICE_CLIENTS).
+    await expect(service('fraud', 'privacy-service')).rejects.toThrow('no token (400)');
+    await expect(service('transaction', 'reconciliation-service')).rejects.toThrow(
+      'no token (400)',
+    );
+    await expect(service('idp-admin', 'privacy-service')).rejects.toThrow('no token (400)');
+  });
+
+  it('DK-04c two audiences asked at once give a wide token, and the receiver still refuses it at both', async () => {
+    const wide = await service('api-gateway', 'privacy-service', 'transaction-service');
+    expect(claimsOf(wide)['aud']).toEqual(
+      expect.arrayContaining(['privacy-service', 'transaction-service']),
+    );
+    expect(refused(wide, 'privacy-service')).toBe('FORBIDDEN_ROLE');
+    expect(refused(wide, 'transaction-service')).toBe('FORBIDDEN_ROLE');
   });
 
   it('DK-04 a person carried by a service: Authorization of the service plus X-Actor-Token of the person (ADR-0007)', async () => {
     const actor = await human('admin-console', 'admin.uji.1');
-    const result = who(await service('api-gateway'), 'privacy-service', { 'x-actor-token': actor });
+    const result = who(await service('api-gateway', 'privacy-service'), 'privacy-service', {
+      'x-actor-token': actor,
+    });
     expect(result).toMatchObject({ requestingService: 'API_GATEWAY', actor: { role: 'admin' } });
   });
 
@@ -247,7 +322,7 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
       const created = await admin('POST', '/users', {
         username: 'ganda.uji.1',
         enabled: true,
-        credentials: [{ type: 'password', value: devPassword, temporary: false }],
+        credentials: [{ type: 'password', value: passwords['admin'], temporary: false }],
       });
       expect(created.status).toBe(201);
       const id = await idOf('ganda.uji.1');
@@ -259,7 +334,7 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
         status: 204,
         text: '',
       });
-      const token = await human('admin-console', 'ganda.uji.1');
+      const token = await human('admin-console', 'ganda.uji.1', 'admin');
       expect(refused(token, 'privacy-service')).toBe('UNAUTHENTICATED');
     });
 
@@ -269,7 +344,7 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
         username: `uji.daftar.${customerId.slice(-6)}`,
         enabled: true,
         attributes: { customer_id: [customerId] },
-        credentials: [{ type: 'password', value: devPassword, temporary: false }],
+        credentials: [{ type: 'password', value: passwords['customer'], temporary: false }],
       });
       expect(created.status).toBe(201);
       const found = (await (await admin('GET', `/users?q=customer_id:${customerId}`)).json()) as {
@@ -285,7 +360,7 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
           ])
         ).status,
       ).toBe(204);
-      const token = await human('customer-app', found[0]?.username ?? '');
+      const token = await human('customer-app', found[0]?.username ?? '', 'customer');
       expect(who(token, 'api-gateway')).toMatchObject({
         requestingService: 'CUSTOMER',
         customerId,
@@ -295,6 +370,22 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
         ((await (await admin('GET', `/users?q=customer_id:${customerId}`)).json()) as unknown[])
           .length,
       ).toBe(0);
+    });
+
+    it('DK-04c the server logs at info and a search by customer_id leaves neither the candidate nor the query in its log', async () => {
+      // The registration searches users by a candidate customer_id in the URL query (the IdP owns the id; decision of 2026-11-01).
+      const candidate = `CUST-${String(100_000 + Math.floor(Math.random() * 800_000))}`;
+      const search = await admin('GET', `/users?q=customer_id:${candidate}`);
+      expect(search.status).toBe(200);
+      const log = docker(['logs', NAME]);
+      // Plain booleans, so that a failure names the rule that broke (a log can be long).
+      expect({
+        // A log line is `<date> <time> LEVEL [logger]`: the level is read there, not anywhere in the text.
+        debugOrTrace: /^\d{4}-\d\d-\d\d \S+ (DEBUG|TRACE)\s/m.test(log),
+        info: log.includes('INFO'),
+        candidate: log.includes(candidate),
+        query: log.includes('customer_id:'),
+      }).toEqual({ debugOrTrace: false, info: true, candidate: false, query: false });
     });
 
     it('DK-04 the admin client cannot be used as a service token (its token has no audience of a service)', async () => {
@@ -342,16 +433,76 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
         http: http(),
         clock: new FakeClock(new Date()),
         idp,
-        grant: { ...grant, password: devPassword },
+        grant: { ...grant, password: passwords['bank'] ?? '' },
       });
       expect(who(await good.get(), 'api-gateway')).toMatchObject({ requestingService: 'BANK' });
       const bad = createIdpTokenCache({
         http: http(),
         clock: new FakeClock(new Date()),
         idp,
-        grant: { ...grant, password: `${devPassword}x` },
+        grant: { ...grant, password: `${passwords['bank'] ?? ''}x` },
       });
       await expect(bad.get()).rejects.toMatchObject({ reason: 'SERVICE_UNAVAILABLE' });
+    });
+  });
+
+  describe('DK-04c one password per class: the Gateway and the bank simulator cannot sign in as the privileged classes', () => {
+    // Gateway holds the customer password, the bank simulator the bank password, and neither holds the secret of admin-console.
+    const staff = ['admin.uji.1', 'auditor.uji.1', 'analis.uji.1'];
+    const grants = (holder: string, secretToo: boolean): Record<string, string>[] =>
+      staff.map((username) =>
+        loginForm('admin-console', username, passwords[holder] ?? '', secretToo),
+      );
+    const status = async (body: Record<string, string>): Promise<number> =>
+      (
+        await fetch(TOKEN, {
+          method: 'POST',
+          headers: { 'content-type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams(body),
+        })
+      ).status;
+
+    it.each([['customer'], ['bank']])(
+      'DK-04c the holder of the %s password gets no admin, auditor or analyst token, with or without the client secret',
+      async (holder) => {
+        for (const secretToo of [false, true]) {
+          for (const body of grants(holder, secretToo)) {
+            expect(await status(body)).toBe(401);
+          }
+        }
+      },
+    );
+
+    it('DK-04c admin-console refuses the password grant of its own users without the client secret', async () => {
+      for (const username of staff) {
+        const klass = classOf(username);
+        expect(
+          await status(loginForm('admin-console', username, passwords[klass] ?? '', false)),
+        ).toBe(401);
+        expect(
+          await status(loginForm('admin-console', username, passwords[klass] ?? '', true)),
+        ).toBe(200);
+      }
+    });
+
+    it('DK-04c the classes do not open each other: the password of one class is wrong for a user of another', async () => {
+      const classes = Object.keys(passwords);
+      for (const holder of classes) {
+        for (const username of ['admin.uji.1', 'auditor.uji.1', 'analis.uji.1', 'bank.uji.1']) {
+          if (classOf(username) === holder) continue;
+          const client = username.startsWith('bank') ? 'bank-simulator' : 'admin-console';
+          expect(await status(loginForm(client, username, passwords[holder] ?? ''))).toBe(401);
+        }
+      }
+    });
+
+    it('DK-04c the customer client signs customers in without a secret, and a customer password opens no staff user there either', async () => {
+      expect(
+        await status(loginForm('customer-app', 'nasabah.uji.101', passwords['customer'] ?? '')),
+      ).toBe(200);
+      expect(
+        await status(loginForm('customer-app', 'admin.uji.1', passwords['customer'] ?? '')),
+      ).toBe(401);
     });
   });
 

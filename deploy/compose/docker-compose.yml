@@ -114,7 +114,12 @@ secrets:
   tls_kong_crt: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.crt' }
   tls_kong_key: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/tls_kong.key' }
   idp-admin_client_secret: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/idp-admin_client_secret' }
-  keycloak_dev_user_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/keycloak_dev_user_password' }
+  keycloak_password_customer: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/keycloak_password_customer' }
+  keycloak_password_admin: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/keycloak_password_admin' }
+  keycloak_password_auditor: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/keycloak_password_auditor' }
+  keycloak_password_analyst: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/keycloak_password_analyst' }
+  keycloak_password_bank: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/keycloak_password_bank' }
+  admin-console_client_secret: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/admin-console_client_secret' }
   edge_adapter_secret: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/edge_adapter_secret' }
   grafana_admin_password: { file: '${PRIVPAY_SECRETS_DIR:-../../secrets/docker}/grafana_admin_password' }
 
@@ -382,9 +387,10 @@ services:
       PORT: '4006'
       GATEWAY_URL: http://gateway:4010
       BANK_USERNAME: bank.uji.1
-      BANK_PASSWORD_FILE: /run/secrets/keycloak_dev_user_password
+      # DK-04c: the bank simulator holds the password of the bank class and nothing else.
+      BANK_PASSWORD_FILE: /run/secrets/keycloak_password_bank
       BANK_SIMULATOR_TEST_ENDPOINTS: 'true'
-    secrets: [keycloak_dev_user_password]
+    secrets: [keycloak_password_bank]
     networks: [business]
 
   # ---- The gateway adapter: reached through Kong only, not published ----
@@ -402,12 +408,12 @@ services:
       RECONCILIATION_SERVICE_URL: http://reconciliation-service:4005
       NOTIFICATION_SERVICE_URL: http://notification-service:4004
       API_GATEWAY_CLIENT_SECRET_FILE: /run/secrets/api-gateway_client_secret
-      # ADR-0017 items 5 and 6: registration at Keycloak uses the client idp-admin and the one test password of the users.
+      # ADR-0017 items 5 and 6: registration at Keycloak uses the client idp-admin and the password of the customer class only.
       IDP_ADMIN_CLIENT_SECRET_FILE: /run/secrets/idp-admin_client_secret
-      IDP_USER_PASSWORD_FILE: /run/secrets/keycloak_dev_user_password
+      IDP_USER_PASSWORD_FILE: /run/secrets/keycloak_password_customer
       # DK-02a: Kong is the one proxy in front; the address it appended to X-Forwarded-For is the client (K-14).
       EDGE_PROXY_HOPS: '1'
-    secrets: [api-gateway_client_secret, idp-admin_client_secret, keycloak_dev_user_password]
+    secrets: [api-gateway_client_secret, idp-admin_client_secret, keycloak_password_customer]
     networks: [business]
     depends_on:
       keycloak: { condition: service_healthy }
@@ -498,7 +504,7 @@ services:
     build: *build-gateway-image
     command: ['node', '/render/keycloak-realm.cjs', '/run/secrets', '/state/privpay-realm.json']
     secrets:
-      [api-gateway_client_secret, transaction_client_secret, fraud_client_secret, notification_client_secret, reconciliation_client_secret, idp-admin_client_secret, keycloak_dev_user_password]
+      [api-gateway_client_secret, transaction_client_secret, fraud_client_secret, notification_client_secret, reconciliation_client_secret, idp-admin_client_secret, admin-console_client_secret, keycloak_password_customer, keycloak_password_admin, keycloak_password_auditor, keycloak_password_analyst, keycloak_password_bank]
     volumes:
       - 'keycloak-import:/state'
       - '../../scripts/docker/keycloak-realm.cjs:/render/keycloak-realm.cjs:ro'
@@ -521,6 +527,9 @@ services:
       KC_HOSTNAME: http://keycloak:8080
       KC_HOSTNAME_STRICT: 'false'
       KC_HEALTH_ENABLED: 'true'
+      # DK-04c: never debug. The registration searches users by a candidate customer_id in the query of the Admin API; at info
+      # the server does not write request lines, and a test (keycloak-claims) reads the log after such a search.
+      KC_LOG_LEVEL: info
       # The JVM heap is capped so the container stays within its limit (the rest is metaspace, threads and native memory).
       JAVA_OPTS_KC_HEAP: -Xms128m -Xmx320m
     volumes: ['keycloak-import:/opt/keycloak/data/import:ro']
@@ -550,13 +559,19 @@ services:
     environment:
       TZ: UTC
       GATEWAY_URL: http://gateway:4010
+      # DK-02b: the flow goes through Kong over TLS verified against the CA of the stack (the adapter takes only Kong's bodies).
+      EDGE_URL: https://kong:8443
+      NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
       IDP_URL: http://keycloak:8080
       IDP_KIND: keycloak
       IDP_REALM: privpay
-      IDP_USER_PASSWORD_FILE: /run/secrets/keycloak_dev_user_password
+      IDP_USER_PASSWORD_FILE: /run/secrets/keycloak_password_customer
+      IDP_ANALYST_PASSWORD_FILE: /run/secrets/keycloak_password_analyst
+      IDP_ADMIN_CONSOLE_SECRET_FILE: /run/secrets/admin-console_client_secret
       SMS_URL: http://sms-simulator:4007
-    secrets: [keycloak_dev_user_password]
+    secrets: [keycloak_password_customer, keycloak_password_analyst, admin-console_client_secret, tls_ca_crt]
     volumes: ['../../scripts/docker/smoke.cjs:/smoke/smoke.cjs:ro']
     networks: [business]
     depends_on:
       gateway: { condition: service_healthy }
+      kong: { condition: service_healthy }

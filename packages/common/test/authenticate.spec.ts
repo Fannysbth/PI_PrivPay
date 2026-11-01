@@ -580,7 +580,8 @@ describe('M1-02 K-03 the receiver checks the role against its own path, not only
       expect(asPrincipal).toBe(onPath ? 'accepted' : 'FORBIDDEN_ROLE:role_not_here');
       const viaService = failure(
         {
-          authorization: bearer(serviceToken('api-gateway', services)),
+          // DK-04c: the carrying service token is made for this one service; only the person's token is wide here.
+          authorization: bearer(serviceToken('api-gateway', [service])),
           'x-actor-token': everywhere,
         },
         options(service),
@@ -606,5 +607,42 @@ describe('M1-03 every route the gateway forwards with a person has a role whose 
   ] as const)('M1-03 %s: a %s token for the gateway reaches %s', (_route, role, upstream) => {
     expect(ROLE_SERVICES[role]).toContain('api-gateway');
     expect(ROLE_SERVICES[role]).toContain(upstream);
+  });
+});
+
+describe('DK-04c a service token is made for one service (ADR-0017, T-15)', () => {
+  const at = (service: string): AuthenticateOptions => options(service);
+
+  it('DK-04c a token made for Transaction is refused at Privacy (403, audience)', () => {
+    const forTransaction = serviceToken('api-gateway', ['transaction-service']);
+    expect(failure({ authorization: bearer(forTransaction) }, at('privacy-service'))).toBe(
+      'FORBIDDEN_ROLE:audience',
+    );
+  });
+
+  it('DK-04c a service token that names two services is refused at both, even though it names this one', () => {
+    const wide = serviceToken('api-gateway', ['privacy-service', 'transaction-service']);
+    expect(failure({ authorization: bearer(wide) }, at('privacy-service'))).toBe(
+      'FORBIDDEN_ROLE:audience',
+    );
+    expect(failure({ authorization: bearer(wide) }, at('transaction-service'))).toBe(
+      'FORBIDDEN_ROLE:audience',
+    );
+  });
+
+  it('DK-04c a service token with a single audience, as a string or as a one-item list, is accepted', () => {
+    const asList = serviceToken('api-gateway', ['privacy-service']);
+    const asString = mint({ sub: 'api-gateway', azp: 'api-gateway', aud: 'privacy-service' });
+    expect(failure({ authorization: bearer(asList) }, at('privacy-service'))).toBe('accepted');
+    expect(failure({ authorization: bearer(asString) }, at('privacy-service'))).toBe('accepted');
+  });
+
+  it('DK-04c a person keeps the audiences of the role (K-03): the rule is for service accounts', () => {
+    const admin = humanToken('admin-console', 'admin', [
+      'api-gateway',
+      'privacy-service',
+      'reconciliation-service',
+    ]);
+    expect(failure({ authorization: bearer(admin) }, at('privacy-service'))).toBe('accepted');
   });
 });

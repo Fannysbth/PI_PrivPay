@@ -7,6 +7,7 @@ const { randomBytes } = require('node:crypto');
 const { mkdirSync, writeFileSync } = require('node:fs');
 const path = require('node:path');
 const { CLIENT_SECRET_FILES, PRIVACY_KEY_FILES } = require('../dev/services.cjs');
+const { PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS } = require('./keycloak-realm.cjs');
 
 /** Owner, runtime and audit roles of each service database (SERVICE_DBS in packages/common/src/db.ts). */
 const DB_ROLES = Object.freeze([
@@ -36,9 +37,16 @@ function plan() {
   }
   // DK-02b: proves Kong to the adapter (X-Edge-Auth); only Kong and the adapter in the proposed condition mount it.
   files.set('edge_adapter_secret', () => randomBytes(32).toString('base64url'));
-  // DK-04: the client that manages users in Keycloak (registration, compensation) and the one password of the fictional test users.
+  // DK-04: the client that manages users in Keycloak (registration, compensation).
   files.set('idp-admin_client_secret', () => randomBytes(32).toString('base64url'));
-  files.set('keycloak_dev_user_password', () => randomBytes(18).toString('base64url'));
+  // DK-04c (ADR-0017 item 5): the secret of the privileged human client, and one password per class of the fictional test users
+  // (the names are those of PASSWORD_FILES in keycloak-realm.cjs): no component holds more than its own class.
+  for (const client of CONFIDENTIAL_HUMAN_CLIENTS) {
+    files.set(`${client}_client_secret`, () => randomBytes(32).toString('base64url'));
+  }
+  for (const file of Object.values(PASSWORD_FILES)) {
+    files.set(file, () => randomBytes(18).toString('base64url'));
+  }
   files.set('grafana_admin_password', () => randomBytes(18).toString('base64url'));
   return files;
 }

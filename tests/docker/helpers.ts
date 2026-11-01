@@ -72,11 +72,11 @@ export const edge = (
   body: object,
 ): Promise<Answer> => call({ port: KONG_PORT, path, headers, tls: true }, body);
 
-// DK-04: Keycloak signs a customer in by password grant. The one test password (invented) comes from its secret file and is
-// never printed. Keycloak is published on the loopback by docs/postman/compose.postman.yml.
+// DK-04: Keycloak signs a customer in by password grant. The password of the customer class (invented, DK-04c) comes from
+// its secret file and is never printed. Keycloak is published on the loopback by docs/postman/compose.postman.yml.
 let testPassword: string | undefined;
 const userPassword = (): string =>
-  (testPassword ??= readFileSync(join(SECRETS_DIR, 'keycloak_dev_user_password'), 'utf8').trim());
+  (testPassword ??= readFileSync(join(SECRETS_DIR, 'keycloak_password_customer'), 'utf8').trim());
 
 export async function login(username: string): Promise<string> {
   const port = process.env['IDP_HOST_PORT'] ?? '8080';

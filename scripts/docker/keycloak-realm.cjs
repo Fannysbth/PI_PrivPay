@@ -48,6 +48,49 @@ const USERS = [
   ['bank.uji.1', 'bank'],
 ];
 
+// DK-04c, ADR-0017: the audience of a service token is not written from the roles of the account but asked for, one service at
+// a time, by an optional client scope `aud-<service>` (mapper `oidc-audience-mapper`). A client may ask only for the scopes
+// of its own row in SERVICE_CLIENTS (anything else is `invalid_scope`), and the token then names that one service.
+const audienceScope = (service) => `aud-${service}`;
+const audienceScopes = () =>
+  [...new Set(Object.values(SERVICE_CLIENTS).flat())].sort().map((service) => ({
+    name: audienceScope(service),
+    protocol: 'openid-connect',
+    attributes: { 'include.in.token.scope': 'false', 'display.on.consent.screen': 'false' },
+    protocolMappers: [
+      {
+        name: 'audience',
+        protocol: 'openid-connect',
+        protocolMapper: 'oidc-audience-mapper',
+        config: { 'included.client.audience': service, 'access.token.claim': 'true', 'id.token.claim': 'false', 'introspection.token.claim': 'true' },
+      },
+    ],
+  }));
+// Declaring the client scopes of the realm replaces the built-in ones, so `basic` (the `sub` claim) is declared here too.
+const basicScope = {
+  name: 'basic',
+  protocol: 'openid-connect',
+  attributes: { 'include.in.token.scope': 'false', 'display.on.consent.screen': 'false' },
+  protocolMappers: [
+    { name: 'sub', protocol: 'openid-connect', protocolMapper: 'oidc-sub-mapper', config: { 'access.token.claim': 'true', 'introspection.token.claim': 'true' } },
+  ],
+};
+
+// DK-04c, ADR-0017 item 5: one password per class of user, so that a component holding one cannot sign in as another class.
+// The file of each class under the secrets directory; the gateway reads only the customer one and the bank simulator only the
+// bank one. `admin-console` is a confidential client: the password grant of an administrator, auditor, or analyst also needs
+// its client secret, which neither of them holds.
+const PASSWORD_FILES = {
+  customer: 'keycloak_password_customer',
+  admin: 'keycloak_password_admin',
+  auditor: 'keycloak_password_auditor',
+  fraud_analyst: 'keycloak_password_analyst',
+  bank: 'keycloak_password_bank',
+};
+const CONFIDENTIAL_HUMAN_CLIENTS = ['admin-console'];
+
+// Two ways to get an audience, on purpose: a person's token names the services of the role (audience-resolve over the roles,
+// K-03: the receiver checks the role against its own path), a service token names the ONE service asked for (scope above).
 const audienceResolve = {
   name: 'audience-from-roles',
   protocol: 'openid-connect',
@@ -67,23 +110,32 @@ const customerIdClaim = {
   config: { 'user.attribute': 'customer_id', 'claim.name': 'customer_id', 'jsonType.label': 'String', 'access.token.claim': 'true', 'id.token.claim': 'false', 'userinfo.token.claim': 'false', 'introspection.token.claim': 'true' },
 };
 
-/** `secrets`: { clients: { <client>: secret }, password: string }. Returns the realm representation (Keycloak import format). */
-function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) {
-  for (const name of [...Object.keys(SERVICE_CLIENTS), adminClient]) {
+/**
+ * `clientSecrets`: { <client>: secret } for the service accounts, the admin client, and `admin-console`.
+ * `passwords`: { <class>: password }, the five classes of PASSWORD_FILES, all different.
+ * Returns the realm representation (Keycloak import format).
+ */
+function renderRealm({ clientSecrets, passwords, adminClient = 'idp-admin' }) {
+  for (const name of [...Object.keys(SERVICE_CLIENTS), adminClient, ...CONFIDENTIAL_HUMAN_CLIENTS]) {
     if (typeof clientSecrets[name] !== 'string' || clientSecrets[name].length < 16) throw new Error(`secret of client ${name} is missing or too short`);
   }
-  if (typeof devPassword !== 'string' || devPassword.length < 16) throw new Error('the dev password is missing or too short');
+  for (const klass of Object.keys(PASSWORD_FILES)) {
+    if (typeof passwords?.[klass] !== 'string' || passwords[klass].length < 16) throw new Error(`the password of class ${klass} is missing or too short`);
+  }
+  if (new Set(Object.keys(PASSWORD_FILES).map((klass) => passwords[klass])).size !== Object.keys(PASSWORD_FILES).length) {
+    throw new Error('the passwords of the classes must be distinct');
+  }
 
   const clients = [];
   // Bearer-only resources: they exist only so that an audience can be named after them (aud of the token).
   for (const name of RESOURCES) clients.push({ clientId: name, enabled: true, bearerOnly: true, publicClient: false, protocol: 'openid-connect' });
-  // Service accounts: client credentials, an audience per allowed service, no `roles`, no `customer_id`.
+  // Service accounts: client credentials, no `roles`, no `customer_id`, and no audience unless one is asked for by scope.
   for (const name of Object.keys(SERVICE_CLIENTS)) {
     const existing = clients.find((client) => client.clientId === name);
     const entry = {
       clientId: name, enabled: true, publicClient: false, secret: clientSecrets[name], protocol: 'openid-connect',
       serviceAccountsEnabled: true, standardFlowEnabled: false, directAccessGrantsEnabled: false, implicitFlowEnabled: false,
-      fullScopeAllowed: true, defaultClientScopes: ['basic'], optionalClientScopes: [], protocolMappers: [audienceResolve],
+      fullScopeAllowed: true, defaultClientScopes: ['basic'], optionalClientScopes: SERVICE_CLIENTS[name].map(audienceScope),
     };
     if (existing) Object.assign(existing, entry, { bearerOnly: false });
     else clients.push(entry);
@@ -97,7 +149,9 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
   // Humans: password grant (dev only). A client signs only the roles of its own kind in (a customer never gets an admin token).
   for (const [client, roles] of Object.entries(CLIENT_ROLES)) {
     clients.push({
-      clientId: client, enabled: true, publicClient: true, protocol: 'openid-connect', directAccessGrantsEnabled: true,
+      clientId: client, enabled: true, protocol: 'openid-connect', directAccessGrantsEnabled: true,
+      // The client of the privileged classes needs its secret for the password grant; the others stay public (dev only).
+      ...(CONFIDENTIAL_HUMAN_CLIENTS.includes(client) ? { publicClient: false, secret: clientSecrets[client] } : { publicClient: true }),
       standardFlowEnabled: false, implicitFlowEnabled: false, serviceAccountsEnabled: false, fullScopeAllowed: false,
       defaultClientScopes: ['basic'], optionalClientScopes: [],
       protocolMappers: [audienceResolve, rolesClaim, ...(roles.includes('customer') ? [customerIdClaim] : [])],
@@ -110,11 +164,8 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
   const clientRoles = Object.fromEntries(RESOURCES.map((name) => [name, [{ name: 'access' }]]));
 
   const users = [];
-  for (const [name, targets] of Object.entries(SERVICE_CLIENTS)) {
-    users.push({
-      username: `service-account-${name}`, enabled: true, serviceAccountClientId: name,
-      clientRoles: Object.fromEntries(targets.map((target) => [target, ['access']])),
-    });
+  for (const name of Object.keys(SERVICE_CLIENTS)) {
+    users.push({ username: `service-account-${name}`, enabled: true, serviceAccountClientId: name });
   }
   users.push({
     username: `service-account-${adminClient}`, enabled: true, serviceAccountClientId: adminClient,
@@ -123,7 +174,7 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
   for (const [username, role, customerId] of USERS) {
     users.push({
       username, enabled: true, emailVerified: true,
-      credentials: [{ type: 'password', value: devPassword, temporary: false }],
+      credentials: [{ type: 'password', value: passwords[role], temporary: false }],
       realmRoles: [role],
       ...(customerId ? { attributes: { customer_id: [customerId] } } : {}),
     });
@@ -146,6 +197,7 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
     roles: { realm: realmRoles, client: clientRoles },
     scopeMappings: Object.entries(CLIENT_ROLES).map(([client, roles]) => ({ client, roles })),
     clients, users,
+    clientScopes: [basicScope, ...audienceScopes()],
     components: {
       'org.keycloak.userprofile.UserProfileProvider': [
         { providerId: 'declarative-user-profile', subComponents: {}, config: { 'kc.user.profile.config': [JSON.stringify(profile)] } },
@@ -156,7 +208,14 @@ function renderRealm({ clientSecrets, devPassword, adminClient = 'idp-admin' }) 
 
 const readSecret = (dir, name) => readFileSync(path.join(dir, name), 'utf8').trim();
 
-module.exports = { renderRealm, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
+/** The password class of a fictional test user, from USERS (the one table). An unknown name is an error, never a default. */
+const classOfUser = (username) => {
+  const row = USERS.find(([name]) => name === username);
+  if (row === undefined) throw new Error(`no password class for user ${username}`);
+  return row[1];
+};
+
+module.exports = { renderRealm, audienceScope, classOfUser, PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
 
 if (require.main === module) {
   const [dir, out] = process.argv.slice(2);
@@ -167,7 +226,9 @@ if (require.main === module) {
   const clientSecrets = {};
   for (const name of Object.keys(SERVICE_CLIENTS)) clientSecrets[name] = readSecret(dir, `${name}_client_secret`);
   clientSecrets['idp-admin'] = readSecret(dir, 'idp-admin_client_secret');
-  const realm = renderRealm({ clientSecrets, devPassword: readSecret(dir, 'keycloak_dev_user_password') });
+  for (const name of CONFIDENTIAL_HUMAN_CLIENTS) clientSecrets[name] = readSecret(dir, `${name}_client_secret`);
+  const passwords = Object.fromEntries(Object.entries(PASSWORD_FILES).map(([klass, file]) => [klass, readSecret(dir, file)]));
+  const realm = renderRealm({ clientSecrets, passwords });
   mkdirSync(path.dirname(out), { recursive: true });
   writeFileSync(out, JSON.stringify(realm), { mode: 0o644 });
   process.stdout.write('keycloak realm written\n');

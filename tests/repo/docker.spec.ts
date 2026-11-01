@@ -138,12 +138,61 @@ describe.each(MODES)(
       expect(keycloak?.user).toBeUndefined();
       const environment = Object.keys(keycloak?.environment ?? {});
       expect(environment.filter((key) => /BOOTSTRAP|PASSWORD|SECRET/.test(key))).toEqual([]);
+      // DK-04c: the log level is stated, and it is info.
+      expect(keycloak?.environment).toMatchObject({ KC_LOG_LEVEL: 'info' });
       expect(keycloak?.depends_on).toMatchObject({
         'keycloak-realm': { condition: 'service_completed_successfully' },
       });
       expect(services['keycloak-realm']?.secrets).toEqual(
-        expect.arrayContaining(['idp-admin_client_secret', 'keycloak_dev_user_password']),
+        expect.arrayContaining([
+          'idp-admin_client_secret',
+          'admin-console_client_secret',
+          'keycloak_password_customer',
+          'keycloak_password_admin',
+          'keycloak_password_auditor',
+          'keycloak_password_analyst',
+          'keycloak_password_bank',
+        ]),
       );
+    });
+
+    it('DK-04c the smoke flow goes through Kong over verified TLS with real IdP tokens; the adapter is only asked for its health', () => {
+      // In the proposed condition the adapter takes tokenized bodies from Kong only (DK-02b, X-Edge-Auth): a smoke that
+      // posts raw to the adapter is refused by design (503 edge_untokenized), so the flow goes to the edge.
+      const smoke = services['smoke'];
+      expect(smoke?.environment).toMatchObject({
+        EDGE_URL: 'https://kong:8443',
+        GATEWAY_URL: 'http://gateway:4010',
+        NODE_EXTRA_CA_CERTS: '/run/secrets/tls_ca_crt',
+      });
+      expect((smoke?.secrets ?? []).map(String)).toContain('tls_ca_crt');
+      expect(smoke?.depends_on).toMatchObject({ kong: { condition: 'service_healthy' } });
+      // Verification is never switched off, in the environment of the service or in the script.
+      expect(JSON.stringify(smoke?.environment)).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED/);
+      const text = readFileSync(join(root, 'scripts', 'docker', 'smoke.cjs'), 'utf8');
+      expect(text).toContain('EDGE_URL');
+      expect(text).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|rejectUnauthorized/);
+    });
+
+    it('DK-04c the Gateway holds the customer password and the bank simulator the bank password, nothing of the privileged classes', () => {
+      const mounted = (name: string): string[] => (services[name]?.secrets ?? []).map(String);
+      const privileged = [
+        'keycloak_password_admin',
+        'keycloak_password_auditor',
+        'keycloak_password_analyst',
+        'admin-console_client_secret',
+      ];
+      expect(mounted('bank-simulator')).toEqual(['keycloak_password_bank']);
+      expect(mounted('gateway')).toContain('keycloak_password_customer');
+      for (const name of ['gateway', 'bank-simulator']) {
+        expect(mounted(name).filter((secret) => privileged.includes(secret))).toEqual([]);
+        expect(mounted(name)).not.toContain('keycloak_dev_user_password');
+      }
+      expect(mounted('gateway')).not.toContain('keycloak_password_bank');
+      for (const name of Object.keys(services)) {
+        if (name === 'keycloak-realm' || name === 'smoke') continue;
+        expect(mounted(name).filter((secret) => privileged.includes(secret))).toEqual([]);
+      }
     });
 
     it('DK-01 DK-02a only Kong (the edge) is published, only on the loopback of the host and only to its TLS port', () => {

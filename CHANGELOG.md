@@ -4,6 +4,16 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### DK-04c: token per audiens dan kata sandi per kelas (feat/dk-04c, ADR-0017)
+
+- Token akun layanan memuat satu audiens: scope klien opsional `aud-<layanan>` per layanan tujuan di realm, klien hanya boleh meminta barisnya sendiri (selain itu 400 `invalid_scope`); `createIdpTokenCache` mengirim `scope`; Gateway memegang cache token per audiens; plugin Kong meminta `aud-privacy-service`; `authenticate()` menolak token akun layanan yang menyebut lebih dari satu layanan (403, `audience`).
+- Kata sandi uji per kelas (`keycloak_password_customer|admin|auditor|analyst|bank`, `pnpm docker:secrets` membuatnya; `keycloak_dev_user_password` dihapus): gateway hanya kelas nasabah, bank-simulator hanya kelas bank; `admin-console` klien rahasia (`admin-console_client_secret`). Koleksi Postman memakai `password_nasabah|admin|auditor|analis|bank` dan `admin_console_secret` (jumlah request tetap 149).
+- `KC_LOG_LEVEL=info` dinyatakan; tes membaca log Keycloak setelah pencarian `customer_id`. edge-check `claims` memeriksa dua administrator berbeda lewat Kong (usulan).
+- Hasil uji `idp-admin` di Keycloak 26.4 dicatat di ADR-0017: batasan ke peran `customer` tidak dapat dicapai; reset kata sandi admin lewat `idp-admin` tetap mungkin; Gateway diperlakukan tepercaya sebagai asumsi prototipe.
+- `fix(smoke)`: smoke Compose lewat Kong (TLS terverifikasi, token IdP asli); sebelumnya mode usulan 5/9 (juga di `main`) karena adapter hanya menerima bentuk bertoken dari Kong; sekarang 9/9 di kedua mode.
+- `.gitleaksignore`: tiga sidik jari riwayat lama yang diperiksa satu per satu (izin tertulis Fanny, 2026-11-01); `gitleaks --all` keluar 0; temuan sintetis baru tetap merah.
+- Tes lama diubah: fixture K-03 (`authenticate.spec`) memakai token pembawa satu audiens. Dilewati dari `/simplify`: struktur ulang `idp.ts`, scope dari konfigurasi plugin, modul fixture bersama untuk dua spek realm, manusia ikut scope audiens.
+
 ### DK-04 sesi B: Keycloak menjadi IdP tumpukan Compose, registrasi lewat Admin API (feat/dk-04-b, ADR-0017)
 
 - `services/gateway/src/user-directory.ts`: port `UserDirectory` (`create`, `remove`) dengan dua adapter, dev-idp dan Keycloak. Keycloak: `CUST-` + 6 digit acak, diperiksa unik lewat pencarian atribut Admin API sebelum dan sesudah membuat pengguna, kata sandi uji dari berkas, peran `customer` lewat `idp-admin`; pengguna diambil kembali bila peran gagal; hapus idempoten (404 bukan galat). `RegistrationFlow` memakai port itu; satu cache token bersama untuk semua upstream di Keycloak (audiens diabaikan).

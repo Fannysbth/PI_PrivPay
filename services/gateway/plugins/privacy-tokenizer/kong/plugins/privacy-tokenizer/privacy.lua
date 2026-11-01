@@ -31,9 +31,12 @@ local function fetch_service_token(conf)
   client:set_timeout(conf.timeout_ms)
   local headers, body
   if conf.idp_form then
-    -- Keycloak ignores the audience: the audiences of the account come from its roles (ADR-0017).
+    -- Keycloak narrows the audience through the optional client scope aud-<service> (ADR-0017, DK-04c): one service.
     headers = { ["Content-Type"] = "application/x-www-form-urlencoded" }
-    body = ngx.encode_args({ grant_type = "client_credentials", client_id = conf.client_id, client_secret = secret })
+    body = ngx.encode_args({
+      grant_type = "client_credentials", client_id = conf.client_id, client_secret = secret,
+      scope = "aud-privacy-service",
+    })
   else
     headers = { ["Content-Type"] = "application/json" }
     body = cjson.encode({

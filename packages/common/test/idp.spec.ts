@@ -72,7 +72,7 @@ describe('DK-04 createIdpTokenCache: client credentials', () => {
     expect(seen[0]?.form).toBeUndefined();
   });
 
-  it('DK-04 Keycloak: a form body on the token path of the realm; the audience comes from the roles of the account', async () => {
+  it('DK-04c Keycloak: the token is asked for one audience, by the optional scope aud-<service>', async () => {
     const { http, seen } = recorder(token);
     const cache = createIdpTokenCache({ http, clock: new FakeClock(START), idp: KEYCLOAK, grant });
     expect(await cache.get()).toBe('tok.en.value');
@@ -82,10 +82,37 @@ describe('DK-04 createIdpTokenCache: client credentials', () => {
         grant_type: 'client_credentials',
         client_id: 'transaction',
         client_secret: grant.clientSecret,
+        scope: 'aud-privacy-service',
       },
     });
     expect(seen[0]?.body).toBeUndefined();
-    expect(JSON.stringify(seen[0]?.form)).not.toContain('privacy-service');
+  });
+
+  it('DK-04c Keycloak: no audience asked (the admin client) means no audience scope at all', async () => {
+    const { http, seen } = recorder(token);
+    await createIdpTokenCache({
+      http,
+      clock: new FakeClock(START),
+      idp: KEYCLOAK,
+      grant: {
+        type: 'client-credentials',
+        clientId: grant.clientId,
+        clientSecret: grant.clientSecret,
+      },
+    }).get();
+    expect(seen[0]?.form).not.toHaveProperty('scope');
+  });
+
+  it('DK-04c Keycloak: an audience that is not a plain service name never reaches the scope', () => {
+    const { http } = recorder(token);
+    expect(() =>
+      createIdpTokenCache({
+        http,
+        clock: new FakeClock(START),
+        idp: KEYCLOAK,
+        grant: { ...grant, audience: 'privacy-service openid' },
+      }),
+    ).toThrow(RangeError);
   });
 
   it('DK-04 a refusal, an answer without a token, or an expiry of nothing is unavailable, never a token', async () => {

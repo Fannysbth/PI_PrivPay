@@ -24,9 +24,17 @@ const PORTS = { proposed: 4010, baseline: 4011 };
 const IDP = { host: HOST, port: Number(process.env['IDP_HOST_PORT'] ?? 8080) };
 const REALM_PATH = '/realms/privpay/protocol/openid-connect/token';
 const readSecretFile = (name) => fs.readFileSync(path.join(secretsDir(), name), 'utf8').trim();
-// The one invented test password is the same for every sign-in of a run: read the file once.
-let testPassword;
-const userPassword = () => (testPassword ??= readSecretFile('keycloak_dev_user_password'));
+// DK-04c: one invented password per class of user (the files of PASSWORD_FILES), read once per run; the privileged human client
+// also needs its secret. The class of a test user follows from its name.
+const { PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS, classOfUser } = require('./keycloak-realm.cjs');
+const secretCache = new Map();
+const readOnce = (file) => {
+  if (!secretCache.has(file)) secretCache.set(file, readSecretFile(file));
+  return secretCache.get(file);
+};
+const classPassword = (klass) => readOnce(PASSWORD_FILES[klass]);
+// The secret of the privileged human client, read once like the passwords.
+const consoleSecret = () => readOnce('admin-console_client_secret');
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** One HTTPS request to the edge. Resolves to { status, headers, body } or { error: code }. */
@@ -83,8 +91,11 @@ function idpCall(method, urlPath, { form, json, token } = {}) {
   });
 }
 
-async function mintToken(username = 'analis.uji.1', clientId = 'admin-console') {
-  const answer = await idpCall('POST', REALM_PATH, { form: { grant_type: 'password', client_id: clientId, username, password: userPassword() } });
+// `klass` is only given for a user the check made itself (not in USERS).
+async function mintToken(username = 'analis.uji.1', clientId = 'admin-console', klass = classOfUser(username)) {
+  const form = { grant_type: 'password', client_id: clientId, username, password: classPassword(klass) };
+  if (CONFIDENTIAL_HUMAN_CLIENTS.includes(clientId)) form.client_secret = consoleSecret();
+  const answer = await idpCall('POST', REALM_PATH, { form });
   if (typeof answer.json?.access_token !== 'string') throw new Error('Keycloak gave no token');
   return answer.json.access_token;
 }
@@ -95,8 +106,11 @@ const claimSummary = (token) => {
   return `aud=${JSON.stringify(claims.aud)} azp=${String(claims.azp)} roles=${JSON.stringify(claims.roles ?? null)}`;
 };
 
-async function serviceToken(client) {
-  const answer = await idpCall('POST', REALM_PATH, { form: { grant_type: 'client_credentials', client_id: client, client_secret: readSecretFile(`${client}_client_secret`) } });
+// `audience` is the one service the token is for (scope aud-<service>, DK-04c); without it the token names none.
+async function serviceToken(client, audience) {
+  const form = { grant_type: 'client_credentials', client_id: client, client_secret: readSecretFile(`${client}_client_secret`) };
+  if (audience !== undefined) form.scope = `aud-${audience}`;
+  const answer = await idpCall('POST', REALM_PATH, { form });
   if (typeof answer.json?.access_token !== 'string') throw new Error('Keycloak gave no service token');
   return answer.json.access_token;
 }
@@ -187,11 +201,24 @@ async function claimChecks(mode, port, ca) {
 
   const analyst = await mintToken();
   add('control: an analyst of the console is let in', (await held(analyst)).status, 200);
-  const reconciliation = await serviceToken('reconciliation');
+  const reconciliation = await serviceToken('reconciliation', 'transaction-service');
   add(`a service account whose audience does not include api-gateway (reconciliation: ${claimSummary(reconciliation)})`, refused(await held(reconciliation)), '403 ACCESS_DENIED');
   add('a customer asking for a token at the admin client (azp admin-console) gets no usable role', refused(await held(await mintToken('nasabah.uji.103', 'admin-console'))), '401 UNAUTHENTICATED');
   add('an administrator asking for a token at the customer client (azp customer-app) gets no usable role', refused(await held(await mintToken('admin.uji.1', 'customer-app'))), '401 UNAUTHENTICATED');
   add('a customer on a route of the console (wrong role)', refused(await held(await mintToken('nasabah.uji.102', 'customer-app'))), '403 ACCESS_DENIED');
+
+  // Four eyes needs two different administrators (ADR-0007 item 8, DK-04c): both sign in with the password of their class and
+  // the secret of the console, both pass Kong and the adapter on an administrator's route, and they are two persons (`sub`).
+  // The route is Privacy's, so only the proposed condition has it (the baseline has no Privacy Service).
+  if (mode === 'proposed') {
+    const auditLog = (token) => call(port, { url: '/audit-log?limit=1', headers: bearer(token), tls: verified });
+    const [adminOne, adminTwo] = await Promise.all([mintToken('admin.uji.1'), mintToken('admin.uji.2')]);
+    const subOf = (token) => JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')).sub;
+    add('four eyes: the first administrator is let in on an administrator route', (await auditLog(adminOne)).status, 200);
+    add('four eyes: the second administrator is let in on the same route', (await auditLog(adminTwo)).status, 200);
+    add('four eyes: the two administrators are two different persons', subOf(adminOne) !== subOf(adminTwo), true);
+    add('four eyes: an analyst is not let in on an administrator route', refused(await auditLog(analyst)), '403 ACCESS_DENIED');
+  }
 
   // Same claims, another key: re-sign a valid payload with a key that Kong does not know. Kong must refuse it itself.
   const [h, p] = analyst.split('.');
@@ -208,7 +235,7 @@ async function claimChecks(mode, port, ca) {
   const name = `ganda.uji.${String(Date.now()).slice(-8)}`;
   let userId;
   try {
-    const made = await idpCall('POST', `${base}/users`, { token: admin, json: { username: name, enabled: true, credentials: [{ type: 'password', value: userPassword(), temporary: false }] } });
+    const made = await idpCall('POST', `${base}/users`, { token: admin, json: { username: name, enabled: true, credentials: [{ type: 'password', value: classPassword('admin'), temporary: false }] } });
     const found = await idpCall('GET', `${base}/users?username=${name}&exact=true`, { token: admin });
     userId = Array.isArray(found.json) ? found.json[0]?.id : undefined;
     const statuses = [];
@@ -218,7 +245,7 @@ async function claimChecks(mode, port, ca) {
       statuses.push(`${role}:${mapped.status}`);
     }
     add('idp-admin may give fraud_analyst and auditor but not admin (made: ' + made.status + ')', statuses.join(' '), 'fraud_analyst:204 auditor:204 admin:403');
-    add('a person with two or more roles is refused by the adapter', refused(await held(await mintToken(name, 'admin-console'))), '401 UNAUTHENTICATED');
+    add('a person with two or more roles is refused by the adapter', refused(await held(await mintToken(name, 'admin-console', 'admin'))), '401 UNAUTHENTICATED');
   } finally {
     if (userId) await idpCall('DELETE', `${base}/users/${userId}`, { token: admin });
   }

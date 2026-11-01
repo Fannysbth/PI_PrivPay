@@ -157,6 +157,11 @@ function principalOf(claims: Record<string, unknown>): Principal {
   if (Object.hasOwn(SERVICE_AZP, azp)) {
     // A service account has no person's claims: roles or customer_id on it would be a forged mix.
     if (claims['roles'] !== undefined || hasCustomerId) return refuse('UNAUTHENTICATED', 'claims');
+    // ADR-0017, T-15: a service token is made for one service. A wider one could be replayed by a receiver that was taken
+    // over at every other service the account may call, until `exp`, so it is refused even where it names this service.
+    const audience = claims['aud'];
+    if (Array.isArray(audience) && audience.length !== 1)
+      return refuse('FORBIDDEN_ROLE', 'audience');
     return { requestingService: SERVICE_AZP[azp] as RequestingService, subject };
   }
   if (azp === 'bank-simulator') {
