@@ -1,6 +1,7 @@
 # 01. Menjalankan sistem secara lokal (tanpa Docker)
 
-Bab ini berisi langkah dari repo yang baru di-clone sampai sembilan proses berjalan dan bisa dicoba lewat `curl`. Fase lokal tidak memakai Docker (ADR-0004, [`docs/adr/0004-lingkungan-lokal-tanpa-docker.md`](../adr/0004-lingkungan-lokal-tanpa-docker.md)); Docker Compose, Kong, dan Keycloak adalah pekerjaan fase berikutnya (DK-01 sampai DK-06).
+> **Dua jalur.** Bab ini menjelaskan jalur lokal tanpa Docker (sembilan proses Node dan PostgreSQL lokal, untuk pengembangan). **Tumpukan resmi adalah Docker Compose** (Kong, Keycloak, tiga jaringan, TLS, PostgreSQL per layanan): cara menyalakannya, mencobanya lewat Postman atau Newman, dan membuktikannya dari klon bersih ada di [`docs/postman/README.md`](../postman/README.md) (bagian 1, 2, dan 7). Pembaca yang hanya ingin mencoba sistem cukup memakai README itu: butuh Docker Desktop, Node 24 dengan corepack, dan `openssl`; tidak butuh PostgreSQL lokal.
+Bab ini berisi langkah dari repo yang baru di-clone sampai sembilan proses berjalan dan bisa dicoba lewat `curl`. Jalur lokal tidak memakai Docker (ADR-0004, [`docs/adr/0004-lingkungan-lokal-tanpa-docker.md`](../adr/0004-lingkungan-lokal-tanpa-docker.md)); Docker Compose, Kong, dan Keycloak sudah ada sebagai jalur terpisah (DK-01 sampai DK-04, lihat kotak di atas).
 
 ## Apa yang sudah dan belum saya buktikan
 
@@ -9,7 +10,7 @@ Langkah 1 (build), 3 (migrasi: `up to date`), 4 (rahasia, di direktori sementara
 - **Instalasi bersih** (`node_modules` kosong) dan **`bootstrap.ps1` pada server PostgreSQL kosong**: perintahnya saya tuliskan dari berkas aslinya ([`scripts/db/README.md`](../../scripts/db/README.md), [`scripts/db/bootstrap.ps1`](../../scripts/db/bootstrap.ps1)), tetapi pada sesi ini hanya diperiksa, tidak dijalankan. Skrip itu idempoten dan diuji dua kali berturut-turut di CI (`scripts/ci/bootstrap-twice.sh`).
 - **Mode baseline sebagai proses nyata**: sejak sesi kesetiaan baseline (`feat/m5-kesetiaan-baseline`) dijalankan sungguhan lewat `pnpm dev:up --mode baseline` (delapan proses, database sendiri), bersama proposed (sembilan proses). Lihat bagian "Mode baseline" di bawah.
 
-**Satu perintah menyalakan semuanya: `corepack pnpm dev:up`** (`dev:down` menghentikan, `dev:keys` membuat tiga kunci Privacy; [`scripts/dev/README.md`](../../scripts/dev/README.md)). Port dan lingkungan tiap proses ditulis di satu berkas, [`scripts/dev/services.cjs`](../../scripts/dev/services.cjs). Layanan **tidak membaca `.env`**: mereka hanya membaca `process.env` ([`packages/common/src/nest/run-service.ts`](../../packages/common/src/nest/run-service.ts)); `.env.example` adalah daftar rujukan, dan `dev:up` mengisi lingkungan tiap proses sendiri. Skrip peluncur PowerShell dan Bash di langkah 5 adalah versi yang saya tulis dan uji lebih dulu; dipertahankan karena menjelaskan apa yang dilakukan `dev:up`. `docker compose up` belum ada (ditunda, ADR-0004).
+**Satu perintah menyalakan semuanya: `corepack pnpm dev:up`** (`dev:down` menghentikan, `dev:keys` membuat tiga kunci Privacy; [`scripts/dev/README.md`](../../scripts/dev/README.md)). Port dan lingkungan tiap proses ditulis di satu berkas, [`scripts/dev/services.cjs`](../../scripts/dev/services.cjs). Layanan **tidak membaca `.env`**: mereka hanya membaca `process.env` ([`packages/common/src/nest/run-service.ts`](../../packages/common/src/nest/run-service.ts)); `.env.example` adalah daftar rujukan, dan `dev:up` mengisi lingkungan tiap proses sendiri. Skrip peluncur PowerShell dan Bash di langkah 5 adalah versi yang saya tulis dan uji lebih dulu; dipertahankan karena menjelaskan apa yang dilakukan `dev:up`. Jalur Docker Compose ada di `docs/postman/README.md`; `dev:up` dan Compose tidak boleh menyala bersamaan (port 4007 dan 8080 sama).
 
 ## Prasyarat
 
@@ -21,7 +22,7 @@ Langkah 1 (build), 3 (migrasi: `up to date`), 4 (rahasia, di direktori sementara
 | PowerShell 5.1+ | untuk `scripts/db/bootstrap.ps1` dan skrip peluncur contoh. Git Bash dipakai untuk `curl` |
 | `curl` dan `node` | untuk mencoba alurnya |
 
-Docker **tidak** dibutuhkan.
+Docker **tidak** dibutuhkan untuk jalur lokal ini (jalur Compose membutuhkannya).
 
 ## Langkah 1: pasang dependensi dan bangun
 
