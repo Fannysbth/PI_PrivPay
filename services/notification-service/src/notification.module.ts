@@ -137,6 +137,7 @@ export function notificationModules(
         source: idpJwksSource(http, idpOf(config)),
       }),
       customerRef: subjectRefShape(config.PRIVACY_MODE).customer,
+      acceptClientIdentity: config.PRIVACY_MODE === 'baseline',
       notifications: new NotificationService({
         // ADR-0006: the one place the mode picks the adapters; the service below is the same code in both.
         contacts:

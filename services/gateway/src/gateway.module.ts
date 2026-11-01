@@ -208,6 +208,7 @@ export function gatewayModules(
         privacy,
         masker,
         domainRef: subjectRefShape(config.PRIVACY_MODE).customer,
+        forwardClientIdentity: config.PRIVACY_MODE === 'baseline',
         users,
         notificationToken: serviceTokens['notification-service'],
         logger: createLogger({ service: 'gateway', destination: overrides.logDestination }),

@@ -158,7 +158,16 @@ describe('M4-05 AZ-32 POST /notification/register', () => {
     expect(await contacts()).toBe(0);
   });
 
-  it.each([['customer_id'], ['nik'], ['nama'], ['email'], ['rekening'], ['requesting_service']])(
+  // G4: proposed refuses the three attributes baseline accepts, `account_number` included.
+  it.each([
+    ['customer_id'],
+    ['nik'],
+    ['nama'],
+    ['email'],
+    ['rekening'],
+    ['account_number'],
+    ['requesting_service'],
+  ])(
     'M4-05 AZ-32 N4 the field %s in the body is 422: no identity and no claim of who calls',
     async (field) => {
       const answer = await post(

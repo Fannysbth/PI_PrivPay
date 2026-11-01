@@ -38,7 +38,9 @@ describe('M5-01 FR-23 the baseline notification schema keys the contact by custo
     expect(names.filter((name) => name.includes('pseudonym'))).toEqual([]);
   });
 
-  it('M5-01 FR-23 apart from the identity columns the schema and the grants are those of proposed', async () => {
+  // Changed with the owner's decision on Tabel IV (G4, G6): baseline also keeps nik, nama and account_number in the
+  // contact registry, so they are the only columns it adds; before, the report had to be empty.
+  it('M5-01 FR-23 G6 apart from the identity columns and the three copied attributes the schema and the grants are those of proposed', async () => {
     other = await createTestDb(config, { service: 'notification', suffix: 'm501p' });
     await migrate(other.owner, { root: migrations, mode: 'proposed' });
     const report = await compareSchemas(
@@ -51,7 +53,16 @@ describe('M5-01 FR-23 the baseline notification schema keys the contact by custo
       },
       { proposed: 'privpay_notification_app', baseline: 'privpay_notification_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
+    expect(report).toEqual({
+      missing: [
+        'baseline adds contact_registry.nik',
+        'baseline adds contact_registry.nama',
+        'baseline adds contact_registry.account_number',
+      ],
+      different: [],
+      indexes: [],
+      grants: [],
+    });
   });
 
   it('M5-01 NFR-09 a contact is never deleted and the log cannot be read back by the application', async () => {
@@ -74,6 +85,33 @@ describe('M5-01 FR-23 the baseline contact repository is the same domain over th
     expect(again).toEqual({ created: false, registeredAt: AT });
     expect(await contacts.phoneOf(person.customer_id)).toBe('081200000052');
     expect(await contacts.phoneOf('CUST-000102')).toBeUndefined();
+  });
+
+  it('G4 G6 a registration keeps the NIK, the name and the account number beside the customer id and the phone', async () => {
+    const contacts = baselineContactRepository('baseline', db.app);
+    await contacts.upsert(person.customer_id, '081200000053', 'SMS', AT, {
+      nik: person.nik,
+      nama: person.nama,
+      accountNumber: person.rekening,
+    });
+    const row = await db.owner.query(
+      'SELECT nik, nama, account_number FROM contact_registry WHERE customer_id = $1',
+      [person.customer_id],
+    );
+    expect(row.rows).toEqual([
+      { nik: person.nik, nama: person.nama, account_number: person.rekening },
+    ]);
+    // Without them the columns are NULL: a registration may come without.
+    await contacts.upsert('CUST-000103', '081200000054', 'SMS', AT);
+    const bare = await db.owner.query(
+      'SELECT nik, nama, account_number FROM contact_registry WHERE customer_id = $1',
+      ['CUST-000103'],
+    );
+    expect(bare.rows).toEqual([{ nik: null, nama: null, account_number: null }]);
+    // The runtime role still cannot delete (table-level grants of 0002 only).
+    await expect(db.app.query('DELETE FROM contact_registry')).rejects.toMatchObject({
+      code: '42501',
+    });
   });
 
   it('M5-01 FR-23 the log keeps who sent and who received, as identities, and no text of the message', async () => {
