@@ -8,8 +8,9 @@ a88793174983000da292ff6c15663e6cb7124262:prototypes/idempotency-check/idempotenc
 6c6edadec7bc2212206e104a75883e7b12e5ddb6:packages/common/test/logger.spec.ts:generic-api-key:40
 
 # Exception approved in writing by Fanny (2026-11-01), one entry per finding, each checked by hand. These are the fingerprints of
-# the SAME three findings under the commit hashes of the rewritten history (the entries above carry the hashes from before the
-# rewrite, which now exist only under refs/original/*). No path, rule, or regex allowlist; a new finding stays red.
+# the SAME three findings under the commit hashes of the history as it stands now. The history was rewritten once earlier, before
+# this exception (the entries above carry the hashes from before that rewrite, which now exist only under refs/original/*);
+# it is not rewritten again (CLAUDE.md). No path, rule, or regex allowlist; a new finding stays red.
 # packages/common/test/logger.spec.ts line 30, commit 962bf53: the fictitious pseudonym PSEU-8F29A7C1 (PSEU- + 8 hex) used as a log-field fixture.
 962bf53567ec2eae9790f958a3272c2aa787333f:packages/common/test/logger.spec.ts:generic-api-key:30
 # packages/common/test/logger.spec.ts line 40, commit 962bf53: the same fictitious pseudonym PSEU-8F29A7C1.

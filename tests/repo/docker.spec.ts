@@ -166,7 +166,9 @@ describe.each(MODES)(
         NODE_EXTRA_CA_CERTS: '/run/secrets/tls_ca_crt',
       });
       expect((smoke?.secrets ?? []).map(String)).toContain('tls_ca_crt');
-      expect(JSON.stringify(smoke?.depends_on)).toContain('kong');
+      expect(smoke?.depends_on).toMatchObject({ kong: { condition: 'service_healthy' } });
+      // Verification is never switched off, in the environment of the service or in the script.
+      expect(JSON.stringify(smoke?.environment)).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED/);
       const text = readFileSync(join(root, 'scripts', 'docker', 'smoke.cjs'), 'utf8');
       expect(text).toContain('EDGE_URL');
       expect(text).not.toMatch(/NODE_TLS_REJECT_UNAUTHORIZED|rejectUnauthorized/);

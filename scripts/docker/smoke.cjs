@@ -1,5 +1,5 @@
 'use strict';
-// Compose smoke (DK-01a): register, pay, and list what is held, all through the Gateway, from inside the Compose network
+// Compose smoke (DK-01a): register, pay, and list what is held, through Kong (EDGE_URL; the adapter itself when it is unset), from inside the Compose network
 // (the IdP and the SMS simulator are not published, `pnpm docker:smoke`). Same flow in both conditions. Every value below is
 // invented; the script prints verdicts and counts only, never a token, an identity or a response body.
 const { randomUUID } = require('node:crypto');
@@ -8,7 +8,7 @@ const GATEWAY = process.env.GATEWAY_URL;
 // DK-02b: in the proposed condition the adapter takes tokenized bodies from Kong only (X-Edge-Auth), so the flow goes to the edge
 // over TLS verified against the CA of the stack (NODE_EXTRA_CA_CERTS), with tokens of the real IdP. The adapter is only asked
 // for its health (it reports the mode). Without EDGE_URL (dev:up, EDGE_TOKENIZATION=false) the flow goes to the adapter itself.
-const FLOW = process.env.EDGE_URL ?? GATEWAY;
+const FLOW = process.env.EDGE_URL || GATEWAY;
 const IDP = process.env.IDP_URL;
 const SMS = process.env.SMS_URL;
 const MODE = process.env.PRIVACY_MODE;

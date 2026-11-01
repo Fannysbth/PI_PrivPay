@@ -10,6 +10,8 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 - Kata sandi uji per kelas (`keycloak_password_customer|admin|auditor|analyst|bank`, `pnpm docker:secrets` membuatnya; `keycloak_dev_user_password` dihapus): gateway hanya kelas nasabah, bank-simulator hanya kelas bank; `admin-console` klien rahasia (`admin-console_client_secret`). Koleksi Postman memakai `password_nasabah|admin|auditor|analis|bank` dan `admin_console_secret` (jumlah request tetap 149).
 - `KC_LOG_LEVEL=info` dinyatakan; tes membaca log Keycloak setelah pencarian `customer_id`. edge-check `claims` memeriksa dua administrator berbeda lewat Kong (usulan).
 - Hasil uji `idp-admin` di Keycloak 26.4 dicatat di ADR-0017: batasan ke peran `customer` tidak dapat dicapai; reset kata sandi admin lewat `idp-admin` tetap mungkin; Gateway diperlakukan tepercaya sebagai asumsi prototipe.
+- `fix(smoke)`: smoke Compose lewat Kong (TLS terverifikasi, token IdP asli); sebelumnya mode usulan 5/9 (juga di `main`) karena adapter hanya menerima bentuk bertoken dari Kong; sekarang 9/9 di kedua mode.
+- `.gitleaksignore`: tiga sidik jari riwayat lama yang diperiksa satu per satu (izin tertulis Fanny, 2026-11-01); `gitleaks --all` keluar 0; temuan sintetis baru tetap merah.
 - Tes lama diubah: fixture K-03 (`authenticate.spec`) memakai token pembawa satu audiens. Dilewati dari `/simplify`: struktur ulang `idp.ts`, scope dari konfigurasi plugin, modul fixture bersama untuk dua spek realm, manusia ikut scope audiens.
 
 ### DK-04 sesi B: Keycloak menjadi IdP tumpukan Compose, registrasi lewat Admin API (feat/dk-04-b, ADR-0017)
