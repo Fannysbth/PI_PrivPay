@@ -17,6 +17,7 @@ export {
 export {
   ASSESSMENT_SQL,
   AssessmentRepository,
+  type ClientAttributes,
   type NewAssessment,
   type SubjectSql,
 } from './repository';

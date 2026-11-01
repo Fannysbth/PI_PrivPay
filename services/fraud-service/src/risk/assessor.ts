@@ -1,10 +1,12 @@
 import { DAY_MS, type Clock } from '@privpay/common';
 import type { RiskConfig, RiskDecision, RiskEngine, RiskInput } from './engine';
-import type { AssessmentRepository } from './repository';
+import type { AssessmentRepository, ClientAttributes } from './repository';
 
 export interface AssessRequest extends RiskInput {
   /** The FRAUD_DETECTION token. Fraud does not check it with Privacy; it only keys the history by it. */
   readonly pseudonym: string;
+  /** G3: kept by the repository of a mode that has columns for it; the engine below never reads it. */
+  readonly attributes?: ClientAttributes;
 }
 
 export interface Assessment {
@@ -34,7 +36,13 @@ export class FraudAssessor {
       this.deps.repository.history(request.pseudonym, since),
       this.deps.repository.rules(),
     ]);
-    const result = this.deps.engine.evaluate(request, history, rules, this.deps.config);
+    // G3: the score is judged on the numbers alone, so the attributes cannot change a decision.
+    const input: RiskInput = {
+      amount: request.amount,
+      txHour: request.txHour,
+      geohash: request.geohash,
+    };
+    const result = this.deps.engine.evaluate(input, history, rules, this.deps.config);
     await this.deps.repository.insert({
       pseudonym: request.pseudonym,
       amount: request.amount,
@@ -46,6 +54,7 @@ export class FraudAssessor {
       decision: result.decision,
       rulesFired: result.fired,
       assessedAt: this.deps.clock.now(),
+      ...(request.attributes === undefined ? {} : { attributes: request.attributes }),
     });
     return {
       riskScore: result.score,

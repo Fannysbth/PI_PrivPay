@@ -1,7 +1,17 @@
 import type { Pool } from 'pg';
 import type { PriorAssessment, RiskDecision, RuleRow } from './engine';
 
-/** What one assessment leaves in the table: the token and numbers, no identity and no transaction (FR-18). */
+/**
+ * The attributes of the customer the edge handed over beside the reference (G3). They are kept as they came, by a
+ * mode whose table has the columns for them (G6), and are never an input of the score.
+ */
+export interface ClientAttributes {
+  readonly nik?: string;
+  readonly nama?: string;
+  readonly accountNumber?: string;
+}
+
+/** What one assessment leaves in the table: the reference and numbers, no transaction (FR-18); the attributes only where a mode keeps them. */
 export interface NewAssessment {
   readonly pseudonym: string;
   readonly amount: number;
@@ -13,6 +23,7 @@ export interface NewAssessment {
   readonly decision: RiskDecision;
   readonly rulesFired: readonly string[];
   readonly assessedAt: Date;
+  readonly attributes?: ClientAttributes;
 }
 
 /** Every value is a bind parameter (project rules). */
@@ -25,6 +36,9 @@ export const ASSESSMENT_SQL = {
  * folder of each mode (`proposed/`, `baseline/`) supplies them; the repository below is one code for both.
  */
 export interface SubjectSql {
+  // G6: true when `insert` has three more parameters, `$11` (nik), `$12` (nama) and `$13` (account number). pg refuses a
+  // statement bound to more values than it names, so they are bound only for the SQL that has the columns.
+  readonly storesClientAttributes: boolean;
   // PRD 10 + N-45: the history of the subject from $2 on (FRAUD_HISTORY_DAYS), newest first. The window is stated here
   // and not left to the age of the token, so both modes judge the same transactions.
   readonly history: string;
@@ -58,7 +72,7 @@ export class AssessmentRepository {
   }
 
   async insert(row: NewAssessment): Promise<void> {
-    await this.pool.query(this.subject.insert, [
+    const values: unknown[] = [
       row.pseudonym,
       row.amount,
       row.txHour,
@@ -69,6 +83,14 @@ export class AssessmentRepository {
       row.decision,
       [...row.rulesFired],
       row.assessedAt,
-    ]);
+    ];
+    if (this.subject.storesClientAttributes) {
+      values.push(
+        row.attributes?.nik ?? null,
+        row.attributes?.nama ?? null,
+        row.attributes?.accountNumber ?? null,
+      );
+    }
+    await this.pool.query(this.subject.insert, values);
   }
 }
