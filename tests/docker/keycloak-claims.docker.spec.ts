@@ -32,6 +32,7 @@ const realmModule = require('../../scripts/docker/keycloak-realm.cjs') as {
     passwords: Record<string, string>;
   }): object;
   PASSWORD_FILES: Record<string, string>;
+  classOfUser(username: string): string;
   SERVICE_CLIENTS: Record<string, string[]>;
 };
 
@@ -53,16 +54,8 @@ const clientSecrets: Record<string, string> = Object.fromEntries(
 const passwords: Record<string, string> = Object.fromEntries(
   Object.keys(realmModule.PASSWORD_FILES).map((klass) => [klass, secret()]),
 );
-const classOf = (username: string): string =>
-  username.startsWith('admin')
-    ? 'admin'
-    : username.startsWith('auditor')
-      ? 'auditor'
-      : username.startsWith('analis')
-        ? 'fraud_analyst'
-        : username.startsWith('bank')
-          ? 'bank'
-          : 'customer';
+// The class of a fictional test user comes from the table that renders the realm (USERS); an unknown name is an error.
+const classOf = (username: string): string => realmModule.classOfUser(username);
 const adminPassword = secret();
 
 let work = '';
@@ -367,7 +360,7 @@ describe('DK-04 the claims of Keycloak against authenticate()', () => {
           ])
         ).status,
       ).toBe(204);
-      const token = await human('customer-app', found[0]?.username ?? '');
+      const token = await human('customer-app', found[0]?.username ?? '', 'customer');
       expect(who(token, 'api-gateway')).toMatchObject({
         requestingService: 'CUSTOMER',
         customerId,

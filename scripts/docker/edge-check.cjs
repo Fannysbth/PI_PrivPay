@@ -26,15 +26,17 @@ const REALM_PATH = '/realms/privpay/protocol/openid-connect/token';
 const readSecretFile = (name) => fs.readFileSync(path.join(secretsDir(), name), 'utf8').trim();
 // DK-04c: one invented password per class of user (the files of PASSWORD_FILES), read once per run; the privileged human client
 // also needs its secret. The class of a test user follows from its name.
-const { PASSWORD_FILES } = require('./keycloak-realm.cjs');
+const { PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS, classOfUser } = require('./keycloak-realm.cjs');
 const passwordCache = new Map();
 const classPassword = (klass) => {
   if (!passwordCache.has(klass)) passwordCache.set(klass, readSecretFile(PASSWORD_FILES[klass]));
   return passwordCache.get(klass);
 };
-const classOf = (username) =>
-  username.startsWith('nasabah') ? 'customer' : username.startsWith('admin') ? 'admin' : username.startsWith('auditor') ? 'auditor'
-    : username.startsWith('bank') ? 'bank' : 'fraud_analyst';
+// The secret of the privileged human client, read once like the passwords.
+const consoleSecret = () => {
+  if (!passwordCache.has('console')) passwordCache.set('console', readSecretFile('admin-console_client_secret'));
+  return passwordCache.get('console');
+};
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 /** One HTTPS request to the edge. Resolves to { status, headers, body } or { error: code }. */
@@ -91,9 +93,10 @@ function idpCall(method, urlPath, { form, json, token } = {}) {
   });
 }
 
-async function mintToken(username = 'analis.uji.1', clientId = 'admin-console', klass = classOf(username)) {
+// `klass` is only given for a user the check made itself (not in USERS).
+async function mintToken(username = 'analis.uji.1', clientId = 'admin-console', klass = classOfUser(username)) {
   const form = { grant_type: 'password', client_id: clientId, username, password: classPassword(klass) };
-  if (clientId === 'admin-console') form.client_secret = readSecretFile('admin-console_client_secret');
+  if (CONFIDENTIAL_HUMAN_CLIENTS.includes(clientId)) form.client_secret = consoleSecret();
   const answer = await idpCall('POST', REALM_PATH, { form });
   if (typeof answer.json?.access_token !== 'string') throw new Error('Keycloak gave no token');
   return answer.json.access_token;
@@ -208,8 +211,7 @@ async function claimChecks(mode, port, ca) {
   // The route is Privacy's, so only the proposed condition has it (the baseline has no Privacy Service).
   if (mode === 'proposed') {
     const auditLog = (token) => call(port, { url: '/audit-log?limit=1', headers: bearer(token), tls: verified });
-    const adminOne = await mintToken('admin.uji.1');
-    const adminTwo = await mintToken('admin.uji.2');
+    const [adminOne, adminTwo] = await Promise.all([mintToken('admin.uji.1'), mintToken('admin.uji.2')]);
     const subOf = (token) => JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8')).sub;
     add('four eyes: the first administrator is let in on an administrator route', (await auditLog(adminOne)).status, 200);
     add('four eyes: the second administrator is let in on the same route', (await auditLog(adminTwo)).status, 200);

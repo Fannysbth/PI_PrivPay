@@ -22,6 +22,7 @@ const DB_ROLES = Object.freeze([
   'privpay_reconciliation_owner',
   'privpay_reconciliation_app',
 ]);
+const { PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS } = require('./keycloak-realm.cjs');
 const SERVICES = Object.freeze(['privacy', 'transaction', 'fraud', 'notification', 'reconciliation']);
 
 /** name -> how to generate it. Keys are hex, the rest base64url, like the local phase. */
@@ -40,9 +41,11 @@ function plan() {
   files.set('idp-admin_client_secret', () => randomBytes(32).toString('base64url'));
   // DK-04c (ADR-0017 item 5): the secret of the privileged human client, and one password per class of the fictional test users
   // (the names are those of PASSWORD_FILES in keycloak-realm.cjs): no component holds more than its own class.
-  files.set('admin-console_client_secret', () => randomBytes(32).toString('base64url'));
-  for (const klass of ['customer', 'admin', 'auditor', 'analyst', 'bank']) {
-    files.set(`keycloak_password_${klass}`, () => randomBytes(18).toString('base64url'));
+  for (const client of CONFIDENTIAL_HUMAN_CLIENTS) {
+    files.set(`${client}_client_secret`, () => randomBytes(32).toString('base64url'));
+  }
+  for (const file of Object.values(PASSWORD_FILES)) {
+    files.set(file, () => randomBytes(18).toString('base64url'));
   }
   files.set('grafana_admin_password', () => randomBytes(18).toString('base64url'));
   return files;

@@ -89,6 +89,8 @@ const PASSWORD_FILES = {
 };
 const CONFIDENTIAL_HUMAN_CLIENTS = ['admin-console'];
 
+// Two ways to get an audience, on purpose: a person's token names the services of the role (audience-resolve over the roles,
+// K-03: the receiver checks the role against its own path), a service token names the ONE service asked for (scope above).
 const audienceResolve = {
   name: 'audience-from-roles',
   protocol: 'openid-connect',
@@ -206,7 +208,14 @@ function renderRealm({ clientSecrets, passwords, adminClient = 'idp-admin' }) {
 
 const readSecret = (dir, name) => readFileSync(path.join(dir, name), 'utf8').trim();
 
-module.exports = { renderRealm, audienceScope, PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
+/** The password class of a fictional test user, from USERS (the one table). An unknown name is an error, never a default. */
+const classOfUser = (username) => {
+  const row = USERS.find(([name]) => name === username);
+  if (row === undefined) throw new Error(`no password class for user ${username}`);
+  return row[1];
+};
+
+module.exports = { renderRealm, audienceScope, classOfUser, PASSWORD_FILES, CONFIDENTIAL_HUMAN_CLIENTS, REALM, ISSUER_BASE, USERS, SERVICE_CLIENTS, CLIENT_ROLES, ROLE_AUDIENCES, RESOURCES };
 
 if (require.main === module) {
   const [dir, out] = process.argv.slice(2);

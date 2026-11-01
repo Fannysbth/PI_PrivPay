@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 // DK-04c (ADR-0017 items 3, 5): the realm is rendered from secrets, one password per class of user, and a service token
@@ -28,6 +29,8 @@ interface RealmModule {
     passwords: Record<string, string>;
   }): Rendered;
   PASSWORD_FILES: Record<string, string>;
+  audienceScope(service: string): string;
+  classOfUser(username: string): string;
   SERVICE_CLIENTS: Record<string, string[]>;
 }
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -122,5 +125,38 @@ describe('DK-04c service accounts name no audience unless one is asked for (ADR-
     const admin = render().clients.find((client) => client.clientId === 'idp-admin');
     expect(admin?.optionalClientScopes).toEqual([]);
     expect(admin?.defaultClientScopes).toEqual(['basic']);
+  });
+});
+
+describe('DK-04c the name of the audience scope is the same in the realm, in common, and in the Kong plugin', () => {
+  it('DK-04c aud-<service>: audienceScope(), the request of createIdpTokenCache, and the Lua literal agree', () => {
+    const lua = readFileSync(
+      join(
+        __dirname,
+        '..',
+        '..',
+        'services',
+        'gateway',
+        'plugins',
+        'privacy-tokenizer',
+        'kong',
+        'plugins',
+        'privacy-tokenizer',
+        'privacy.lua',
+      ),
+      'utf8',
+    );
+    const idp = readFileSync(
+      join(__dirname, '..', '..', 'packages', 'common', 'src', 'idp.ts'),
+      'utf8',
+    );
+    expect(lua).toContain(`scope = "${realm.audienceScope('privacy-service')}"`);
+    expect(idp).toContain('`aud-${grant.audience}`');
+  });
+
+  it('DK-04c classOfUser knows the test users and refuses an unknown one', () => {
+    expect(realm.classOfUser('admin.uji.2')).toBe('admin');
+    expect(realm.classOfUser('analis.uji.1')).toBe('fraud_analyst');
+    expect(() => realm.classOfUser('nobody')).toThrow(/nobody/);
   });
 });
