@@ -1,0 +1,49 @@
+# M6-02 measurement overlay. NOT part of the official stack; used only with `pnpm measure:exposure` (docs/hasil/README.md).
+# Pair with the two official files and docs/postman/compose.postman.yml:
+#   docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.<mode>.yml -f docs/postman/compose.postman.yml \
+#     -f deploy/measure/compose.measure.yml up -d --wait
+# What it changes, the same in both modes:
+#   - `observer` forwards the calls into Transaction, Fraud, Notification and Reconciliation unchanged and scans them in
+#     memory (deploy/measure/observer.cjs); the callers' URLs point at it. Its control port is published on loopback only.
+#   - the rate limit of the Gateway adapter is off (1000 customers register and pay within minutes); the limit of Kong is
+#     raised with KONG_RATE_LIMIT_PER_MINUTE and RATE_LIMIT_ENABLED in the shell that runs `docker compose` (the harness script does it).
+# It changes nothing else: same images, same limits, same databases. The observer reuses the gateway image only for its node.
+services:
+  observer:
+    image: privpay-gateway:dk01a
+    entrypoint: ['node', '/observer/observer.cjs']
+    environment:
+      CONTROL_PORT: '4199'
+      OBSERVE_MAP: transaction=4102>http://transaction-service:4002,fraud=4103>http://fraud-service:4003,notification=4104>http://notification-service:4004,reconciliation=4105>http://reconciliation-service:4005
+    volumes: ['../measure/observer.cjs:/observer/observer.cjs:ro']
+    # Docker cannot publish a port from an internal network, so the observer joins `edge` as Keycloak does in compose.postman.yml.
+    # 4102 (the Transaction listener) is published only so the harness can plant a canary through it (positive control).
+    ports: ['127.0.0.1:${OBSERVER_HOST_PORT:-4199}:4199', '127.0.0.1:4102:4102']
+    networks: [business, edge]
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ['no-new-privileges:true']
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4199/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  gateway:
+    environment:
+      RATE_LIMIT_ENABLED: 'false'
+      TRANSACTION_SERVICE_URL: http://observer:4102
+      RECONCILIATION_SERVICE_URL: http://observer:4105
+      NOTIFICATION_SERVICE_URL: http://observer:4104
+    depends_on:
+      observer: { condition: service_healthy }
+  transaction-service:
+    environment:
+      FRAUD_SERVICE_URL: http://observer:4103
+      NOTIFICATION_SERVICE_URL: http://observer:4104
+    depends_on:
+      observer: { condition: service_healthy }
+  reconciliation-service:
+    environment:
+      TRANSACTION_SERVICE_URL: http://observer:4102
+    depends_on:
+      observer: { condition: service_healthy }

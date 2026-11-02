@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -b tsconfig.build.json",
     "test": "jest --config jest.config.cjs",
+    "measure:exposure": "node node_modules/jest/bin/jest.js --config jest.measure.config.cjs tests/measure/exposure",
     "test:edge": "node node_modules/jest/bin/jest.js --config jest.docker.config.cjs",
     "test:smoke": "tsc -b tsconfig.build.json && node node_modules/jest/bin/jest.js --config jest.smoke.config.cjs",
     "pii-scan": "jest --config jest.config.cjs tests/pii-scan && node --env-file-if-exists=.env.test node_modules/jest/bin/jest.js --config jest.integration.config.cjs services/privacy-service/test/pii-scan services/transaction-service/test/pii-scan services/fraud-service/test/pii-scan services/notification-service/test/flow services/reconciliation-service/test/flow services/transaction-service/test/baseline-repository services/fraud-service/test/baseline-repository services/notification-service/test/baseline-repository services/reconciliation-service/test/baseline-repository services/reconciliation-service/test/chain services/gateway/test/e2e",
