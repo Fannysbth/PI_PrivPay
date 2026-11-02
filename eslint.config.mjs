@@ -22,6 +22,9 @@ export default tseslint.config(
       'scripts/**',
       'prototypes/**',
       'tests/repo/fixtures/**',
+      // k6 scripts run in k6 (Go), not Node: __ENV, open() and k6/* imports are not TypeScript project files. Prettier still checks them;
+      // tests/performance/k6-harness.spec.ts tests what they must not contain (M7-A).
+      'tests/performance/*.k6.js',
       // Command-line helpers outside any tsconfig; they print with console on purpose.
       'tools/*/scripts/**',
     ],
