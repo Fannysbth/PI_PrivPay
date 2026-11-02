@@ -96,6 +96,13 @@ describe('M7-01 run plan', () => {
       expect(runner).toContain(text);
   });
 
+  it('M7-B a run also removes the stack of the other mode first (both publish the same loopback ports)', () => {
+    const runner = read('scripts', 'perf', 'run.cjs');
+    expect(runner).toContain(
+      "compose(mode === 'baseline' ? 'proposed' : 'baseline', ['down', '-v'",
+    );
+  });
+
   it('M7-01 each run starts from a fresh stack: down -v before up (database reset)', () => {
     const runner = read('scripts', 'perf', 'run.cjs');
     expect(runner.indexOf("['down', '-v'")).toBeGreaterThan(-1);

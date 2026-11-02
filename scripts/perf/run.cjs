@@ -114,6 +114,8 @@ async function oneRun(entry, o, label, outRoot) {
   try {
     if (freeBefore < 1.0 * GB) throw new Error(`free memory ${(freeBefore / GB).toFixed(2)} GB before the run; stopping`);
     process.stdout.write(`run ${entry.run} ${mode}: fresh stack\n`);
+    // Both modes publish the same loopback ports: a stack left over from the other mode would make this one fail to start.
+    compose(mode === 'baseline' ? 'proposed' : 'baseline', ['down', '-v', '--remove-orphans'], 'ignore');
     compose(mode, ['down', '-v', '--remove-orphans']);
     let up = compose(mode, ['up', '-d', '--wait']);
     if (up.status !== 0) {
