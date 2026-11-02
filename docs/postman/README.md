@@ -122,7 +122,7 @@ Semua perintah dijalankan dari akar repo, setelah tumpukan menyala (bagian 2) de
 
 | Perintah | Yang dibuktikan | Hasil yang diharapkan |
 | --- | --- | --- |
-| `corepack pnpm docker:newman proposed` (atau `baseline`) | koleksi Postman dijalankan Newman dalam kontainer sekali pakai di jaringan `edge`, lewat Kong dengan TLS terverifikasi (CA dev) dan kata sandi uji dibaca dari `secrets/docker` | 149 request, 0 gagal; 115 asersi (usulan) atau 103 (baseline). koleksi punya 47 request yang kamu klik; Newman melaporkan 149 karena skrip koleksi ikut mengirim request (mis. pengambilan token) |
+| `corepack pnpm docker:newman proposed` (atau `baseline`) | koleksi Postman dijalankan Newman dalam kontainer sekali pakai di jaringan `edge`, lewat Kong dengan TLS terverifikasi (CA dev) dan kata sandi uji dibaca dari `secrets/docker` | 156 request, 0 gagal; 133 asersi (usulan) atau 119 (baseline). koleksi punya 54 request yang kamu klik; Newman melaporkan 156 karena skrip koleksi ikut mengirim request (mis. pengambilan token) |
 | `docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f docs/postman/compose.postman.yml run --rm smoke` (ganti `proposed` dengan `baseline`) | daftar, bayar (selesai dan ditahan), daftar ditahan, SMS, dari dalam jaringan, lewat Kong | `9/9 checks passed` |
 | `corepack pnpm docker:edge-check proposed base` (fase lain: `claims`, `expiry` ±5 menit, `limits`) | tepi Kong: token rusak atau kedaluwarsa, ukuran, TLS, `/metrics` tertutup | `all checks passed` |
 | `PRIVPAY_STACK_MODE=proposed corepack pnpm test:edge tests/docker/fail-closed` | Privacy dimatikan: 503 `SERVICE_UNAVAILABLE`, pulih saat dinyalakan | 1 tes lulus |
@@ -147,8 +147,29 @@ Memakai Newman sendiri dari host (`npx newman`) memang bisa, tetapi butuh dua ha
 | Docker lambat atau kontainer mati sendiri | memori WSL hampir habis (batas 6 GB; tumpukan penuh dengan Keycloak memakai sekitar 3,5 GB); matikan mode lain dan aplikasi berat |
 | `docker exec` "No such container" | nama kontainer mengikuti mode (`privpay-proposed-...` atau `privpay-baseline-...`); `docker ps` untuk daftarnya |
 
+### Pembayaran dengan `nik`, `nama`, `email`: 201, bukan 422
+
+Skema pembayaran di tepi menerima `nik`, `nama`, dan `email` sebagai field opsional (FR-03), jadi klien yang mengirimnya tidak ditolak. Yang berbeda adalah apa yang terjadi sesudahnya:
+
+- **Usulan:** plugin Kong tidak membaca ketiga field itu, jadi mereka tidak keluar dari tepi. Layanan hilir menerima body bertoken saja. Jawabannya tetap `201`; field itu hanya diam-diam dibuang, bukan ditolak. Request 3.4 menegaskan ini.
+- **Baseline:** `nik` dan `nama` diteruskan (Tabel IV v9, pilihan B, N-57); `email` tidak pernah diteruskan (G2). Karena itu nilai Tabel IV baseline hanya tercapai bila klien mengirim `nik` dan `nama` (N-48): koleksi mengirimnya pada pembayaran hanya bila environment baseline mengaktifkannya.
+- Field lain yang tidak dikenal tetap `422 VALIDATION_ERROR` (request 9.7).
+
+### Enam atribut per mode (harapan Tabel IV, bukan hasil ukur)
+
+Enam atribut yang dihitung E(s): `customer_id`, NIK, nama, nomor rekening, nomor HP, email. Tabel ini adalah **harapan** dari `docs/spec/Bab_Metodologi_v9.md` (Tabel IV). Nilai yang **diukur** ada di `docs/hasil/`. Baseline dikonfigurasi menurut tabel itu (pilihan B), jadi kecocokan baseline dengan Tabel IV bukan bukti independen.
+
+| Layanan | Baseline (diteruskan) | E | Usulan (diteruskan) | E |
+| --- | --- | --- | --- | --- |
+| Transaction | customer_id, NIK, nama, rekening | 4/6 | tidak ada (token saja) | 0 |
+| Fraud | customer_id, NIK, nama, rekening | 4/6 | tidak ada | 0 |
+| Notification | customer_id, NIK, nama, rekening, HP | 5/6 | HP (perlu untuk mengirim SMS) | 1/6 |
+| Reconciliation | customer_id, NIK, nama, rekening | 4/6 | tidak ada | 0 |
+
+`email` tidak diteruskan di kedua mode.
+
 ## 9. Yang tidak dicakup
 
 - Kinerja (latensi, throughput) tidak diukur dan tidak boleh diklaim dari koleksi ini.
-- Fail-closed Privacy Service dengan kontainer dimatikan (NFR-19) tidak ada di koleksi; itu pekerjaan M7.
+- Fail-closed Privacy Service dengan kontainer dimatikan (NFR-19) tidak ada di koleksi; diuji di M6-04 (`tests/measure`, Privacy dimatikan dan dijeda di tumpukan Compose).
 - Keycloak 26.4.0 mode dev (H2, bukan konfigurasi produksi) adalah IdP tumpukan (ADR-0017). Token akun layanan memuat satu audiens (scope `aud-<layanan>`, DK-04c) dan kata sandi uji terpisah per kelas pengguna; `idp-admin` tidak dapat dibatasi di Keycloak 26.4 (ADR-0017). Kong 3.9.4 sudah di depan `gateway-adapter` (DK-02a): TLS, tanda tangan dan `exp` JWT, batas ukuran, batas laju. Audience, peran, skema, dan tokenisasi tetap di adapter. `/metrics` adapter tidak ditawarkan di Kong; `/health` hanya menjawab status (tanpa mode); pastikan environment sama dengan mode yang dinyalakan.

@@ -159,6 +159,8 @@ function buildPlan(mode, options) {
         RECONCILIATION_SERVICE_URL: url('reconciliation'),
         NOTIFICATION_SERVICE_URL: url('notification'),
         API_GATEWAY_CLIENT_SECRET_FILE: secret('api-gateway_client_secret'),
+        // ADR-0018: the downstream wait of POST /reconciliation/run only. Set here as in Compose, so the two environments stay equal.
+        BATCH_HTTP_TIMEOUT_MS: '60000',
       },
     },
   ];

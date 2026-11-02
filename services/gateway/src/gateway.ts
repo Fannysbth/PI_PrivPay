@@ -46,6 +46,8 @@ export interface GatewayDependencies {
   readonly keys: JwksKeys;
   readonly http: HttpClient;
   readonly masker: ErrorMasker;
+  /** ADR-0018: the downstream timeout of a route marked `batch`. */
+  readonly batchTimeoutMs: number;
   readonly tokenizer: Tokenizer;
   readonly registration: RegistrationFlow;
   /** The gateway's own service token, one cache per upstream (the token's `aud` is that upstream). */
@@ -128,6 +130,7 @@ export class Gateway {
       path: `${this.upstreamPath(route, match)}${this.queryString(query)}`,
       ...(body === undefined ? {} : { body }),
       idempotent: route.method === 'GET',
+      ...(route.batch === true ? { timeoutMs: this.deps.batchTimeoutMs } : {}),
       requestId: request.requestId,
       ...(route.auth === 'human-token'
         ? { authorization: `Bearer ${person}` }

@@ -26,6 +26,8 @@ export const gatewayConfigSchema = z
     TRANSACTION_SERVICE_URL: serviceUrl,
     RECONCILIATION_SERVICE_URL: serviceUrl,
     NOTIFICATION_SERVICE_URL: serviceUrl,
+    // ADR-0018: the downstream timeout of the batch routes (POST /reconciliation/run); every other route uses HTTP_TIMEOUT_MS.
+    BATCH_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
     RATE_LIMIT_ENABLED: z
       .enum(['true', 'false'])
       .default('true')

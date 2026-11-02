@@ -11,6 +11,7 @@ const input = (over: Partial<KongConfigInput> = {}): KongConfigInput => ({
   issuer: 'test-issuer',
   upstreamUrl: 'http://gateway:4010',
   rateLimit: { enabled: true, perMinute: 300 },
+  batchTimeoutMs: 60_000,
   maxPayloadBytes: 65_536,
   maxTokenLifetimeSeconds: 300,
   tokenizer: {
@@ -36,7 +37,14 @@ interface Route {
 }
 interface Config {
   _format_version: string;
-  services: { url: string; retries: number; routes: Route[] }[];
+  services: {
+    name: string;
+    url: string;
+    retries: number;
+    read_timeout: number;
+    write_timeout: number;
+    routes: Route[];
+  }[];
   consumers: { jwt_secrets: Record<string, unknown>[] }[];
   plugins: Plugin[];
 }
@@ -108,6 +116,38 @@ describe('DK-02a Kong declarative config: who needs a token', () => {
     // A hidden retry could repeat a payment; the adapter has its own idempotency and retry rules (NFR-12).
     expect(service?.retries).toBe(0);
     for (const candidate of routes(config)) expect(candidate.protocols).toEqual(['https']);
+  });
+});
+
+describe('ADR-0018 the batch route has its own Kong service and timeout', () => {
+  const batch = (over?: Partial<KongConfigInput>) =>
+    build(over).services.find((service) => service.name === 'gateway-adapter-batch');
+
+  it('ADR-0018 POST /reconciliation/run alone is on a service of the same upstream with the batch read timeout', () => {
+    const service = batch({ batchTimeoutMs: 45_000 });
+    expect(service?.url).toBe('http://gateway:4010');
+    expect(service?.read_timeout).toBe(45_000);
+    expect(service?.write_timeout).toBe(45_000);
+    expect(service?.retries).toBe(0);
+    expect(service?.routes).toHaveLength(1);
+    expect(service?.routes[0]).toMatchObject({
+      methods: ['POST'],
+      paths: ['~/reconciliation/run$'],
+      protocols: ['https'],
+    });
+    expect(service?.routes[0]?.plugins?.map((plugin) => plugin.name)).toEqual(['jwt']);
+  });
+
+  it('ADR-0018 every other route stays on the main service, which keeps its own timeout', () => {
+    const main = build().services.find((service) => service.name === 'gateway-adapter');
+    expect(main?.read_timeout).toBe(30_000);
+    expect(
+      main?.routes.some((candidate) => candidate.paths.some((p) => p.includes('reconciliation'))),
+    ).toBe(false);
+  });
+
+  it('ADR-0018 a batch timeout that is not positive is refused', () => {
+    expect(() => build({ batchTimeoutMs: 0 })).toThrow();
   });
 });
 

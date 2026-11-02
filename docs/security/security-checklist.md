@@ -71,7 +71,7 @@ Kolom "Status (penutup M4)" diisi pada penutup milestone M3 (2026-10-21) dan dip
 
 | # | Butir | Verifikasi | Kapan | Status (penutup M4) |
 | --- | --- | --- | --- | --- |
-| S-50 | Privacy Service mati → 503 di Gateway, tidak ada data mentah ke hilir | TK-16 + pemindai | M2 | ◐ sebagian (M4), [bukti](review-M4.md#s-50) |
+| S-50 | Privacy Service mati → 503 di Gateway, tidak ada data mentah ke hilir | TK-16 + pemindai | M2 | ✔ lulus (M6-04: Privacy dihentikan dan dijeda di Compose, 503 di tiap rute, nol nilai ke hilir; usulan), [bukti](../hasil/tutup-proposed.json) |
 | S-51 | Rate limit 100/menit/akun | TK-11 | M1 | ✔ lulus, [bukti](review-M3.md#s-51) |
 | S-52 | Timeout 3 detik, maks 2 retry, hanya idempoten | NFR-12, uji injeksi keterlambatan | M4 | ✔ lulus (M4), [bukti](review-M4.md#s-52) |
 | S-53 | Tidak ada race penerbitan token ganda | uji paralel (TF-07) | M2 | ✔ lulus, [bukti](review-M3.md#s-53) |
@@ -93,9 +93,9 @@ Kolom "Status (penutup M4)" diisi pada penutup milestone M3 (2026-10-21) dan dip
 
 | # | Butir | Verifikasi | Kapan | Status (penutup M4) |
 | --- | --- | --- | --- | --- |
-| S-70 | E(s) mode proposed: Transaction, Fraud, Reconciliation = 0; Notification = 1/6 | skrip E(s), nilai kenari | M6 | — belum, [bukti](review-M3.md#s-70) |
-| S-71 | Query join lintas DB lewat pseudonim tidak menghasilkan baris | percobaan join (PRD 18.2) | M6 | — belum, [bukti](review-M3.md#s-71) |
-| S-72 | Uji penautan baseline vs proposed berjalan dan dilaporkan jujur, termasuk linkability dalam TTL | skrip penautan | M6 | — belum, [bukti](review-M3.md#s-72) |
+| S-70 | E(s) mode proposed: Transaction, Fraud, Reconciliation = 0; Notification = 1/6 | skrip E(s), nilai kenari | M6 | ✔ lulus (M6; usulan 0, 0, 1/6, 0 pada 1000 nasabah, commit b5a4f2f), [bukti](../hasil/e-s-proposed.md) |
+| S-71 | Query join lintas DB lewat pseudonim tidak menghasilkan baris | percobaan join (PRD 18.2) | M6 | ✔ lulus (M6; 0 subjek tertaut pada salinan basis data, 200 subjek, kontrol baseline 200/200), [bukti](../hasil/tautan-proposed.json) |
+| S-72 | Uji penautan baseline vs proposed berjalan dan dilaporkan jujur, termasuk linkability dalam TTL | skrip penautan | M6 | ◐ sebagian (M6; penautan dan pengelompokan dalam satu layanan dilaporkan; kedaluwarsa token 30 hari tidak diukur), [bukti](../hasil/tautan-proposed.json) |
 | S-73 | Fail-closed diuji dengan replika dimatikan saat beban | skrip | M6 | — belum, [bukti](review-M3.md#s-73) |
 | S-74 | Data uji seluruhnya fiktif | tinjauan seed | M0, tiap PR | ✔ lulus, [bukti](review-M3.md#s-74) |
 | S-75 | Kode baseline (identitas mentah) tidak dapat aktif pada konfigurasi proposed; env tak konsisten ditolak saat start; Privacy Service menolak baseline | tes mode per layanan + mutasi, smoke proses nyata | M5 | ✔ lulus (M5), [bukti](review-M5.md#s-75) |

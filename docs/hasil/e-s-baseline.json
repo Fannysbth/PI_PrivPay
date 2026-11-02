@@ -1,0 +1,370 @@
+{
+  "meta": {
+    "mode": "baseline",
+    "project": "privpay-baseline",
+    "date": "2026-11-02T07:34:42.203Z",
+    "commit": "b5a4f2f191537898598877a9bac4c27e318057c9",
+    "workingTreeDirty": false,
+    "fraudHistoryDays": "30",
+    "customers": 1000,
+    "gatewayInFront": "Kong 3.9.4 -> gateway-adapter (Keycloak as IdP)",
+    "rateLimit": "off for the measurement (adapter and Kong), the same in both modes",
+    "clientSendsNikNamaWithPayment": "yes in both modes (identical client behaviour; baseline forwards, proposed drops at the Gateway)",
+    "images": {
+      "kong": "kong:3.9.4@sha256:c1f5fbb80cd666b4b29b4e97875ecd64d93b01b23fb3083bc3e424b3bad5fdd5 sha256:c1f5fbb80cd6",
+      "gateway": "privpay-gateway:dk01a sha256:3e0cc40b209c",
+      "fraud-service": "privpay-fraud-service:dk01a sha256:6c090aa71cbf",
+      "notification-service": "privpay-notification-service:dk01a sha256:c209ea1a6298",
+      "reconciliation-service": "privpay-reconciliation-service:dk01a sha256:db014c5aa469",
+      "transaction-service": "privpay-transaction-service:dk01a sha256:0cfd91c54770",
+      "keycloak": "quay.io/keycloak/keycloak:26.4.0@sha256:5f3fb534cde6bf006d79f5912473e5d2c828c707cdfc52e16972803aca9d43dd sha256:5f3fb534cde6",
+      "pg-fraud": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "observer": "privpay-gateway:dk01a sha256:3e0cc40b209c",
+      "sms-simulator": "privpay-sms-simulator:dk01a sha256:f0b24b3585d6",
+      "pg-notification": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "pg-reconciliation": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "pg-transaction": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "bank-simulator": "privpay-bank-simulator:dk01a sha256:321636aea3c4"
+    },
+    "scope": "structural exposure of direct identifiers; not re-identification risk; not a performance measurement"
+  },
+  "controls": {
+    "payload": [
+      "customer_id",
+      "nik",
+      "hp",
+      "rekening",
+      "email",
+      "nama"
+    ],
+    "database": [
+      "customer_id",
+      "nik",
+      "hp",
+      "rekening",
+      "email",
+      "nama"
+    ],
+    "log": [
+      "customer_id",
+      "nik",
+      "hp",
+      "rekening",
+      "email",
+      "nama"
+    ],
+    "expectedEach": [
+      "customer_id",
+      "nik",
+      "hp",
+      "rekening",
+      "email",
+      "nama"
+    ]
+  },
+  "flow": {
+    "customers": 1000,
+    "registered": 1000,
+    "payments": 2500,
+    "completedOrHeldAtPayment": {
+      "COMPLETED": 2250,
+      "HELD": 250
+    },
+    "reviewed": 250,
+    "settlementReportStatus": 202,
+    "settlementItems": 500,
+    "reconciliationRunStatus": 200,
+    "reconciliationRunSeconds": 4.391,
+    "reconciliationRunServiceSide": null,
+    "reconciliation": {
+      "batch_id": "B-20261102",
+      "tx_count": 2500,
+      "matched": 500,
+      "unmatched": 2000,
+      "status": "PARTIAL"
+    },
+    "seconds": 218
+  },
+  "exposure": {
+    "exchangesObservedByProxy": 9522,
+    "usersApiStatus": 200,
+    "rows": [
+      {
+        "service": "transaction",
+        "expected": [
+          "customer_id",
+          "nik",
+          "nama",
+          "rekening"
+        ],
+        "observed": [
+          "customer_id",
+          "nik",
+          "rekening",
+          "nama"
+        ],
+        "expectedE": 0.6666666666666666,
+        "observedE": 0.6666666666666666,
+        "missing": [],
+        "unexpected": [],
+        "match": true,
+        "precision": 1,
+        "recall": 1
+      },
+      {
+        "service": "fraud",
+        "expected": [
+          "customer_id",
+          "nik",
+          "nama",
+          "rekening"
+        ],
+        "observed": [
+          "customer_id",
+          "nik",
+          "rekening",
+          "nama"
+        ],
+        "expectedE": 0.6666666666666666,
+        "observedE": 0.6666666666666666,
+        "missing": [],
+        "unexpected": [],
+        "match": true,
+        "precision": 1,
+        "recall": 1
+      },
+      {
+        "service": "notification",
+        "expected": [
+          "customer_id",
+          "nik",
+          "nama",
+          "rekening",
+          "hp"
+        ],
+        "observed": [
+          "customer_id",
+          "nik",
+          "hp",
+          "rekening",
+          "nama"
+        ],
+        "expectedE": 0.8333333333333334,
+        "observedE": 0.8333333333333334,
+        "missing": [],
+        "unexpected": [],
+        "match": true,
+        "precision": 1,
+        "recall": 1
+      },
+      {
+        "service": "reconciliation",
+        "expected": [
+          "customer_id",
+          "nik",
+          "nama",
+          "rekening"
+        ],
+        "observed": [
+          "customer_id",
+          "nik",
+          "rekening",
+          "nama"
+        ],
+        "expectedE": 0.6666666666666666,
+        "observedE": 0.6666666666666666,
+        "missing": [],
+        "unexpected": [],
+        "match": true,
+        "precision": 1,
+        "recall": 1
+      }
+    ],
+    "detail": [
+      {
+        "service": "transaction",
+        "attributes": [
+          "customer_id",
+          "nik",
+          "rekening",
+          "nama"
+        ],
+        "e": 0.6666666666666666,
+        "eUmum": 0.6,
+        "eSpesifik": 1,
+        "byPlace": {
+          "payload": [
+            "customer_id",
+            "nik",
+            "rekening",
+            "nama"
+          ],
+          "database": [
+            "customer_id",
+            "nik",
+            "rekening",
+            "nama"
+          ],
+          "log": []
+        }
+      },
+      {
+        "service": "fraud",
+        "attributes": [
+          "customer_id",
+          "nik",
+          "rekening",
+          "nama"
+        ],
+        "e": 0.6666666666666666,
+        "eUmum": 0.6,
+        "eSpesifik": 1,
+        "byPlace": {
+          "payload": [
+            "customer_id",
+            "nik",
+            "rekening",
+            "nama"
+          ],
+          "database": [
+            "customer_id",
+            "nik",
+            "rekening",
+            "nama"
+          ],
+          "log": []
+        }
+      },
+      {
+        "service": "notification",
+        "attributes": [
+          "customer_id",
+          "nik",
+          "hp",
+          "rekening",
+          "nama"
+        ],
+        "e": 0.8333333333333334,
+        "eUmum": 0.8,
+        "eSpesifik": 1,
+        "byPlace": {
+          "payload": [
+            "customer_id",
+            "nik",
+            "hp",
+            "rekening",
+            "nama"
+          ],
+          "database": [
+            "customer_id",
+            "nik",
+            "hp",
+            "rekening",
+            "nama"
+          ],
+          "log": []
+        }
+      },
+      {
+        "service": "reconciliation",
+        "attributes": [
+          "customer_id",
+          "nik",
+          "rekening",
+          "nama"
+        ],
+        "e": 0.6666666666666666,
+        "eUmum": 0.6,
+        "eSpesifik": 1,
+        "byPlace": {
+          "payload": [
+            "customer_id",
+            "nik",
+            "rekening",
+            "nama"
+          ],
+          "database": [
+            "customer_id",
+            "nik",
+            "rekening",
+            "nama"
+          ],
+          "log": []
+        }
+      }
+    ],
+    "auth": {
+      "service": "auth",
+      "attributes": [
+        "customer_id"
+      ],
+      "e": 0.16666666666666666,
+      "eUmum": 0.2,
+      "eSpesifik": 0,
+      "byPlace": {
+        "payload": [],
+        "database": [
+          "customer_id"
+        ],
+        "log": []
+      }
+    },
+    "averages": {
+      "inZone": 0.7083333333333333,
+      "all": 0.5999999999999999
+    },
+    "averagesClassGeneral": {
+      "inZone": 0.65,
+      "all": 0.56
+    },
+    "averagesClassSpecific": {
+      "inZone": 1,
+      "all": 0.8
+    },
+    "others": {
+      "kong": {
+        "payload": [],
+        "database": [],
+        "log": []
+      },
+      "gateway": {
+        "payload": [],
+        "database": [],
+        "log": []
+      },
+      "sms-simulator": {
+        "payload": [],
+        "database": [],
+        "log": []
+      }
+    }
+  },
+  "disclosure": {
+    "available": false,
+    "attempted": 5,
+    "auditTokensIssued": 0,
+    "statusOfAuditRequest": [
+      503,
+      503,
+      503,
+      503,
+      503
+    ],
+    "opened": 0,
+    "onlyApprovedAttribute": 0,
+    "valueMatchesRegistered": 0,
+    "auditRowsFound": 0,
+    "auditTextClean": 0,
+    "routineAuditTextClean": 0,
+    "residueAfterDisclosure": {
+      "reconciliation database": [
+        "nik",
+        "rekening",
+        "nama"
+      ],
+      "reconciliation log": [],
+      "gateway log": [],
+      "kong log": []
+    }
+  }
+}

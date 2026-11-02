@@ -29,6 +29,11 @@ export interface HttpRequest {
    * until it is made idempotent (platform-dan-ci.md section 6).
    */
   readonly idempotent: boolean;
+  /**
+   * ADR-0018: the timeout of this one request, in place of the client's `timeoutMs`. Only an operation that is a batch by
+   * nature (an admin run over a day's data) sets it; everything else keeps the 3 s of NFR-12.
+   */
+  readonly timeoutMs?: number;
   readonly requestId?: string;
   /** Full `Authorization` value (`Bearer ...`), used as is; defaults to the configured service token. */
   readonly authorization?: string;
@@ -160,8 +165,14 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
   }
 
   /** One attempt. Whatever goes wrong becomes a labelled failure, never a crash and never a leaked value. */
-  async function attempt(url: string, method: HttpMethod, headers: Headers, body?: string) {
-    const signal = timeoutSignal(options.timeoutMs);
+  async function attempt(
+    url: string,
+    method: HttpMethod,
+    headers: Headers,
+    timeoutMs: number,
+    body?: string,
+  ) {
+    const signal = timeoutSignal(timeoutMs);
     try {
       const response = await fetchImpl(url, { method, headers, body, redirect: 'manual', signal });
       if (RETRYABLE_STATUSES.has(response.status)) {
@@ -216,7 +227,13 @@ export function createHttpClient(options: HttpClientOptions): HttpClient {
       );
 
       for (let tried = 1; ; tried += 1) {
-        const outcome: Outcome = await attempt(url, request.method, headers, body);
+        const outcome: Outcome = await attempt(
+          url,
+          request.method,
+          headers,
+          request.timeoutMs ?? options.timeoutMs,
+          body,
+        );
         if (outcome.kind === 'ok') return outcome.response;
         if (!outcome.retryable || !request.idempotent || tried > options.maxRetries) {
           throw new DomainError('SERVICE_UNAVAILABLE', outcome.cause);

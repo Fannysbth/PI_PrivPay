@@ -39,6 +39,8 @@ const schema = z
       .transform((value) => value === 'true'),
     // Above the adapter's own limit (RATE_LIMIT_PER_MINUTE, per caller): Kong's is a flood guard per client address.
     KONG_RATE_LIMIT_PER_MINUTE: z.coerce.number().int().min(1).default(300),
+    // ADR-0018: how long Kong waits on the batch route; the adapter takes the same variable.
+    BATCH_HTTP_TIMEOUT_MS: z.coerce.number().int().positive().default(60_000),
     // The largest body of any route (settlement, 64 KiB; gateway spec 3).
     KONG_MAX_PAYLOAD_BYTES: z.coerce.number().int().min(1).default(65_536),
     // ADR-0007 item 7.
@@ -107,6 +109,7 @@ export async function renderKongConfig(
     issuer: config.IDP_ISSUER,
     upstreamUrl: config.KONG_UPSTREAM_URL,
     rateLimit: { enabled: config.RATE_LIMIT_ENABLED, perMinute: config.KONG_RATE_LIMIT_PER_MINUTE },
+    batchTimeoutMs: config.BATCH_HTTP_TIMEOUT_MS,
     maxPayloadBytes: config.KONG_MAX_PAYLOAD_BYTES,
     maxTokenLifetimeSeconds: config.ACCESS_TOKEN_MAX_LIFETIME_SECONDS,
     tokenizer:

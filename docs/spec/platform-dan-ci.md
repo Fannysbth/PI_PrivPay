@@ -83,6 +83,7 @@ Aturan: kegagalan yang tidak dikenal menjadi 500 `INTERNAL_ERROR`; detail hanya 
 
 ## 6. Klien HTTP antar-layanan (NFR-12, qa E-03)
 
+- **[ADR-0018]** Satu pengecualian: `POST /reconciliation/run` (operasi batch admin) memakai `BATCH_HTTP_TIMEOUT_MS` (bawaan 60000) lewat `timeoutMs` per permintaan; rute lain tidak.
 - Timeout `HTTP_TIMEOUT_MS` (3000), maksimum `HTTP_MAX_RETRY` (2) percobaan ulang dengan backoff eksponensial dan jitter, **hanya** bila `idempotent: true` pada pemanggilan.
 - Yang dianggap idempoten: `POST /pseudonymize` (token aktif dipakai ulang), `POST /resolve-domain`, `POST /re-issue` (percobaan kedua mengembalikan token baru yang sama karena penerbitan memakai ulang baris aktif; dibuktikan tes), `PATCH /transaction-status`, `POST /notification/register` (upsert), `GET`. Yang tidak: `POST /notification/send`, `POST /fraud/assess` (menulis riwayat), `POST /identity` sebelum dibuat idempoten (lihat privacy-service 4.9), `POST /de-pseudonymize` (sekali pakai).
 - Retry hanya untuk kegagalan jaringan, timeout, dan 502/503/504. Kegagalan 4xx tidak diulang.

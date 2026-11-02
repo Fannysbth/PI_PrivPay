@@ -136,6 +136,8 @@ export function gatewayModules(
     fetch?: typeof fetch;
     routes?: readonly Route[];
     logDestination?: { write(line: string): void };
+    /** Tests replace the timer of the HTTP client to read the timeouts without waiting for them. */
+    timeoutSignal?: (ms: number) => AbortSignal;
   } = {},
 ): (context: ModuleContext) => ServiceModules {
   return ({ env, clock }) => {
@@ -151,6 +153,7 @@ export function gatewayModules(
       timeoutMs: config.HTTP_TIMEOUT_MS,
       maxRetries: config.HTTP_MAX_RETRY,
       ...(overrides.fetch === undefined ? {} : { fetch: overrides.fetch }),
+      ...(overrides.timeoutSignal === undefined ? {} : { timeoutSignal: overrides.timeoutSignal }),
     });
 
     const idp = idpOf(config);
@@ -198,6 +201,7 @@ export function gatewayModules(
       }),
       http,
       masker,
+      batchTimeoutMs: config.BATCH_HTTP_TIMEOUT_MS,
       tokenizer: new Tokenizer({
         privacy,
         newTransactionId: () => ids.generate(),

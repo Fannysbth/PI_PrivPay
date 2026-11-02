@@ -15,6 +15,8 @@ export interface KongConfigInput {
   /** Where the adapter listens on the internal network. */
   readonly upstreamUrl: string;
   readonly rateLimit: { readonly enabled: boolean; readonly perMinute: number };
+  /** ADR-0018: how long Kong waits for the adapter on the batch route (POST /reconciliation/run) only. */
+  readonly batchTimeoutMs: number;
   /** The largest body Kong lets through; the adapter's per-route limits (16 or 64 KiB) apply under it. */
   readonly maxPayloadBytes: number;
   /** ADR-0007 item 7: an access token lives at most this many seconds. */
@@ -164,6 +166,7 @@ function tokenizerPlugin(input: TokenizerInput): Plugin {
 /** The Kong declarative configuration (format 3.0) as a plain object; the caller writes it as JSON. */
 export function buildKongConfig(input: KongConfigInput): Record<string, unknown> {
   positive('rate limit per minute', input.rateLimit.perMinute);
+  positive('batch timeout', input.batchTimeoutMs);
   positive('maximum payload bytes', input.maxPayloadBytes);
   positive('maximum token lifetime', input.maxTokenLifetimeSeconds);
 
@@ -252,6 +255,25 @@ export function buildKongConfig(input: KongConfigInput): Record<string, unknown>
             plugins: [jwt, { name: 'request-termination', config: { status_code: 404 } }],
           },
           { name: 'api', paths: ['/'], ...common, plugins: [jwt] },
+        ],
+      },
+      {
+        // ADR-0018: an admin batch operation, not a customer path. Same upstream, its own timeout, so the longer wait is
+        // limited to this one route. The adapter still cuts every other route at 3 s (NFR-12).
+        name: 'gateway-adapter-batch',
+        url: input.upstreamUrl,
+        retries: 0,
+        connect_timeout: 3000,
+        read_timeout: input.batchTimeoutMs,
+        write_timeout: input.batchTimeoutMs,
+        routes: [
+          {
+            name: 'reconciliation-run',
+            methods: ['POST'],
+            paths: ['~/reconciliation/run$'],
+            ...common,
+            plugins: [jwt],
+          },
         ],
       },
     ],
