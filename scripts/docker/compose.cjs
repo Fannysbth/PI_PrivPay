@@ -27,12 +27,15 @@ function composeArgs(mode, rest) {
 const secretsDir = () => process.env['DOCKER_SECRETS_DIR'] ?? path.join(__dirname, '..', '..', 'secrets', 'docker');
 const caFile = () => path.join(secretsDir(), 'tls_ca.crt');
 
-module.exports = { composeArgs, MODES, caFile, secretsDir };
+/** The environment of a compose call: the monitoring file picks its Prometheus configuration from PRIVPAY_MODE (M7-A). */
+const composeEnv = (mode) => ({ ...process.env, PRIVPAY_MODE: mode });
+
+module.exports = { composeArgs, composeEnv, MODES, caFile, secretsDir };
 
 if (require.main === module) {
   const [mode, ...rest] = process.argv.slice(2);
   try {
-    const result = spawnSync('docker', composeArgs(mode, rest), { stdio: 'inherit' });
+    const result = spawnSync('docker', composeArgs(mode, rest), { stdio: 'inherit', env: composeEnv(mode) });
     process.exitCode = result.status ?? 1;
   } catch (error) {
     process.stderr.write(`${error instanceof Error ? error.message : 'error'}\n`);

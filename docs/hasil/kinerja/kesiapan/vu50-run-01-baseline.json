@@ -1,0 +1,244 @@
+{
+  "meta": {
+    "commit": "8f1228c41f84253db6f892492580b14fe0c4f26a",
+    "treeClean": false,
+    "mode": "baseline",
+    "run": 1,
+    "date": "2026-11-02T11:49:30.772Z",
+    "official": false,
+    "label": "kesiapan",
+    "params": {
+      "vus": 50,
+      "warmup": "0s",
+      "duration": "60s",
+      "thinkMs": 0
+    },
+    "k6Image": "grafana/k6@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d",
+    "freeMemoryBeforeGB": 2,
+    "host": {
+      "cpus": 16,
+      "totalMemoryGB": 13.81,
+      "os": "Windows_NT 10.0.26200"
+    },
+    "imageVersions": {
+      "kong": "kong:3.9.4@sha256:c1f5fbb80cd666b4b29b4e97875ecd64d93b01b23fb3083bc3e424b3bad5fdd5 sha256:c1f5fbb80cd6",
+      "gateway": "privpay-gateway:dk01a sha256:3e0cc40b209c",
+      "transaction-service": "privpay-transaction-service:dk01a sha256:0cfd91c54770",
+      "reconciliation-service": "privpay-reconciliation-service:dk01a sha256:db014c5aa469",
+      "notification-service": "privpay-notification-service:dk01a sha256:c209ea1a6298",
+      "fraud-service": "privpay-fraud-service:dk01a sha256:6c090aa71cbf",
+      "keycloak": "quay.io/keycloak/keycloak:26.4.0@sha256:5f3fb534cde6bf006d79f5912473e5d2c828c707cdfc52e16972803aca9d43dd sha256:5f3fb534cde6",
+      "prometheus": "prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996 sha256:63805ebb8d2b",
+      "pg-transaction": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "pg-reconciliation": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "pg-notification": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "pg-fraud": "postgres:16.15@sha256:9e2cf6287f25c3151f4c9421ccce2b17f3e60061c111a29165e0d2cdd9ff0a97 sha256:9e2cf6287f25",
+      "grafana": "grafana/grafana:12.1.0@sha256:6ac590e7cabc2fbe8d7b8fc1ce9c9f0582177b334e0df9c927ebd9670469440f sha256:6ac590e7cabc",
+      "cadvisor": "gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57 sha256:3de2bd520312",
+      "bank-simulator": "privpay-bank-simulator:dk01a sha256:321636aea3c4",
+      "sms-simulator": "privpay-sms-simulator:dk01a sha256:f0b24b3585d6"
+    },
+    "prometheusTargetsBefore": [
+      {
+        "job": "cadvisor",
+        "instance": "cadvisor:8080",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "reconciliation-service:4005",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "bank-simulator:4006",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "sms-simulator:4007",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "gateway:4010",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "transaction-service:4002",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "fraud-service:4003",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "notification-service:4004",
+        "health": "up"
+      }
+    ],
+    "freeMemoryLowestGB": 1.31,
+    "k6ExitCode": 0,
+    "prometheusTargetsAfter": [
+      {
+        "job": "cadvisor",
+        "instance": "cadvisor:8080",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "sms-simulator:4007",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "gateway:4010",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "transaction-service:4002",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "fraud-service:4003",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "notification-service:4004",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "reconciliation-service:4005",
+        "health": "up"
+      },
+      {
+        "job": "privpay",
+        "instance": "bank-simulator:4006",
+        "health": "up"
+      }
+    ]
+  },
+  "status": "ok",
+  "k6": {
+    "mode": "baseline",
+    "vus": 50,
+    "warmup": "0s",
+    "duration": "60s",
+    "thinkMs": 0,
+    "metrics": {
+      "http_req_duration{scenario:measure,target:kong}": {
+        "min": 26.042661,
+        "med": 151.338629,
+        "max": 519.176745,
+        "p(90)": 222.620296,
+        "p(95)": 250.53734989999998,
+        "p(99)": 314.1530479600004,
+        "avg": 158.85019382599717
+      },
+      "http_req_duration{scenario:measure,target:kong,kind:normal}": {
+        "med": 144.51097,
+        "max": 482.328816,
+        "p(90)": 213.44566360000005,
+        "p(95)": 241.72398809999999,
+        "p(99)": 304.60905851999996,
+        "avg": 152.78074820845725,
+        "min": 26.042661
+      },
+      "http_req_duration{scenario:measure,target:kong,kind:suspicious}": {
+        "p(99)": 344.8810223000004,
+        "avg": 172.81686678231137,
+        "min": 41.510517,
+        "med": 167.472848,
+        "max": 519.176745,
+        "p(90)": 240.000005,
+        "p(95)": 268.30059700000004
+      },
+      "http_req_failed{scenario:measure,target:kong}": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 17879
+      },
+      "http_reqs{scenario:measure,target:kong}": {
+        "count": 17879,
+        "rate": 245.75549009318956
+      },
+      "checks{scenario:measure}": {
+        "rate": 1,
+        "passes": 17879,
+        "fails": 0
+      },
+      "iterations{scenario:measure}": {
+        "count": 17879,
+        "rate": 245.75549009318956
+      }
+    },
+    "payStatusAllPhases": {
+      "201": 17879
+    }
+  },
+  "resources": {
+    "windowSeconds": 60,
+    "note": "cAdvisor through Prometheus; window = the measured phase, evaluated when k6 ended (the warm-up before it is outside the window)",
+    "cpuCoresMean": {
+      "bank-simulator": 0.012243629423628088,
+      "cadvisor": 0.0036730724934641444,
+      "fraud-service": 0.06906149968098828,
+      "grafana": 0.0025073358857296657,
+      "keycloak": 0.2953153600486939,
+      "notification-service": 0.244793879614482,
+      "pg-fraud": 0.04948467126009468,
+      "pg-notification": 0.07531378833828649,
+      "pg-reconciliation": 0.009686983158290205,
+      "pg-transaction": 0.23445809425114947,
+      "prometheus": 0.0012368120532421205,
+      "sms-simulator": 0.0746595501432879,
+      "gateway": 0.22788969851009822,
+      "reconciliation-service": 0.009811113094414174,
+      "transaction-service": 0.2812134471390989,
+      "kong": 0.1183399789462069
+    },
+    "memoryBytesPeak": {
+      "bank-simulator": 40484864,
+      "cadvisor": 23584768,
+      "fraud-service": 60362752,
+      "grafana": 98865152,
+      "keycloak": 506716160,
+      "notification-service": 78921728,
+      "pg-fraud": 50274304,
+      "pg-notification": 48660480,
+      "pg-reconciliation": 29081600,
+      "pg-transaction": 56754176,
+      "prometheus": 22749184,
+      "sms-simulator": 59580416,
+      "gateway": 79138816,
+      "reconciliation-service": 39759872,
+      "transaction-service": 83873792,
+      "kong": 151646208
+    },
+    "memoryBytesMean": {
+      "bank-simulator": 39120213.333333336,
+      "cadvisor": 22585344,
+      "fraud-service": 56362325.333333336,
+      "grafana": 98642602.66666667,
+      "keycloak": 504796501.3333333,
+      "notification-service": 76292096,
+      "pg-fraud": 49403221.333333336,
+      "pg-notification": 47607125.333333336,
+      "pg-reconciliation": 29067946.666666668,
+      "pg-transaction": 51565226.666666664,
+      "prometheus": 22652928,
+      "sms-simulator": 53535402.666666664,
+      "gateway": 73431040,
+      "reconciliation-service": 39671808,
+      "transaction-service": 82574677.33333333,
+      "kong": 145125376
+    }
+  }
+}

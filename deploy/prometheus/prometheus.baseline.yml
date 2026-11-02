@@ -1,0 +1,23 @@
+# Prometheus scrape configuration, BASELINE condition (M7-A). Same as prometheus.proposed.yml without the job for the Privacy
+# Service: baseline has no such service (ADR-0003, ADR-0006), so listing it only made a permanent "down" target. Chosen by
+# docker-compose.monitoring.yml from PRIVPAY_MODE.
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: privpay
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - transaction-service:4002
+          - fraud-service:4003
+          - notification-service:4004
+          - reconciliation-service:4005
+          - bank-simulator:4006
+          - sms-simulator:4007
+          - gateway:4010
+  # NFR-18: CPU and memory of every container (Metodologi Tabel V). A shorter interval than the services: a rate needs samples.
+  - job_name: cadvisor
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['cadvisor:8080']

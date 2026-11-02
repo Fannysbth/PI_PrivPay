@@ -35,7 +35,8 @@
     "docker:compose": "node scripts/docker/compose.cjs",
     "db:migrate": "tsc -b tsconfig.build.json && node --env-file-if-exists=.env.test packages/common/dist/bin/db-migrate.js",
     "db:pg16": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/db/pg16.ps1",
-    "db:test-databases": "tsc -b tsconfig.build.json && node --env-file-if-exists=.env.test packages/common/dist/testing/bin/test-databases.js"
+    "db:test-databases": "tsc -b tsconfig.build.json && node --env-file-if-exists=.env.test packages/common/dist/testing/bin/test-databases.js",
+    "perf:run": "node scripts/perf/run.cjs"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
