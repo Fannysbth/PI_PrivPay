@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc -b tsconfig.build.json",
     "test": "jest --config jest.config.cjs",
+    "measure:linkage": "node node_modules/jest/bin/jest.js --config jest.measure.config.cjs tests/measure/linkage",
     "measure:exposure": "node node_modules/jest/bin/jest.js --config jest.measure.config.cjs tests/measure/exposure",
     "test:edge": "node node_modules/jest/bin/jest.js --config jest.docker.config.cjs",
     "test:smoke": "tsc -b tsconfig.build.json && node node_modules/jest/bin/jest.js --config jest.smoke.config.cjs",
