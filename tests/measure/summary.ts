@@ -1,5 +1,6 @@
 import type { CanaryAttribute } from '../pii-scan/canary';
-import type { Comparison, Exposure } from '../pii-scan/exposure';
+import type { Exposure } from '../pii-scan/exposure';
+import type { Comparison } from '../pii-scan/tabel-iv';
 
 // M6-02: the Indonesian summary written next to the JSON of a run. It prints what was observed beside what Tabel IV expected
 // and states the differences as they are; it has no knob that could bring them closer.

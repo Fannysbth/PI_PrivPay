@@ -10,13 +10,13 @@ import {
 } from '../pii-scan/canary';
 import {
   averages,
-  compareWithExpected,
   exposureOf,
   PLACES,
   ZONE_SERVICES,
   type Observation,
   type Place,
 } from '../pii-scan/exposure';
+import { compareWithExpected } from '../pii-scan/tabel-iv';
 import { scanText } from '../pii-scan/scan';
 import {
   claimsOf,
@@ -242,13 +242,15 @@ describe(`M6-02 exposure E(s) through Kong (${MODE}, ${String(CUSTOMERS)} custom
       },
     );
     const admin = await tokenFor(ROLE_TOKENS.admin);
+    const runStarted = Date.now();
     const run = await edge(
       '/reconciliation/run',
       { authorization: `Bearer ${admin}` },
       { date: today },
     );
-    // The Gateway gives a downstream call 3 s (NFR-12). If the run is slower, the client sees 503 although the service finished:
-    // the service's own log line (same request_id) says what it answered. Reported as a finding, not tuned.
+    const runSeconds = (Date.now() - runStarted) / 1000;
+    // ADR-0018: the batch route waits for the service. If it still answered 503, the service's own log line (same request_id)
+    // says what it answered; the wait below keeps the scans from starting before the run has finished.
     const runRequestId = (run.body as { error?: { request_id?: string }; request_id?: string })
       .error?.request_id;
     // The scans below must not start before the run has finished, so wait (up to two minutes) for the service's own line.
@@ -279,12 +281,15 @@ describe(`M6-02 exposure E(s) through Kong (${MODE}, ${String(CUSTOMERS)} custom
       settlementReportStatus: settlement.status,
       settlementItems: reported.length,
       reconciliationRunStatus: run.status,
+      // A finding of ADR-0018, not a performance claim: the wall clock of this run on this laptop.
+      reconciliationRunSeconds: runSeconds,
       reconciliationRunServiceSide: serviceSide,
       reconciliation: run.body,
       seconds: Math.round((Date.now() - started) / 1000),
     };
     expect(registered).toBe(CUSTOMERS);
     expect(settlement.status).toBe(202);
+    expect(run.status).toBe(200);
   });
 
   it('M6-02 scan: payload, database and log of every service, then the comparison with Tabel IV', async () => {

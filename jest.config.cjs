@@ -9,6 +9,8 @@ module.exports = {
     '\\.integration\\.spec\\.ts$',
     '\\.smoke\\.spec\\.ts$',
     '\\.docker\\.spec\\.ts$',
+    // M6 measurements need the running Compose stack (jest.measure.config.cjs).
+    '\\.measure\\.spec\\.ts$',
   ],
   // `source` resolves workspace packages to their TypeScript (see their package.json exports); the built output is
   // only used by the processes the smoke tests start.

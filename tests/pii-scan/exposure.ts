@@ -1,9 +1,8 @@
 import { CANARY_ATTRIBUTES, type CanaryAttribute } from './canary';
 
-// M6-02 (Metodologi D.2, Tabel IV; docs/spec/pengujian-dan-pengukuran.md 6): E(s) = |P(s)| / 6 over what a scan OBSERVED.
-// This module only does arithmetic over (service, attribute, place) observations; it never sees a value. The expected sets
-// below are the table as data, written before any run. They are an expectation to be compared against, not a target:
-// a difference is a finding and is reported as it is.
+// M6-02 (Metodologi D.2; docs/spec/pengujian-dan-pengukuran.md 6): E(s) = |P(s)| / 6 over what a scan OBSERVED.
+// This module only counts observations (service, attribute, place); it never sees a value and it holds NO expected value.
+// The expectation of Tabel IV is in tabel-iv.ts, which this module does not import (M6 decision 4b).
 
 export type Mode = 'baseline' | 'proposed';
 export type Place = 'payload' | 'database' | 'log';
@@ -17,24 +16,6 @@ export interface Observation {
   readonly attribute: CanaryAttribute;
   readonly place: Place;
 }
-
-/** Tabel IV. The phone of Notification is counted as exposed in both modes (the conservative reading of the methodology). */
-export const EXPECTED_P: Readonly<
-  Record<Mode, Readonly<Record<ZoneService, readonly CanaryAttribute[]>>>
-> = {
-  baseline: {
-    transaction: ['customer_id', 'nik', 'nama', 'rekening'],
-    fraud: ['customer_id', 'nik', 'nama', 'rekening'],
-    notification: ['customer_id', 'nik', 'nama', 'rekening', 'hp'],
-    reconciliation: ['customer_id', 'nik', 'nama', 'rekening'],
-  },
-  proposed: {
-    transaction: [],
-    fraud: [],
-    notification: ['hp'],
-    reconciliation: [],
-  },
-};
 
 /** Per data class (docs/spec/pengujian-dan-pengukuran.md 6): the five general identifiers, and the account number. */
 const UMUM: readonly CanaryAttribute[] = ['nama', 'nik', 'hp', 'email', 'customer_id'];
@@ -71,48 +52,6 @@ export function exposureOf(observations: readonly Observation[], service: string
       attributes.filter((attribute) => SPESIFIK.includes(attribute)).length / SPESIFIK.length,
     byPlace,
   };
-}
-
-export interface Comparison {
-  readonly service: ZoneService;
-  readonly expected: readonly CanaryAttribute[];
-  readonly observed: readonly CanaryAttribute[];
-  readonly expectedE: number;
-  readonly observedE: number;
-  readonly missing: CanaryAttribute[];
-  readonly unexpected: CanaryAttribute[];
-  readonly match: boolean;
-  /** |expected ∩ observed| / |expected|; 1 when both are empty. */
-  readonly precision: number;
-  /** |expected ∩ observed| / |observed|; 1 when both are empty. */
-  readonly recall: number;
-}
-
-const ratio = (hit: number, whole: number, bothEmpty: boolean): number =>
-  whole === 0 ? (bothEmpty ? 1 : 0) : hit / whole;
-
-export function compareWithExpected(
-  mode: Mode,
-  observations: readonly Observation[],
-): Comparison[] {
-  return ZONE_SERVICES.map((service) => {
-    const expected = EXPECTED_P[mode][service];
-    const observed = exposureOf(observations, service).attributes;
-    const hit = observed.filter((attribute) => expected.includes(attribute)).length;
-    const bothEmpty = expected.length === 0 && observed.length === 0;
-    return {
-      service,
-      expected,
-      observed,
-      expectedE: expected.length / CANARY_ATTRIBUTES.length,
-      observedE: observed.length / CANARY_ATTRIBUTES.length,
-      missing: expected.filter((attribute) => !observed.includes(attribute)),
-      unexpected: observed.filter((attribute) => !expected.includes(attribute)),
-      match: expected.length === observed.length && hit === expected.length,
-      precision: ratio(hit, expected.length, bothEmpty),
-      recall: ratio(hit, observed.length, bothEmpty),
-    };
-  });
 }
 
 const mean = (values: readonly number[]): number =>
