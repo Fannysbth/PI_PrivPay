@@ -13,6 +13,13 @@ export interface ReportItem {
 /** What a run decided about its batch (spec reconciliation 3.2 steps 3 and 4). */
 export interface BatchOutcome {
   readonly matchedItemIds: readonly string[];
+  /** G5: the holder of each matched item that has one; stored only where the mode has the columns. */
+  readonly holders?: readonly {
+    readonly itemId: string;
+    readonly customerId: string | null;
+    readonly nik: string | null;
+    readonly nama: string | null;
+  }[];
   readonly txCount: number;
   readonly totalAmount: number;
   readonly status: 'MATCHED' | 'PARTIAL' | 'MISMATCHED';
@@ -50,6 +57,9 @@ export const RECON_SQL = {
 export interface SubjectSql {
   readonly items: string;
   readonly insertItems: string;
+  // G5, G6: where the mode keeps who a matched item belongs to. `clear` runs first so that a run replaces the earlier one;
+  // `set` takes the item ids, customer ids, NIKs and names as four parallel arrays after the batch id. Absent in proposed.
+  readonly storeHolders?: { readonly clear: string; readonly set: string };
 }
 
 interface ItemRow {
@@ -154,6 +164,20 @@ export class ReconciliationRepository {
       const items = await this.itemsOf(client, batchId);
       const outcome = decide(items);
       await client.query(RECON_SQL.markMatched, [batchId, [...outcome.matchedItemIds]]);
+      const storeHolders = this.subject.storeHolders;
+      if (storeHolders !== undefined) {
+        await client.query(storeHolders.clear, [batchId]);
+        const holders = outcome.holders ?? [];
+        if (holders.length > 0) {
+          await client.query(storeHolders.set, [
+            batchId,
+            holders.map((holder) => holder.itemId),
+            holders.map((holder) => holder.customerId),
+            holders.map((holder) => holder.nik),
+            holders.map((holder) => holder.nama),
+          ]);
+        }
+      }
       await client.query(RECON_SQL.updateBatch, [
         batchId,
         outcome.txCount,

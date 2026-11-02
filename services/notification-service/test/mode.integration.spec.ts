@@ -160,6 +160,47 @@ describe('M5-02 FR-23 Notification in baseline mode', () => {
     expect(running.reached).not.toContain('privacy.test');
   });
 
+  it('G4 G6 baseline accepts the NIK, the name and the account number, keeps them, and the message text names none of them', async () => {
+    running = await start('baseline');
+    const attributes = {
+      nik: ['3201', '0000', '0000', '0042'].join(''),
+      nama: 'Fiktif Uji Empat',
+      account_number: '0000000042',
+    };
+    const registered = await running.post('/notification/register', 'api-gateway', {
+      ...register(CUSTOMER_ID),
+      ...attributes,
+    });
+    expect(registered.status).toBe(201);
+    expect(JSON.stringify(registered.body)).not.toContain(attributes.nik);
+    expect(await running.rows()).toMatchObject([
+      {
+        customer_id: CUSTOMER_ID,
+        nik: attributes.nik,
+        nama: attributes.nama,
+        account_number: attributes.account_number,
+      },
+    ]);
+    await running.post('/notification/send', 'transaction', send(CUSTOMER_ID));
+    // Sending behaves as before: a generic text, keyed by the customer id.
+    expect(running.sent).toEqual([{ to: PHONE, text: 'Transaksi Rp35000 berhasil.' }]);
+  });
+
+  it('G4 baseline still refuses the e-mail and any other field, and stores nothing', async () => {
+    running = await start('baseline');
+    for (const extra of [{ email: 'x@example.test' }, { rekening: '0000000042' }]) {
+      expect(
+        (
+          await running.post('/notification/register', 'api-gateway', {
+            ...register(CUSTOMER_ID),
+            ...extra,
+          })
+        ).status,
+      ).toBe(422);
+    }
+    expect(await running.rows()).toEqual([]);
+  });
+
   it('M5-02 N-44 a token is refused at the edge in both routes and nothing is stored or sent', async () => {
     running = await start('baseline');
     expect(
@@ -172,6 +213,25 @@ describe('M5-02 FR-23 Notification in baseline mode', () => {
 });
 
 describe('M5-02 FR-23 Notification in proposed mode', () => {
+  it('G4 proposed refuses the NIK, the name and the account number with 422 and stores nothing', async () => {
+    running = await start('proposed');
+    for (const extra of [
+      { nik: '0000000000000042' },
+      { nama: 'Fiktif Uji Empat' },
+      { account_number: '0000000042' },
+    ]) {
+      expect(
+        (
+          await running.post('/notification/register', 'api-gateway', {
+            ...register(TOKEN),
+            ...extra,
+          })
+        ).status,
+      ).toBe(422);
+    }
+    expect(await running.rows()).toEqual([]);
+  });
+
   it('M5-02 N-44 a customer id is refused at the edge in both routes', async () => {
     running = await start('proposed');
     expect(

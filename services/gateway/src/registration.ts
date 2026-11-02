@@ -32,6 +32,11 @@ export interface RegistrationDeps {
   readonly users: UserDirectory;
   /** The gateway's own token for Notification. */
   readonly notificationToken: Pick<TokenCache, 'get'>;
+  /**
+   * G4, Tabel IV: baseline only. The form is held here, and the conventional system hands Notification the NIK, the name
+   * and the account number beside the customer id and the phone. The e-mail is never forwarded (G2).
+   */
+  readonly forwardClientIdentity?: boolean;
   /** Only a request id and a reason are ever logged (invariant 6). */
   readonly logger?: Pick<Logger, 'warn'>;
 }
@@ -73,7 +78,13 @@ export class RegistrationFlow {
         targetService: 'NOTIFICATION',
         purpose: 'NOTIFICATION_REGISTRATION',
       });
-      await this.registerPhone(domain, form.hp);
+      await this.registerPhone(
+        domain,
+        form.hp,
+        this.deps.forwardClientIdentity === true
+          ? { nik: form.nik, nama: form.nama, account_number: form.rekening }
+          : undefined,
+      );
     } catch (error) {
       await this.compensate(customerId, handle, requestId);
       throw error instanceof DomainError
@@ -83,14 +94,23 @@ export class RegistrationFlow {
     return { status: 201, body: { status: 'REGISTERED' } };
   }
 
-  private async registerPhone(domain: string, phone: string): Promise<void> {
+  private async registerPhone(
+    domain: string,
+    phone: string,
+    attributes?: { nik: string; nama: string; account_number: string },
+  ): Promise<void> {
     if (!this.deps.domainRef.test(domain))
       throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
     const response = await this.deps.http.request({
       service: 'notification-service',
       method: 'POST',
       path: '/notification/register',
-      body: { notification_domain_id: domain, phone, channel: 'SMS' },
+      body: {
+        notification_domain_id: domain,
+        phone,
+        channel: 'SMS',
+        ...(attributes ?? {}),
+      },
       // Upsert keyed by the domain token (spec notification 3.1): safe to repeat.
       idempotent: true,
       authorization: `Bearer ${await this.deps.notificationToken.get()}`,

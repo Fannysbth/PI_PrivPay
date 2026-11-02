@@ -3,6 +3,7 @@ import { z } from 'zod';
 import {
   PrivacyRejectedError,
   TokenExpiredError,
+  type FraudAttributes,
   type FraudClient,
   type NotificationClient,
   type PrivacyStatusClient,
@@ -109,6 +110,7 @@ export class HttpFraudClient implements FraudClient {
     readonly amount: number;
     readonly txHour: number;
     readonly geohash: string;
+    readonly identity?: FraudAttributes;
   }) {
     const response = await this.deps.http.request({
       service: 'fraud-service',
@@ -119,6 +121,12 @@ export class HttpFraudClient implements FraudClient {
         amount: request.amount,
         tx_hour: request.txHour,
         geohash: request.geohash,
+        // G3: only what the mode handed over, and only the values that exist.
+        ...(request.identity?.nik === undefined ? {} : { nik: request.identity.nik }),
+        ...(request.identity?.nama === undefined ? {} : { nama: request.identity.nama }),
+        ...(request.identity?.accountNumber === undefined
+          ? {}
+          : { account_number: request.identity.accountNumber }),
       },
       idempotent: false,
       authorization: `Bearer ${await this.deps.serviceToken.get()}`,

@@ -1,5 +1,5 @@
 import type { Clock } from '@privpay/common';
-import type { ContactRepository, SendStatus } from './contacts';
+import type { ClientAttributes, ContactRepository, SendStatus } from './contacts';
 
 /** `PrivacyClient` of spec notification 2: it turns a notification token into the domain token, never into a person. */
 export interface PrivacyClient {
@@ -29,6 +29,8 @@ export interface RegisterRequest {
   readonly notificationDomainId: string;
   readonly phone: string;
   readonly channel: 'SMS';
+  /** G4: kept only by a mode whose table has the columns; never part of a message. */
+  readonly attributes?: ClientAttributes;
 }
 export interface Registered {
   readonly created: boolean;
@@ -64,6 +66,7 @@ export class NotificationService {
       request.phone,
       request.channel,
       this.deps.clock.now(),
+      request.attributes,
     );
     return { ...result, notificationDomainId: request.notificationDomainId };
   }

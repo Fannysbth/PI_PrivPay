@@ -15,6 +15,8 @@ import { createServiceApp, type ServiceApp } from '@privpay/common/nest';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
 import request from 'supertest';
 import { reconciliationModules } from '../src/reconciliation.module';
+import { randomInt } from 'node:crypto';
+import { buildCanary } from '../../../tests/pii-scan/canary';
 import { FakeTransactions } from './fakes';
 
 // Seam: the settlement report and the run, in each mode, with the service's real module over the database of that
@@ -195,6 +197,80 @@ describe('M5-02 FR-23 Reconciliation in baseline mode', () => {
     );
     expect(answer.status).toBe(503);
     expect(await running.rows('audit_requests')).toEqual([]);
+  });
+});
+
+// G5, G6 (Tabel IV): a conventional Reconciliation keeps who a matched bank line belongs to. The canary is built at run time
+// from a random index; the holder comes from Transaction's completed list, never from the bank report.
+describe('G5 Reconciliation in baseline keeps the holder of a matched item', () => {
+  const person = buildCanary(randomInt(1000, 99_000));
+  const holder = {
+    customerId: person.customer_id,
+    nik: person.nik,
+    nama: person.nama,
+    accountNumber: ACCOUNT_1,
+  };
+  const withHolder = (transactions: FakeTransactions): void => {
+    transactions.completed = transactions.completed.map((item) =>
+      item.transactionId === 'TX-10001' ? { ...item, holder } : item,
+    );
+  };
+
+  it('G5 the matched item holds the customer id, NIK and name, an unmatched one holds none', async () => {
+    running = await start('baseline');
+    withHolder(running.transactions);
+    await running.post('/reconciliation/settlement-report', report(ACCOUNT_1, '1234567899'));
+    const ran = await running.post('/reconciliation/run', { date: DATE });
+    expect(ran.body).toMatchObject({ matched: 1, status: 'PARTIAL' });
+    const items = await running.rows('settlement_items');
+    expect(items.find((row) => row.account_number === ACCOUNT_1)).toMatchObject({
+      matched: true,
+      customer_id: person.customer_id,
+      nik: person.nik,
+      nama: person.nama,
+    });
+    expect(items.find((row) => row.account_number === '1234567899')).toMatchObject({
+      matched: false,
+      customer_id: null,
+      nik: null,
+      nama: null,
+    });
+  });
+
+  it('G5 the outcome of the run is the same with and without the holder', async () => {
+    running = await start('baseline');
+    await running.post('/reconciliation/settlement-report', report(ACCOUNT_1, ACCOUNT_3));
+    const without = (await running.post('/reconciliation/run', { date: DATE })).body as object;
+    withHolder(running.transactions);
+    const withIt = (await running.post('/reconciliation/run', { date: DATE })).body as object;
+    expect(withIt).toEqual(without);
+  });
+
+  it('G5 running the date again without the holder replaces the earlier run', async () => {
+    running = await start('baseline');
+    await running.post('/reconciliation/settlement-report', report(ACCOUNT_1, ACCOUNT_3));
+    withHolder(running.transactions);
+    await running.post('/reconciliation/run', { date: DATE });
+    running.transactions.completed = running.transactions.completed.map(
+      ({ holder: _kept, ...item }) => item,
+    );
+    await running.post('/reconciliation/run', { date: DATE });
+    for (const row of await running.rows('settlement_items')) {
+      expect(row).toMatchObject({ customer_id: null, nik: null, nama: null });
+    }
+  });
+});
+
+describe('G5 Reconciliation in proposed keeps no holder', () => {
+  it('G5 the items of the proposed schema have no customer id, NIK or name column', async () => {
+    running = await start('proposed');
+    const columns = await running.db.owner.query<{ column_name: string }>(
+      `SELECT column_name FROM information_schema.columns WHERE table_name = 'settlement_items'`,
+    );
+    const names = columns.rows.map((row) => row.column_name);
+    for (const forbidden of ['customer_id', 'nik', 'nama']) {
+      expect(names).not.toContain(forbidden);
+    }
   });
 });
 

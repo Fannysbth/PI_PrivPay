@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { disclosedAttributes } from './attributes';
 import type {
   Actor,
+  ClientHolder,
   CompletedTransaction,
   DisclosedAttributes,
   PrivacyClient,
@@ -29,14 +30,20 @@ const detailAnswer = z.object({
   account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
 });
 const openAnswer = z.object({ attributes: disclosedAttributes });
+// G5: in baseline the item also names the holder (Tabel IV); every holder field is optional because an old row has no NIK or
+// name. The schema is not strict, and the holder is only kept when the bootstrap of the mode says so (`acceptClientIdentity`).
+const completedItem = z.object({
+  transaction_id: z.string().regex(TRANSACTION_ID),
+  amount: z.number().int().min(1),
+  completed_at: z.string().min(1),
+  customer_id: z.string().max(16).optional(),
+  account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
+  // Transaction stores what the client sent, an empty string included: it is read as absent, never as a failure of the day.
+  nik: z.string().max(64).optional(),
+  nama: z.string().max(200).optional(),
+});
 const completedPage = z.object({
-  items: z.array(
-    z.object({
-      transaction_id: z.string().regex(TRANSACTION_ID),
-      amount: z.number().int().min(1),
-      completed_at: z.string().min(1),
-    }),
-  ),
+  items: z.array(completedItem),
   next_cursor: z.string().nullable(),
 });
 
@@ -44,6 +51,8 @@ export interface ClientDeps {
   readonly http: HttpClient;
   /** Reconciliation's own service token for the service it calls (`aud` privacy-service or transaction-service). */
   readonly serviceToken: Pick<TokenCache, 'get'>;
+  /** G5: set by the bootstrap of the baseline mode only; the completed list then names the holder of each item. */
+  readonly acceptClientIdentity?: boolean;
 }
 
 const unavailable = (cause: string): DomainError => new DomainError('SERVICE_UNAVAILABLE', cause);
@@ -52,6 +61,17 @@ const unavailable = (cause: string): DomainError => new DomainError('SERVICE_UNA
 const PAGE_SIZE = 200;
 /** A bound on a loop that follows a cursor from another process: a cursor that never ends is a failure, not a hang. */
 const MAX_PAGES = 1_000;
+
+/** The holder an item names, or none when it names nothing of the four (an old row). */
+function holderOf(item: z.infer<typeof completedItem>): ClientHolder | undefined {
+  const holder: ClientHolder = {
+    ...(!item.customer_id ? {} : { customerId: item.customer_id }),
+    ...(!item.nik ? {} : { nik: item.nik }),
+    ...(!item.nama ? {} : { nama: item.nama }),
+    ...(!item.account_number ? {} : { accountNumber: item.account_number }),
+  };
+  return Object.keys(holder).length === 0 ? undefined : holder;
+}
 
 /** D1 (spec transaction 3.4). Every read is idempotent, so the shared client may retry it (NFR-12). */
 export class HttpTransactionClient implements TransactionClient {
@@ -71,13 +91,16 @@ export class HttpTransactionClient implements TransactionClient {
         idempotent: true,
         authorization: `Bearer ${await this.deps.serviceToken.get()}`,
       });
+      const withHolder = this.deps.acceptClientIdentity === true;
       const parsed = completedPage.safeParse(response.body);
       if (response.status !== 200 || !parsed.success) throw unavailable('transaction_answer');
       for (const item of parsed.data.items) {
+        const holder = withHolder ? holderOf(item) : undefined;
         all.push({
           transactionId: item.transaction_id,
           amount: item.amount,
           completedAt: item.completed_at,
+          ...(holder === undefined ? {} : { holder }),
         });
       }
       cursor = parsed.data.next_cursor;

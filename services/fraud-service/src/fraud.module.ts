@@ -91,6 +91,7 @@ export function fraudModules(
         source: idpJwksSource(http, idpOf(config)),
       }),
       customerRef: subjectRefShape(config.PRIVACY_MODE).customer,
+      acceptClientIdentity: config.PRIVACY_MODE === 'baseline',
       assessor: new FraudAssessor({
         // ADR-0006: the one place the mode picks the repository; the assessor below is the same code in both.
         repository:

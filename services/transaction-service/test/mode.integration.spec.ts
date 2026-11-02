@@ -202,20 +202,26 @@ describe('M5-02 FR-23 Transaction in baseline mode', () => {
   });
 });
 
-describe('M5-03 FR-23 G1 Transaction in baseline mode receives the NIK and the name the Gateway passes on', () => {
+describe('M5-03 FR-23 G1 G3 G6 Transaction in baseline mode receives the NIK and the name the Gateway passes on', () => {
   const person = buildCanary(54);
 
-  it('M5-03 G1 the payment is accepted with them, and they are kept nowhere and handed to no one', async () => {
+  // Changed with the owner's decision on Tabel IV (baseline forwards the real attributes): before, this test asserted
+  // that the NIK and the name were kept nowhere and handed to no one.
+  it('M5-03 G1 G3 G6 the payment is accepted with them, kept in the baseline row and handed to Fraud, and to no one else', async () => {
     running = await start('baseline');
     const answer = await running.pay({ nik: person.nik, nama: person.nama });
     expect(answer.status).toBe(201);
-    const everything = JSON.stringify([
-      await running.rows(),
-      running.fraudBodies,
-      running.notificationBodies,
+    expect(await running.rows()).toMatchObject([{ nik: person.nik, nama: person.nama }]);
+    expect(running.fraudBodies).toMatchObject([
+      {
+        pseudonym: CUSTOMER_ID,
+        nik: person.nik,
+        nama: person.nama,
+        account_number: ACCOUNT_NUMBER,
+      },
     ]);
-    expect(everything).not.toContain(person.nik);
-    expect(everything).not.toContain(person.nama);
+    expect(JSON.stringify(running.notificationBodies)).not.toContain(person.nik);
+    expect(JSON.stringify(running.notificationBodies)).not.toContain(person.nama);
   });
 
   it('M5-03 G1 S-40 a field outside the list, the email among them, is still refused and nothing is stored', async () => {

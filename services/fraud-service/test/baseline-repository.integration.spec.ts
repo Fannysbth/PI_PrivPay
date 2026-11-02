@@ -56,7 +56,9 @@ describe('M5-01 FR-23 the baseline fraud schema keys the history by customer_id'
     expect(names.filter((name) => name.includes('pseudonym'))).toEqual([]);
   });
 
-  it('M5-01 FR-23 apart from the identity column the schema, the rules and the grants are those of proposed', async () => {
+  // Changed with the owner's decision on Tabel IV (G3, G6): baseline also keeps nik, nama and account_number, so they
+  // are the only columns it adds; before, the report had to be empty.
+  it('M5-01 FR-23 G6 apart from the identity column and the three copied attributes the schema, the rules and the grants are those of proposed', async () => {
     other = await createTestDb(config, { service: 'fraud', suffix: 'm501p' });
     await migrate(other.owner, { root: migrations, mode: 'proposed' });
     const report = await compareSchemas(
@@ -65,7 +67,16 @@ describe('M5-01 FR-23 the baseline fraud schema keys the history by customer_id'
       { 'fraud_assessments.pseudonym': 'fraud_assessments.customer_id' },
       { proposed: 'privpay_fraud_app', baseline: 'privpay_fraud_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
+    expect(report).toEqual({
+      missing: [
+        'baseline adds fraud_assessments.nik',
+        'baseline adds fraud_assessments.nama',
+        'baseline adds fraud_assessments.account_number',
+      ],
+      different: [],
+      indexes: [],
+      grants: [],
+    });
     const rules = (db: TestDb) => db.owner.query('SELECT * FROM risk_rules ORDER BY rule');
     expect((await rules(db)).rows).toEqual((await rules(other)).rows);
   });

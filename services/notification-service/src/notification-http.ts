@@ -9,7 +9,7 @@ import {
   type JwksKeys,
 } from '@privpay/common';
 import { z } from 'zod';
-import { TEMPLATES, type NotificationService } from './notification';
+import { TEMPLATES, type ClientAttributes, type NotificationService } from './notification';
 
 const SERVICE = 'notification-service';
 /** Spec notification 3.1: the Gateway registers a contact (AZ-32). */
@@ -21,8 +21,18 @@ const TRANSACTION_ID = /^TX-[0-9]{1,29}$/;
 
 // A reference to the customer and a phone number come in; a field of any other name, an identity among them, is refused
 // (S-40). The reference is a token in proposed and the customer id in baseline (N-44), so its form is the mode's.
-const bodies = (customer: RegExp) => ({
+// G4: in baseline the Gateway holds the registration form and passes the NIK, the name and the account number on; the
+// edge lets exactly those three through when the mode asks, and proposed refuses them like any unknown field.
+const clientAttributeFields = {
+  nik: z.string().max(64).optional(),
+  nama: z.string().max(200).optional(),
+  account_number: z.string().max(20).optional(),
+};
+const clientAttributesSchema = z.object(clientAttributeFields);
+const noClientAttributes: Partial<typeof clientAttributeFields> = {};
+const bodies = (customer: RegExp, acceptClientIdentity: boolean) => ({
   register: z.strictObject({
+    ...(acceptClientIdentity ? clientAttributeFields : noClientAttributes),
     notification_domain_id: z.string().regex(customer),
     phone: z.string().regex(/^08[0-9]{8,12}$/),
     channel: z.literal('SMS'),
@@ -42,6 +52,8 @@ export interface NotificationHttpDeps {
   readonly notifications: Pick<NotificationService, 'register' | 'send'>;
   /** The form of the reference to the customer in this mode (N-44). */
   readonly customerRef: RegExp;
+  /** G4: baseline only, see `clientAttributeFields`. */
+  readonly acceptClientIdentity?: boolean;
 }
 
 const single = (value: string | string[] | undefined): string | undefined =>
@@ -56,7 +68,7 @@ export class NotificationHttp {
   private readonly schemas: ReturnType<typeof bodies>;
 
   constructor(private readonly deps: NotificationHttpDeps) {
-    this.schemas = bodies(deps.customerRef);
+    this.schemas = bodies(deps.customerRef, deps.acceptClientIdentity === true);
   }
 
   private async caller(headers: AuthHeaders): Promise<Authenticated> {
@@ -80,10 +92,18 @@ export class NotificationHttp {
     const parsed = this.schemas.register.safeParse(body);
     if (!parsed.success) throw new DomainError('VALIDATION_ERROR');
     const input = parsed.data;
+    // The strict schema above already refused any other field; this one only reads the three that proposed never lets in.
+    const sent = clientAttributesSchema.parse(input);
+    const attributes: ClientAttributes = {
+      ...(sent.nik === undefined ? {} : { nik: sent.nik }),
+      ...(sent.nama === undefined ? {} : { nama: sent.nama }),
+      ...(sent.account_number === undefined ? {} : { accountNumber: sent.account_number }),
+    };
     const result = await this.deps.notifications.register({
       notificationDomainId: input.notification_domain_id,
       phone: input.phone,
       channel: input.channel,
+      ...(Object.keys(attributes).length === 0 ? {} : { attributes }),
     });
     return {
       created: result.created,

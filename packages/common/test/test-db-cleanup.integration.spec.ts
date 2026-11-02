@@ -9,7 +9,7 @@ import {
   type TestDb,
 } from '../src/testing';
 
-// Needs PostgreSQL and the roles from scripts/db/bootstrap.ps1. Only databases created here (suffixes m006a..m006e of
+// Needs PostgreSQL and the roles from scripts/db/bootstrap.ps1. Only databases created here (suffixes m006a..m006g of
 // the privacy service) are ever dropped, and they are dropped again at the end so this file leaves no leftovers; the
 // service databases are only listed.
 const config = loadConfig(pgConfigSchema, process.env);
@@ -92,10 +92,17 @@ describe('M0-05 dropping test databases', () => {
     expect(after).toContain(SERVICE_DBS.privacy.database);
   });
 
-  it('M0-05 a database held by a session it may not end is reported, the rest is still dropped, and it goes once the session ends', async () => {
-    const held = await created('m006d');
-    // A dedicated client, not a pooled connection: pg-pool closes an idle pooled connection after 10 s
-    // (idleTimeoutMillis), which would end the session this test needs to stay open however slow the machine is.
+  // A session the cleaner may not end (privpay_test_admin is no member of privpay_app) must keep the drop at 42501 however
+  // long it takes. The holder is a dedicated pg Client, not a pooled connection: pg-pool closes an idle pooled connection
+  // after 10 s (idleTimeoutMillis, pg-pool 3.14), which ended the session when the machine was slow and made this test red
+  // (N-52). The production createPool is not changed. `waitMs` is real time on purpose: the property is independence of
+  // elapsed time, so the slow case waits longer than the idle timeout of a pool.
+  async function heldSessionCase(
+    suffixHeld: string,
+    suffixFree: string,
+    waitMs: number,
+  ): Promise<void> {
+    const held = await created(suffixHeld);
     const holder = new Client({
       host: config.PG_HOST,
       port: config.PG_PORT,
@@ -107,9 +114,10 @@ describe('M0-05 dropping test databases', () => {
     await holder.connect();
     try {
       await holder.query('SELECT 1');
-      const free = await created('m006e');
+      const free = await created(suffixFree);
       await free.close();
       open.splice(open.indexOf(free), 1);
+      if (waitMs > 0) await new Promise((resolve) => setTimeout(resolve, waitMs));
       const first = await dropTestDatabases(config, [held.database, free.database]);
       expect(first.dropped).toEqual([free.database]);
       expect(first.failed).toEqual([{ name: held.database, code: '42501' }]);
@@ -122,5 +130,13 @@ describe('M0-05 dropping test databases', () => {
       dropped: [held.database],
       failed: [],
     });
+  }
+
+  it('M0-05 a database held by a session it may not end is reported, the rest is still dropped, and it goes once the session ends', async () => {
+    await heldSessionCase('m006d', 'm006e', 0);
   });
+
+  it('M0-05 N-52 the same holds when the drop comes more than 10 s later than the session was opened (slow machine)', async () => {
+    await heldSessionCase('m006f', 'm006g', 11_000);
+  }, 60_000);
 });

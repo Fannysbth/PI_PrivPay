@@ -2,6 +2,7 @@ import { DomainError } from '@privpay/common';
 import {
   PrivacyRejectedError,
   TokenExpiredError,
+  type FraudAttributes,
   type FraudClient,
   type FraudVerdict,
   type NotificationClient,
@@ -47,6 +48,10 @@ export class FakeSubjects implements SubjectReferencePort {
     return Promise.resolve('PSEU-A0000001');
   }
 
+  identityForFraud(): Promise<FraudAttributes | undefined> {
+    return Promise.resolve(undefined);
+  }
+
   reissue(row: SubjectRow): Promise<{ customerSubjectRef: string; accountSubjectRef: string }> {
     this.reissued.push(row);
     if (this.failReissue) return Promise.reject(new DomainError('TX_TERMINAL'));
@@ -63,9 +68,21 @@ export class FakeFraud implements FraudClient {
   fail = false;
   /** Runs while the assessment is "in flight": a test uses it to let something else happen meanwhile. */
   onAssess: (() => Promise<void>) | undefined;
-  readonly calls: { subject: string; amount: number; txHour: number; geohash: string }[] = [];
+  readonly calls: {
+    subject: string;
+    amount: number;
+    txHour: number;
+    geohash: string;
+    identity?: FraudAttributes;
+  }[] = [];
 
-  async assess(request: { subject: string; amount: number; txHour: number; geohash: string }) {
+  async assess(request: {
+    subject: string;
+    amount: number;
+    txHour: number;
+    geohash: string;
+    identity?: FraudAttributes;
+  }) {
     this.calls.push(request);
     await this.onAssess?.();
     if (this.fail) throw new DomainError('SERVICE_UNAVAILABLE');

@@ -1,10 +1,27 @@
 import type { TransactionStatus } from './repository';
 
-/** What the neighbours need to know about a row to name the person: tokens only, never an identity. */
+/**
+ * The attributes of the client that the edge passed on beside the references (G3, G6). Present only where the mode's
+ * edge accepts them; the references themselves are tokens or the identity, as the mode says.
+ */
+export interface ClientIdentity {
+  readonly nik?: string;
+  readonly nama?: string;
+}
+
+/** What a mode lets Fraud receive beside the customer reference: absent values are left out, not sent empty. */
+export interface FraudAttributes {
+  readonly nik?: string;
+  readonly nama?: string;
+  readonly accountNumber?: string;
+}
+
+/** What the neighbours need to know about a row to name the person: the references of the mode, and nothing more. */
 export interface SubjectRow {
   readonly transactionId: string;
   readonly customerSubjectRef: string;
   readonly accountSubjectRef: string;
+  readonly clientIdentity?: ClientIdentity;
 }
 
 /** The exchange found the token past its life (PRD 7.2 EXPIRED); the one case that is worth a re-issue (TF-04). */
@@ -34,6 +51,8 @@ export class PrivacyRejectedError extends Error {
 export interface SubjectReferencePort {
   forFraud(row: SubjectRow): Promise<string>;
   forNotification(row: SubjectRow): Promise<string>;
+  /** G3: the attributes Fraud receives beside the reference of the customer; `undefined` when the mode sends none. */
+  identityForFraud(row: SubjectRow): Promise<FraudAttributes | undefined>;
   reissue(
     row: SubjectRow,
   ): Promise<{ readonly customerSubjectRef: string; readonly accountSubjectRef: string }>;
@@ -48,6 +67,7 @@ export interface FraudClient {
     readonly amount: number;
     readonly txHour: number;
     readonly geohash: string;
+    readonly identity?: FraudAttributes;
   }): Promise<{ readonly riskScore: number; readonly decision: FraudVerdict }>;
 }
 

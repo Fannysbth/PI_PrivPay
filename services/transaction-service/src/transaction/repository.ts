@@ -1,11 +1,15 @@
 import { DomainError } from '@privpay/common';
 import type { Pool } from 'pg';
+import type { ClientIdentity } from './ports';
 import { assertTransition } from './status-machine';
 
 export type TransactionStatus = 'PENDING' | 'COMPLETED' | 'HELD' | 'FAILED';
 export type FraudDecision = 'ALLOW' | 'HOLD_FOR_VERIFICATION' | 'BLOCK' | 'FRAUD_UNAVAILABLE';
 
-/** What a request stores: tokens and non-identity attributes only (FR-16, S-38). */
+/**
+ * What a request stores: the references of the mode and non-identity attributes (FR-16, S-38). `clientIdentity` is
+ * written only by a mode whose SQL has the columns for it (G6); the others never bind it.
+ */
 export interface NewTransaction {
   readonly transactionId: string;
   readonly idempotencyKey: string;
@@ -15,6 +19,7 @@ export interface NewTransaction {
   readonly amount: number;
   readonly geohash: string;
   readonly createdAt: Date;
+  readonly clientIdentity?: ClientIdentity;
 }
 
 export interface StoredTransaction {
@@ -25,6 +30,7 @@ export interface StoredTransaction {
   readonly amount: number;
   readonly geohash: string | null;
   readonly status: TransactionStatus;
+  readonly clientIdentity?: ClientIdentity;
 }
 
 export interface Outcome {
@@ -54,11 +60,18 @@ export interface TransactionDetail {
   readonly completed_at: string | null;
 }
 
-/** One COMPLETED transaction for Reconciliation (spec transaction 3.4): no token and no identity. */
+/**
+ * One COMPLETED transaction for Reconciliation (spec transaction 3.4): no token and no identity. The four optional fields
+ * are the identity a conventional system hands on (G5, Tabel IV); only the baseline SQL fills them.
+ */
 export interface CompletedItem {
   readonly transaction_id: string;
   readonly amount: number;
   readonly completed_at: string;
+  readonly customer_id?: string;
+  readonly account_number?: string;
+  readonly nik?: string;
+  readonly nama?: string;
 }
 
 /** The position after the last row of a page; the HTTP layer makes it opaque. */
@@ -129,6 +142,9 @@ export const TRANSACTION_SQL = {
  * both. The subject comes back as `customer_ref` and `account_ref`: a token in proposed, the identity itself in baseline.
  */
 export interface SubjectSql {
+  // G6: true when `insertPending` has two more parameters, `$9` (nik) and `$10` (nama). pg refuses a statement bound to
+  // more values than it names, so the repository binds them only for the SQL that has the columns.
+  readonly storesClientIdentity: boolean;
   // ADR-0009: no conflict target. A clash on the idempotency key and a clash on the transaction id both end as "no row
   // inserted"; the caller then reads by key and treats a row it cannot find as a conflict, never as a server error.
   readonly insertPending: string;
@@ -137,8 +153,11 @@ export interface SubjectSql {
   // Re-issue in the middle of a transaction (spec transaction 5, step 5): while it is still open, PENDING or HELD.
   readonly updateTokens: string;
   readonly findById: string;
-  // N-46: the detail of an audit with the account reference beside it, in one read, for the baseline mode only.
+  // N-46: the detail of an audit with the account reference beside it, in one read, for the baseline mode only. G5 adds
+  // `customer_ref`, `holder_nik` and `holder_nama` to it (NULL where the mode keeps none).
   readonly findDetailWithAccount: string;
+  // G5: the completed list with the identity beside each item, for the baseline mode only (absent where the mode keeps none).
+  readonly listCompletedWithIdentity?: string;
 }
 
 interface Row {
@@ -149,6 +168,9 @@ interface Row {
   amount: string;
   geohash: string | null;
   status: TransactionStatus;
+  // The two reads that return a Row select these in both modes (NULL where nothing is stored), so the row has one shape.
+  holder_nik: string | null;
+  holder_nama: string | null;
 }
 
 /**
@@ -169,7 +191,7 @@ export class TransactionRepository {
 
   /** True when this call created the row, false when another request holds the key (or the id). */
   async insertPending(row: NewTransaction): Promise<boolean> {
-    const inserted = await this.pool.query(this.subject.insertPending, [
+    const values: unknown[] = [
       row.transactionId,
       row.idempotencyKey,
       row.customerSubjectRef,
@@ -178,7 +200,11 @@ export class TransactionRepository {
       row.amount,
       row.geohash,
       row.createdAt,
-    ]);
+    ];
+    if (this.subject.storesClientIdentity) {
+      values.push(row.clientIdentity?.nik ?? null, row.clientIdentity?.nama ?? null);
+    }
+    const inserted = await this.pool.query(this.subject.insertPending, values);
     return inserted.rowCount === 1;
   }
 
@@ -366,6 +392,38 @@ export class TransactionRepository {
     }));
   }
 
+  /** G5: the same page as `listCompleted`, each item with the identity as stored; only a mode whose SQL has it can ask. */
+  async listCompletedWithIdentity(
+    from: Date,
+    to: Date,
+    limit: number,
+    after?: { readonly at: string; readonly transactionId: string },
+  ): Promise<{ readonly item: CompletedItem; readonly completedText: string }[]> {
+    const statement = this.subject.listCompletedWithIdentity;
+    if (statement === undefined) throw new Error('listCompletedWithIdentity is not available');
+    const found = await this.pool.query<{
+      transaction_id: string;
+      amount: string;
+      completed_text: string;
+      customer_id: string;
+      account_number: string;
+      nik: string | null;
+      nama: string | null;
+    }>(statement, [from, to, after?.at ?? null, after?.transactionId ?? null, limit]);
+    return found.rows.map((row) => ({
+      completedText: row.completed_text,
+      item: {
+        transaction_id: row.transaction_id,
+        amount: Number(row.amount),
+        completed_at: new Date(row.completed_text).toISOString(),
+        customer_id: row.customer_id,
+        account_number: row.account_number,
+        ...(row.nik === null ? {} : { nik: row.nik }),
+        ...(row.nama === null ? {} : { nama: row.nama }),
+      },
+    }));
+  }
+
   async findDetail(transactionId: string): Promise<TransactionDetail | undefined> {
     const found = await this.pool.query<{
       transaction_id: string;
@@ -386,9 +444,15 @@ export class TransactionRepository {
         };
   }
 
-  async findDetailWithAccount(
-    transactionId: string,
-  ): Promise<(TransactionDetail & { readonly accountRef: string }) | undefined> {
+  async findDetailWithAccount(transactionId: string): Promise<
+    | (TransactionDetail & {
+        readonly accountRef: string;
+        readonly customerRef?: string;
+        readonly holderNik?: string;
+        readonly holderNama?: string;
+      })
+    | undefined
+  > {
     const found = await this.pool.query<{
       transaction_id: string;
       amount: string;
@@ -396,6 +460,9 @@ export class TransactionRepository {
       created_at: Date;
       completed_at: Date | null;
       account_ref: string;
+      customer_ref: string | null;
+      holder_nik: string | null;
+      holder_nama: string | null;
     }>(this.subject.findDetailWithAccount, [transactionId]);
     const row = found.rows[0];
     return row === undefined
@@ -407,6 +474,9 @@ export class TransactionRepository {
           created_at: row.created_at.toISOString(),
           completed_at: row.completed_at === null ? null : row.completed_at.toISOString(),
           accountRef: row.account_ref,
+          ...(row.customer_ref === null ? {} : { customerRef: row.customer_ref }),
+          ...(row.holder_nik === null ? {} : { holderNik: row.holder_nik }),
+          ...(row.holder_nama === null ? {} : { holderNama: row.holder_nama }),
         };
   }
 
@@ -418,6 +488,10 @@ export class TransactionRepository {
 }
 
 function toStored(row: Row): StoredTransaction {
+  const clientIdentity: ClientIdentity = {
+    ...(row.holder_nik === null ? {} : { nik: row.holder_nik }),
+    ...(row.holder_nama === null ? {} : { nama: row.holder_nama }),
+  };
   return {
     transactionId: row.transaction_id,
     customerSubjectRef: row.customer_ref,
@@ -427,5 +501,6 @@ function toStored(row: Row): StoredTransaction {
     amount: Number(row.amount),
     geohash: row.geohash,
     status: row.status,
+    ...(Object.keys(clientIdentity).length === 0 ? {} : { clientIdentity }),
   };
 }
