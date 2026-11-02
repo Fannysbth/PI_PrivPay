@@ -2,8 +2,13 @@ import { decodeCursor, encodeCursor } from './cursor';
 import { DAY_MS, DomainError } from '@privpay/common';
 import type { CompletedItem, TransactionDetail, TransactionRepository } from './repository';
 
-/** What Reconciliation reads of one transaction; in baseline also the account number (N-46). */
-export type TransactionDetailAnswer = TransactionDetail & { readonly account_number?: string };
+/** What Reconciliation reads of one transaction; in baseline also the account number (N-46) and the identity (G5). */
+export type TransactionDetailAnswer = TransactionDetail & {
+  readonly account_number?: string;
+  readonly customer_id?: string;
+  readonly nik?: string;
+  readonly nama?: string;
+};
 
 export interface CompletedPage {
   readonly items: readonly CompletedItem[];
@@ -21,7 +26,7 @@ export class TransactionReads {
     private readonly deps: {
       readonly repository: Pick<
         TransactionRepository,
-        'listCompleted' | 'findDetail' | 'findDetailWithAccount'
+        'listCompleted' | 'listCompletedWithIdentity' | 'findDetail' | 'findDetailWithAccount'
       >;
       readonly discloseAccount: boolean;
     },
@@ -36,7 +41,10 @@ export class TransactionReads {
     const to = new Date(from.getTime() + DAY_MS);
     const after = query.cursor === undefined ? undefined : decodeCursor(query.cursor);
     // One more than asked tells whether another page exists without a count query.
-    const rows = await this.deps.repository.listCompleted(from, to, query.limit + 1, after);
+    // G5: where the account number is disclosed (N-46) the identity goes with it, as a conventional system keeps it.
+    const rows = this.deps.discloseAccount
+      ? await this.deps.repository.listCompletedWithIdentity(from, to, query.limit + 1, after)
+      : await this.deps.repository.listCompleted(from, to, query.limit + 1, after);
     const page = rows.slice(0, query.limit);
     const last = page.at(-1);
     return {
@@ -57,7 +65,13 @@ export class TransactionReads {
     }
     const found = await this.deps.repository.findDetailWithAccount(transactionId);
     if (found === undefined) throw new DomainError('TRANSACTION_NOT_FOUND');
-    const { accountRef, ...detail } = found;
-    return { ...detail, account_number: accountRef };
+    const { accountRef, customerRef, holderNik, holderNama, ...detail } = found;
+    return {
+      ...detail,
+      account_number: accountRef,
+      ...(customerRef === undefined ? {} : { customer_id: customerRef }),
+      ...(holderNik === undefined ? {} : { nik: holderNik }),
+      ...(holderNama === undefined ? {} : { nama: holderNama }),
+    };
   }
 }

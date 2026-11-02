@@ -16,8 +16,17 @@ export const SUBJECT_SQL: SubjectSql = {
      FROM transactions WHERE transaction_id = $1 FOR UPDATE`,
   updateTokens: `UPDATE transactions SET customer_id = $2, account_number = $3
      WHERE transaction_id = $1 AND status IN ('PENDING', 'HELD')`,
-  findDetailWithAccount: `SELECT transaction_id, amount, status, created_at, completed_at, account_number AS account_ref
+  findDetailWithAccount: `SELECT transaction_id, amount, status, created_at, completed_at, account_number AS account_ref,
+       customer_id AS customer_ref, nik AS holder_nik, nama AS holder_nama
      FROM transactions WHERE transaction_id = $1`,
+  // G5, Tabel IV: Reconciliation reads the customer id, the NIK, the name and the account number as stored. Same page
+  // rules as the generic list (the day is the UTC date of completed_at, keyset on the pair).
+  listCompletedWithIdentity: `SELECT transaction_id, amount, customer_id, account_number, nik, nama,
+       to_char(completed_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS completed_text
+     FROM transactions
+     WHERE status = 'COMPLETED' AND completed_at >= $1 AND completed_at < $2
+       AND ($3::text IS NULL OR (completed_at, transaction_id) > ($3::timestamptz, $4::text))
+     ORDER BY completed_at ASC, transaction_id ASC LIMIT $5`,
   findById: `SELECT transaction_id, customer_id AS customer_ref, account_number AS account_ref, merchant_id, amount, geohash, status,
        nik AS holder_nik, nama AS holder_nama
      FROM transactions WHERE transaction_id = $1`,
