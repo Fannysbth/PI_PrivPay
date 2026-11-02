@@ -157,7 +157,11 @@ export function reconciliationModules(
     // ADR-0006: the one place the mode picks the repository and the Privacy client; the service below is the same code.
     const transactions =
       overrides.transactions ??
-      new HttpTransactionClient({ http, serviceToken: tokenFor('transaction-service') });
+      new HttpTransactionClient({
+        http,
+        serviceToken: tokenFor('transaction-service'),
+        acceptClientIdentity: mode === 'baseline',
+      });
     const service = new ReconciliationService({
       repository:
         mode === 'baseline'

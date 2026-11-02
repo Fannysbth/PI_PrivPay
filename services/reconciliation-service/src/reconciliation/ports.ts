@@ -1,8 +1,20 @@
-/** One COMPLETED transaction of a day as Transaction tells it (D1): no token and no identity. */
+/**
+ * Who a completed transaction belongs to, as a conventional system keeps it (G5, Tabel IV). Transaction names it in
+ * baseline only; a mode without it never has one.
+ */
+export interface ClientHolder {
+  readonly customerId?: string;
+  readonly nik?: string;
+  readonly nama?: string;
+  readonly accountNumber?: string;
+}
+
+/** One COMPLETED transaction of a day as Transaction tells it (D1): no token and no identity, unless a holder is named. */
 export interface CompletedTransaction {
   readonly transactionId: string;
   readonly amount: number;
   readonly completedAt: string;
+  readonly holder?: ClientHolder;
 }
 
 /**

@@ -75,13 +75,30 @@ export class ReconciliationService {
         transactionId: transaction.transactionId,
         amount: transaction.amount,
         accountSubjectRef,
+        ...(transaction.holder === undefined ? {} : { holder: transaction.holder }),
       });
     }
 
     const outcome = await this.deps.repository.settle(date, this.deps.clock.now(), (items) => {
       const result = match(transactions, items);
+      const holderOfTransaction = new Map(
+        transactions.map((transaction) => [transaction.transactionId, transaction.holder]),
+      );
       return {
         matchedItemIds: result.pairs.map((pair) => pair.itemId),
+        holders: result.pairs.flatMap((pair) => {
+          const holder = holderOfTransaction.get(pair.transactionId);
+          return holder === undefined
+            ? []
+            : [
+                {
+                  itemId: pair.itemId,
+                  customerId: holder.customerId ?? null,
+                  nik: holder.nik ?? null,
+                  nama: holder.nama ?? null,
+                },
+              ];
+        }),
         txCount: transactions.length,
         totalAmount: transactions.reduce((sum, transaction) => sum + transaction.amount, 0),
         status: result.status,

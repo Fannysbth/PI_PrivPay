@@ -1,3 +1,5 @@
+import type { ClientHolder } from './ports';
+
 export type BatchStatus = 'MATCHED' | 'PARTIAL' | 'MISMATCHED';
 
 /** A COMPLETED transaction of the day with the account token Privacy gave for it (D2); `null` when Privacy has none. */
@@ -5,6 +7,8 @@ export interface ReconTransaction {
   readonly transactionId: string;
   readonly amount: number;
   readonly accountSubjectRef: string | null;
+  /** G5: who it belongs to, kept with the matched item; the matching below never reads it. */
+  readonly holder?: ClientHolder;
 }
 
 /** One line of the bank's report as stored: a token, an amount and the bank's own reference. Never an account number. */

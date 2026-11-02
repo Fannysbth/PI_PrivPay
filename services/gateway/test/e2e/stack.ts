@@ -72,6 +72,11 @@ export interface Stack {
    * a test scans them and reports attribute and place, never a value.
    */
   readonly payloads: Record<string, string[]>;
+  /**
+   * The answers each host gave, in memory only (G5): what a caller RECEIVES, e.g. what Reconciliation reads from
+   * Transaction. Scanned the same way as `payloads`.
+   */
+  readonly responses: Record<string, string[]>;
   /** Runs before a call reaches its host; a test uses it to move the clock at an exact point of a flow. */
   hook: ((host: Host, method: string, path: string) => void) | undefined;
   /** A token of a seeded person or customer, as the dev IdP gives it (`dev_login`). */
@@ -130,6 +135,7 @@ export async function startStack(
   const calls: string[] = [];
   const attempted: string[] = [];
   const payloads: Record<string, string[]> = {};
+  const responses: Record<string, string[]> = {};
 
   const dir = mkdtempSync(join(tmpdir(), 'privpay-e2e-'));
   const secretsDir = join(dir, 'secrets');
@@ -200,6 +206,7 @@ export async function startStack(
     const answer = await (typeof init?.body === 'string'
       ? call.send(JSON.parse(init.body) as object)
       : call);
+    if (answer.text !== '') (responses[host] ??= []).push(answer.text);
     return new Response(answer.status === 204 || answer.text === '' ? null : answer.text, {
       status: answer.status,
       headers: { 'content-type': 'application/json' },
@@ -383,6 +390,7 @@ export async function startStack(
     calls,
     attempted,
     payloads,
+    responses,
     fail: (host, path, times = Number.MAX_SAFE_INTEGER) =>
       void failing.set(`${host} ${path}`, times),
     get hook() {
@@ -414,6 +422,7 @@ export async function startStack(
       calls.length = 0;
       attempted.length = 0;
       for (const bodies of Object.values(payloads)) bodies.length = 0;
+      for (const bodies of Object.values(responses)) bodies.length = 0;
       stack.hook = undefined;
       for (const name of Object.keys(logs) as (Host | 'gateway')[]) logs[name].length = 0;
     },

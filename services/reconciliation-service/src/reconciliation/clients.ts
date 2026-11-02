@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { disclosedAttributes } from './attributes';
 import type {
   Actor,
+  ClientHolder,
   CompletedTransaction,
   DisclosedAttributes,
   PrivacyClient,
@@ -29,21 +30,29 @@ const detailAnswer = z.object({
   account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
 });
 const openAnswer = z.object({ attributes: disclosedAttributes });
-const completedPage = z.object({
-  items: z.array(
-    z.object({
-      transaction_id: z.string().regex(TRANSACTION_ID),
-      amount: z.number().int().min(1),
-      completed_at: z.string().min(1),
-    }),
-  ),
-  next_cursor: z.string().nullable(),
+const completedItem = z.object({
+  transaction_id: z.string().regex(TRANSACTION_ID),
+  amount: z.number().int().min(1),
+  completed_at: z.string().min(1),
 });
+// G5: in baseline the item also names the holder (Tabel IV); every field is optional because an old row has no NIK or name.
+const completedItemWithHolder = completedItem.extend({
+  customer_id: z.string().min(1).max(16).optional(),
+  account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
+  nik: z.string().min(1).max(64).optional(),
+  nama: z.string().min(1).max(200).optional(),
+});
+const completedPageOf = <T extends z.ZodType>(item: T) =>
+  z.object({ items: z.array(item), next_cursor: z.string().nullable() });
+const completedPage = completedPageOf(completedItem);
+const completedPageWithHolder = completedPageOf(completedItemWithHolder);
 
 export interface ClientDeps {
   readonly http: HttpClient;
   /** Reconciliation's own service token for the service it calls (`aud` privacy-service or transaction-service). */
   readonly serviceToken: Pick<TokenCache, 'get'>;
+  /** G5: set by the bootstrap of the baseline mode only; the completed list then names the holder of each item. */
+  readonly acceptClientIdentity?: boolean;
 }
 
 const unavailable = (cause: string): DomainError => new DomainError('SERVICE_UNAVAILABLE', cause);
@@ -52,6 +61,17 @@ const unavailable = (cause: string): DomainError => new DomainError('SERVICE_UNA
 const PAGE_SIZE = 200;
 /** A bound on a loop that follows a cursor from another process: a cursor that never ends is a failure, not a hang. */
 const MAX_PAGES = 1_000;
+
+/** The holder an item names, or none when it names nothing of the four (an old row). */
+function holderOf(item: z.infer<typeof completedItemWithHolder>): ClientHolder | undefined {
+  const holder: ClientHolder = {
+    ...(item.customer_id === undefined ? {} : { customerId: item.customer_id }),
+    ...(item.nik === undefined ? {} : { nik: item.nik }),
+    ...(item.nama === undefined ? {} : { nama: item.nama }),
+    ...(item.account_number === undefined ? {} : { accountNumber: item.account_number }),
+  };
+  return Object.keys(holder).length === 0 ? undefined : holder;
+}
 
 /** D1 (spec transaction 3.4). Every read is idempotent, so the shared client may retry it (NFR-12). */
 export class HttpTransactionClient implements TransactionClient {
@@ -71,13 +91,18 @@ export class HttpTransactionClient implements TransactionClient {
         idempotent: true,
         authorization: `Bearer ${await this.deps.serviceToken.get()}`,
       });
-      const parsed = completedPage.safeParse(response.body);
+      const withHolder = this.deps.acceptClientIdentity === true;
+      const parsed = (withHolder ? completedPageWithHolder : completedPage).safeParse(
+        response.body,
+      );
       if (response.status !== 200 || !parsed.success) throw unavailable('transaction_answer');
       for (const item of parsed.data.items) {
+        const holder = withHolder ? holderOf(item) : undefined;
         all.push({
           transactionId: item.transaction_id,
           amount: item.amount,
           completedAt: item.completed_at,
+          ...(holder === undefined ? {} : { holder }),
         });
       }
       cursor = parsed.data.next_cursor;

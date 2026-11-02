@@ -51,6 +51,58 @@ const page = (ids: string[], next: string | null) =>
     next_cursor: next,
   });
 
+// G5 (Tabel IV): in baseline the completed list names the holder beside each item; the adapter reads it only when the
+// bootstrap of that mode says so, and in proposed whatever else arrives is dropped as it always was. Invented values.
+describe('G5 D1 the holder of a completed transaction', () => {
+  const holderPage = json(200, {
+    items: [
+      {
+        transaction_id: 'TX-10001',
+        amount: 35_000,
+        completed_at: '2026-10-05T12:00:00.000Z',
+        customer_id: ['CUST', '654321'].join('-'),
+        account_number: '1234567801',
+        nik: '9999000000000001',
+        nama: 'Kenari Uji Satu',
+      },
+    ],
+    next_cursor: null,
+  });
+
+  it('G5 with the flag on the holder is read: customer id, NIK, name and account number', async () => {
+    const t = setup(() => holderPage.clone());
+    const [one] = await new HttpTransactionClient({
+      ...t.deps,
+      acceptClientIdentity: true,
+    }).completedOn('2026-10-05');
+    expect(one?.holder).toEqual({
+      customerId: ['CUST', '654321'].join('-'),
+      nik: '9999000000000001',
+      nama: 'Kenari Uji Satu',
+      accountNumber: '1234567801',
+    });
+  });
+
+  it('G5 with the flag off nothing of the holder is kept', async () => {
+    const t = setup(() => holderPage.clone());
+    const [one] = await new HttpTransactionClient(t.deps).completedOn('2026-10-05');
+    expect(one).toEqual({
+      transactionId: 'TX-10001',
+      amount: 35_000,
+      completedAt: '2026-10-05T12:00:00.000Z',
+    });
+  });
+
+  it('G5 an item without a holder stays without one when the flag is on', async () => {
+    const t = setup(() => page(['TX-10001'], null));
+    const [one] = await new HttpTransactionClient({
+      ...t.deps,
+      acceptClientIdentity: true,
+    }).completedOn('2026-10-05');
+    expect(one?.holder).toBeUndefined();
+  });
+});
+
 describe('M4-06 D1 the adapter towards Transaction', () => {
   it('M4-06 D1 follows the cursor to the last page and sends the service token', async () => {
     const t = setup((call) =>

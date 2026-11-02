@@ -43,7 +43,9 @@ describe('M5-01 FR-23 the baseline reconciliation schema holds the account numbe
     expect(names.filter((name) => name.includes('pseudonym'))).toEqual([]);
   });
 
-  it('M5-01 FR-23 apart from the identity column the schema and the grants are those of proposed', async () => {
+  // Changed with the owner's decision on Tabel IV (G5, G6): a matched item of baseline also keeps the customer id, NIK and
+  // name of its transaction, so those are the only columns it adds; before, the report had to be empty.
+  it('M5-01 FR-23 G6 apart from the identity column and the three holder columns the schema and the grants are those of proposed', async () => {
     other = await createTestDb(config, { service: 'reconciliation', suffix: 'm501p' });
     await migrate(other.owner, { root: migrations, mode: 'proposed' });
     const report = await compareSchemas(
@@ -52,7 +54,16 @@ describe('M5-01 FR-23 the baseline reconciliation schema holds the account numbe
       { 'settlement_items.account_pseudonym': 'settlement_items.account_number' },
       { proposed: 'privpay_reconciliation_app', baseline: 'privpay_reconciliation_app' },
     );
-    expect(report).toEqual({ missing: [], different: [], indexes: [], grants: [] });
+    expect(report).toEqual({
+      missing: [
+        'baseline adds settlement_items.customer_id',
+        'baseline adds settlement_items.nik',
+        'baseline adds settlement_items.nama',
+      ],
+      different: [],
+      indexes: [],
+      grants: [],
+    });
   });
 
   it('M5-01 FR-32 the table still refuses a value that is not an account number', async () => {
