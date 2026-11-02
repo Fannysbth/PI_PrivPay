@@ -1,0 +1,121 @@
+{
+  "meta": {
+    "mode": "proposed",
+    "project": "privpay-proposed",
+    "date": "2026-11-02T07:27:52.796Z",
+    "commit": "b5a4f2f191537898598877a9bac4c27e318057c9",
+    "workingTreeDirty": false,
+    "requirement": "TK-16, NFR-11, invariant 8, ADR-0008"
+  },
+  "control": {
+    "plantedCanaryFoundByPayloadScanner": [
+      "rekening"
+    ]
+  },
+  "recoveryAfterStop": {
+    "secondsUntilHealthy": 6.235,
+    "secondsUntilFirstPaymentPassed": 6.368,
+    "note": "wall clock of this laptop; not a performance claim"
+  },
+  "recoveryAfterPause": {
+    "paymentAfterUnpauseStatus": 201
+  },
+  "outage": {
+    "attempts": [
+      {
+        "route": "POST /transaction",
+        "condition": "stopped",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /notification/register",
+        "condition": "stopped",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /settlement/report",
+        "condition": "stopped",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /register",
+        "condition": "stopped",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /reconciliation/audit-request",
+        "condition": "stopped",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /transaction",
+        "condition": "paused",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /notification/register",
+        "condition": "paused",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /settlement/report",
+        "condition": "paused",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /register",
+        "condition": "paused",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      },
+      {
+        "route": "POST /reconciliation/audit-request",
+        "condition": "paused",
+        "status": 503,
+        "shapeOk": true,
+        "codeOk": true,
+        "responseCarriesValue": false
+      }
+    ],
+    "everyAttemptIs503InTheOneShape": true,
+    "anyResponseCarriesAValue": false,
+    "leaksFound": [
+      "transaction/rekening/payload"
+    ],
+    "keycloakUsersLeftByTheFailedRegistration": 0,
+    "scannedDumpCharacters": {
+      "db:transaction": 648673,
+      "db:fraud": 144364,
+      "db:notification": 430703,
+      "db:reconciliation": 63805
+    },
+    "exchangesSeenByObserver": 8459,
+    "notTested": "Privacy slow but answering (no ticket); replicas (E-12); behavior under load (M7)"
+  }
+}

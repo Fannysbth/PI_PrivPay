@@ -1,0 +1,163 @@
+{
+  "meta": {
+    "mode": "proposed",
+    "project": "privpay-proposed",
+    "date": "2026-11-02T07:25:50.633Z",
+    "commit": "b5a4f2f191537898598877a9bac4c27e318057c9",
+    "workingTreeDirty": false,
+    "subjects": 200,
+    "kongPort": 4010,
+    "scope": "empirical on the data of this run; not a formal proof of unlinkability; the attacker has read copies of downstream databases, not the keys or the Privacy Service",
+    "notMeasured": "linkage through quasi-identifiers (amount, hour, geohash); token expiry after the 30-day window (needs real time)"
+  },
+  "attack": {
+    "method": "equal-value join of the subject-reference columns of the copied databases; ground truth only scores it",
+    "rowsPerService": {
+      "transaction": 2900,
+      "fraud": 900,
+      "notification": 1200,
+      "reconciliation": 700
+    },
+    "rowsWithKnownSubject": {
+      "transaction": 400,
+      "fraud": 400,
+      "notification": 200,
+      "reconciliation": 200
+    },
+    "columnsJoined": {
+      "transaction": [
+        "customer_pseudonym",
+        "account_pseudonym"
+      ],
+      "fraud": [
+        "pseudonym"
+      ],
+      "notification": [
+        "pseudonym"
+      ],
+      "reconciliation": [
+        "account_pseudonym"
+      ]
+    },
+    "pairs": [
+      {
+        "a": "transaction",
+        "b": "fraud",
+        "subjectsInBoth": 200,
+        "linked": 0,
+        "rate": 0,
+        "edges": 0,
+        "falseEdges": 0
+      },
+      {
+        "a": "transaction",
+        "b": "notification",
+        "subjectsInBoth": 200,
+        "linked": 0,
+        "rate": 0,
+        "edges": 0,
+        "falseEdges": 0
+      },
+      {
+        "a": "transaction",
+        "b": "reconciliation",
+        "subjectsInBoth": 200,
+        "linked": 0,
+        "rate": 0,
+        "edges": 0,
+        "falseEdges": 0
+      },
+      {
+        "a": "fraud",
+        "b": "notification",
+        "subjectsInBoth": 200,
+        "linked": 0,
+        "rate": 0,
+        "edges": 0,
+        "falseEdges": 0
+      },
+      {
+        "a": "fraud",
+        "b": "reconciliation",
+        "subjectsInBoth": 200,
+        "linked": 0,
+        "rate": 0,
+        "edges": 0,
+        "falseEdges": 0
+      },
+      {
+        "a": "notification",
+        "b": "reconciliation",
+        "subjectsInBoth": 200,
+        "linked": 0,
+        "rate": 0,
+        "edges": 0,
+        "falseEdges": 0
+      }
+    ],
+    "chain": {
+      "subjectsInAll": 200,
+      "chained": 0,
+      "rate": 0
+    },
+    "withinService": [
+      {
+        "service": "transaction",
+        "truePairs": 200,
+        "groupedPairs": 200,
+        "groupedTruePairs": 200,
+        "recall": 1,
+        "precision": 1
+      },
+      {
+        "service": "fraud",
+        "truePairs": 200,
+        "groupedPairs": 200,
+        "groupedTruePairs": 200,
+        "recall": 1,
+        "precision": 1
+      },
+      {
+        "service": "notification",
+        "truePairs": 0,
+        "groupedPairs": 0,
+        "groupedTruePairs": 0,
+        "recall": null,
+        "precision": null
+      },
+      {
+        "service": "reconciliation",
+        "truePairs": 0,
+        "groupedPairs": 0,
+        "groupedTruePairs": 0,
+        "recall": null,
+        "precision": null
+      }
+    ]
+  },
+  "control": {
+    "baselineMustLink": false,
+    "transactionFraudRate": 0,
+    "withinServiceMethodWorks": true
+  },
+  "revokeThenPay": {
+    "note": "N-51: the revoked subject is not cut off; a new token is issued. 1 distinct reference means the same reference is reused (baseline); 2 means a new token",
+    "results": [
+      {
+        "revokeStatus": 200,
+        "payAfterRevokeStatus": 201,
+        "distinctCustomerReferencesAcrossBeforeAndAfter": 2
+      },
+      {
+        "revokeStatus": 200,
+        "payAfterRevokeStatus": 201,
+        "distinctCustomerReferencesAcrossBeforeAndAfter": 2
+      },
+      {
+        "revokeStatus": 200,
+        "payAfterRevokeStatus": 201,
+        "distinctCustomerReferencesAcrossBeforeAndAfter": 2
+      }
+    ]
+  }
+}

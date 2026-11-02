@@ -1,0 +1,14 @@
+{
+  "meta": {
+    "mode": "baseline",
+    "project": "privpay-baseline",
+    "date": "2026-11-02T07:36:03.644Z",
+    "commit": "b5a4f2f191537898598877a9bac4c27e318057c9",
+    "workingTreeDirty": false,
+    "requirement": "TK-16, NFR-11, invariant 8, ADR-0008"
+  },
+  "outage": {
+    "applicable": false,
+    "reason": "baseline has no Privacy Service (ADR-0003, N-47); there is nothing to switch off"
+  }
+}
