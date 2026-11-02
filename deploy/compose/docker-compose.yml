@@ -474,6 +474,9 @@ services:
       # The whole body (settlement, up to the 64 KiB limit) stays in memory, so the plugin can read it.
       KONG_NGINX_HTTP_CLIENT_BODY_BUFFER_SIZE: 128k
       KONG_NGINX_WORKER_PROCESSES: '1'
+      # M7-B: no SRV lookup. Docker's resolver answers an SRV query on these internal networks only after about 4 s (NXDOMAIN), and Kong
+      # asks SRV first by default, so the first payment waited for keycloak and privacy-service in turn (8 to 9 s).
+      KONG_DNS_ORDER: LAST,A,CNAME
       # No access log: request lines and addresses stay out of the logs (invariant 6); errors go to stderr.
       KONG_PROXY_ACCESS_LOG: 'off'
       KONG_PROXY_ERROR_LOG: /dev/stderr

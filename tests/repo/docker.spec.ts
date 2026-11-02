@@ -427,6 +427,11 @@ describe.each(MODES)('DK-03 the three networks and TLS in the %s condition (NFR-
     expect(services['gateway']?.networks).not.toContain('edge');
   });
 
+  it('M7-B Kong resolves names with A and CNAME only: no SRV lookup (about 4 s each in Docker DNS, 8 s on the first payment)', () => {
+    const kong = services['kong']?.environment ?? {};
+    expect(String(kong['KONG_DNS_ORDER']).split(',')).toEqual(['LAST', 'A', 'CNAME']);
+  });
+
   it('DK-02a Kong has TLS only, no admin API, no plain HTTP listener, no version headers, and the adapter trusts one proxy', () => {
     const kong = services['kong']?.environment ?? {};
     expect(kong['KONG_DATABASE']).toBe('off');
