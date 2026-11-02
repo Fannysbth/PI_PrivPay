@@ -122,7 +122,7 @@ Semua perintah dijalankan dari akar repo, setelah tumpukan menyala (bagian 2) de
 
 | Perintah | Yang dibuktikan | Hasil yang diharapkan |
 | --- | --- | --- |
-| `corepack pnpm docker:newman proposed` (atau `baseline`) | koleksi Postman dijalankan Newman dalam kontainer sekali pakai di jaringan `edge`, lewat Kong dengan TLS terverifikasi (CA dev) dan kata sandi uji dibaca dari `secrets/docker` | 149 request, 0 gagal; 115 asersi (usulan) atau 103 (baseline). koleksi punya 47 request yang kamu klik; Newman melaporkan 149 karena skrip koleksi ikut mengirim request (mis. pengambilan token) |
+| `corepack pnpm docker:newman proposed` (atau `baseline`) | koleksi Postman dijalankan Newman dalam kontainer sekali pakai di jaringan `edge`, lewat Kong dengan TLS terverifikasi (CA dev) dan kata sandi uji dibaca dari `secrets/docker` | 150 request, 0 gagal; 119 asersi (usulan) atau 107 (baseline). koleksi punya 47 request yang kamu klik; Newman melaporkan 150 karena skrip koleksi ikut mengirim request (mis. pengambilan token) |
 | `docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f docs/postman/compose.postman.yml run --rm smoke` (ganti `proposed` dengan `baseline`) | daftar, bayar (selesai dan ditahan), daftar ditahan, SMS, dari dalam jaringan, lewat Kong | `9/9 checks passed` |
 | `corepack pnpm docker:edge-check proposed base` (fase lain: `claims`, `expiry` ±5 menit, `limits`) | tepi Kong: token rusak atau kedaluwarsa, ukuran, TLS, `/metrics` tertutup | `all checks passed` |
 | `PRIVPAY_STACK_MODE=proposed corepack pnpm test:edge tests/docker/fail-closed` | Privacy dimatikan: 503 `SERVICE_UNAVAILABLE`, pulih saat dinyalakan | 1 tes lulus |
