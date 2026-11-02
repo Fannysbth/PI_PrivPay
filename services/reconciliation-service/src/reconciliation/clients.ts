@@ -30,23 +30,22 @@ const detailAnswer = z.object({
   account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
 });
 const openAnswer = z.object({ attributes: disclosedAttributes });
+// G5: in baseline the item also names the holder (Tabel IV); every holder field is optional because an old row has no NIK or
+// name. The schema is not strict, and the holder is only kept when the bootstrap of the mode says so (`acceptClientIdentity`).
 const completedItem = z.object({
   transaction_id: z.string().regex(TRANSACTION_ID),
   amount: z.number().int().min(1),
   completed_at: z.string().min(1),
-});
-// G5: in baseline the item also names the holder (Tabel IV); every field is optional because an old row has no NIK or name.
-const completedItemWithHolder = completedItem.extend({
   customer_id: z.string().max(16).optional(),
   account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
   // Transaction stores what the client sent, an empty string included: it is read as absent, never as a failure of the day.
   nik: z.string().max(64).optional(),
   nama: z.string().max(200).optional(),
 });
-const completedPageOf = <T extends z.ZodType>(item: T) =>
-  z.object({ items: z.array(item), next_cursor: z.string().nullable() });
-const completedPage = completedPageOf(completedItem);
-const completedPageWithHolder = completedPageOf(completedItemWithHolder);
+const completedPage = z.object({
+  items: z.array(completedItem),
+  next_cursor: z.string().nullable(),
+});
 
 export interface ClientDeps {
   readonly http: HttpClient;
@@ -64,7 +63,7 @@ const PAGE_SIZE = 200;
 const MAX_PAGES = 1_000;
 
 /** The holder an item names, or none when it names nothing of the four (an old row). */
-function holderOf(item: z.infer<typeof completedItemWithHolder>): ClientHolder | undefined {
+function holderOf(item: z.infer<typeof completedItem>): ClientHolder | undefined {
   const holder: ClientHolder = {
     ...(!item.customer_id ? {} : { customerId: item.customer_id }),
     ...(!item.nik ? {} : { nik: item.nik }),
@@ -93,9 +92,7 @@ export class HttpTransactionClient implements TransactionClient {
         authorization: `Bearer ${await this.deps.serviceToken.get()}`,
       });
       const withHolder = this.deps.acceptClientIdentity === true;
-      const parsed = (withHolder ? completedPageWithHolder : completedPage).safeParse(
-        response.body,
-      );
+      const parsed = completedPage.safeParse(response.body);
       if (response.status !== 200 || !parsed.success) throw unavailable('transaction_answer');
       for (const item of parsed.data.items) {
         const holder = withHolder ? holderOf(item) : undefined;

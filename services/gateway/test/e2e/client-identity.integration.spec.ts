@@ -42,7 +42,7 @@ async function payOnce(stack: AnyStack): Promise<Trail> {
   // 2 000 000 is over the Fraud threshold, so Transaction does ask Fraud.
   const paid = await request(stack.gateway.httpServer)
     .post('/transaction')
-    .set('authorization', `Bearer ${await stack.login('customer-app', username)}`)
+    .set('authorization', `Bearer ${token}`)
     .set('idempotency-key', randomUUID())
     .send({
       source_account: person.rekening,

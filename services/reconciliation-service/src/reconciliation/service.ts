@@ -79,11 +79,12 @@ export class ReconciliationService {
       });
     }
 
+    // Built before the batch is locked: the lock is held only for the comparison and the writes.
+    const holderOfTransaction = new Map(
+      transactions.map((transaction) => [transaction.transactionId, transaction.holder]),
+    );
     const outcome = await this.deps.repository.settle(date, this.deps.clock.now(), (items) => {
       const result = match(transactions, items);
-      const holderOfTransaction = new Map(
-        transactions.map((transaction) => [transaction.transactionId, transaction.holder]),
-      );
       return {
         matchedItemIds: result.pairs.map((pair) => pair.itemId),
         holders: result.pairs.flatMap((pair) => {
