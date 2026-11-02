@@ -132,14 +132,22 @@ export function setup() {
     if (response.status !== 201) throw new Error(`registration ${i} answered ${response.status}`);
     customers.push({ username, ...c });
   }
-  return { customers };
+  // One sign-in per customer here (not measured), so the measured VUs do not all sign in at the start of the window.
+  const tokens = customers.map((c) => login(c.username));
+  return { customers, tokens, at: Date.now() };
 }
 
 const state = { token: undefined, loggedAt: 0 };
+// Spread the refresh over 40 s per VU so the 100 re-logins do not arrive together.
+const refreshAfter = () => REFRESH_AFTER_MS - (__VU % 40) * 1000;
 
 export default function (data) {
   const me = data.customers[(__VU - 1) % data.customers.length];
-  if (state.token === undefined || Date.now() - state.loggedAt > REFRESH_AFTER_MS) {
+  if (state.token === undefined && state.loggedAt === 0) {
+    state.token = data.tokens[(__VU - 1) % data.tokens.length];
+    state.loggedAt = data.at;
+  }
+  if (state.token === undefined || Date.now() - state.loggedAt > refreshAfter()) {
     state.token = login(me.username);
     state.loggedAt = Date.now();
     if (state.token === undefined) {

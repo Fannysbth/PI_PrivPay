@@ -41,6 +41,14 @@ function parse(argv) {
     else if (a === '--keep') o.keep = true;
     else throw new RangeError(`unknown option ${a}`);
   }
+  const given = argv.filter((a) => a.startsWith('--') && a !== '--official' && a !== '--keep');
+  if (o.official && given.length > 0) throw new RangeError('--official takes no other option (only --keep)');
+  for (const key of ['repeats', 'vus', 'thinkMs']) {
+    if (!Number.isInteger(o[key]) || o[key] < (key === 'thinkMs' ? 0 : 1)) throw new RangeError(`${key} must be a whole number`);
+  }
+  if (o.vus > 5000) throw new RangeError('vus is too large for the canary index range');
+  plan.seconds(o.warmup);
+  plan.seconds(o.duration);
   if (o.official) Object.assign(o, { vus: plan.OFFICIAL.vus, warmup: plan.OFFICIAL.warmup, duration: plan.OFFICIAL.duration, thinkMs: plan.OFFICIAL.thinkMs, repeats: plan.OFFICIAL.repeats });
   return o;
 }
@@ -93,10 +101,13 @@ async function oneRun(entry, o, label, outRoot) {
   const { mode } = entry;
   const started = new Date();
   const info = commitInfo();
+  if (o.official && info.commit !== o.startCommit) throw new Error('the commit changed during the official session');
   const freeBefore = os.freemem();
   const meta = { ...info, mode, run: entry.run, date: started.toISOString(), official: o.official, label, params: { vus: o.vus, warmup: o.warmup, duration: o.duration, thinkMs: o.thinkMs }, k6Image: plan.K6_IMAGE, freeMemoryBeforeGB: +(freeBefore / GB).toFixed(2), host: { cpus: os.cpus().length, totalMemoryGB: +(os.totalmem() / GB).toFixed(2), os: `${os.type()} ${os.release()}` } };
   const result = { meta, status: 'ok' };
-  const file = path.join(outRoot, `vu${String(o.vus)}-run-${String(entry.run).padStart(2, "0")}-${mode}.json`);
+  const stem = `vu${String(o.vus)}-run-${String(entry.run).padStart(2, '0')}-${mode}`;
+  const taken = fs.existsSync(path.join(outRoot, `${stem}.json`));
+  const file = path.join(outRoot, taken ? `${stem}-${started.toISOString().replace(/[-:.]/g, '')}.json` : `${stem}.json`);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'privpay-k6-'));
   try {
     if (freeBefore < 1.0 * GB) throw new Error(`free memory ${(freeBefore / GB).toFixed(2)} GB before the run; stopping`);
@@ -124,8 +135,10 @@ async function oneRun(entry, o, label, outRoot) {
       lowest = Math.min(lowest, free);
       if (free < ABORT_BELOW) { result.status = 'aborted-low-memory'; run('docker', ['kill', `privpay-k6-run-${mode}`]); }
     }, 5000);
-    const code = await new Promise((resolve) => k6.on('close', resolve));
-    clearInterval(watch);
+    const code = await new Promise((resolve, reject) => {
+      k6.on('error', reject);
+      k6.on('close', resolve);
+    }).finally(() => clearInterval(watch));
     meta.freeMemoryLowestGB = +(lowest / GB).toFixed(2);
     meta.k6ExitCode = code;
     if (result.status === 'ok' && code !== 0) { result.status = 'k6-failed'; result.k6Stderr = stderr.replace(/\s+/g, ' ').slice(-600); }
@@ -151,6 +164,9 @@ async function main() {
   const o = parse(process.argv.slice(2));
   if (o.official && !plan.isOfficialShape(o)) throw new RangeError('--official needs the Metodologi parameters');
   const label = o.official ? 'resmi' : 'kesiapan';
+  const start = commitInfo();
+  if (o.official && !start.treeClean) throw new Error('an official run needs a clean tree');
+  o.startCommit = start.commit;
   const outRoot = path.join(root, 'docs', 'hasil', 'kinerja', label);
   fs.mkdirSync(outRoot, { recursive: true });
   const order = o.only === undefined ? plan.alternation(o.repeats, o.first) : Array.from({ length: o.repeats }, (_, i) => ({ run: i + 1, mode: o.only }));

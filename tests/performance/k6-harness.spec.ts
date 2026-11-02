@@ -82,6 +82,13 @@ describe('M7-01 run plan', () => {
     expect(runner).toContain("o.official ? 'resmi' : 'kesiapan'");
     expect(runner).toContain('--official needs the Metodologi parameters');
     expect(runner).toMatch(/official: o\.official/);
+    for (const text of [
+      '--official takes no other option',
+      'an official run needs a clean tree',
+      'the commit changed during the official session',
+      'must be a whole number',
+    ])
+      expect(runner).toContain(text);
   });
 
   it('M7-01 each run starts from a fresh stack: down -v before up (database reset)', () => {
@@ -151,6 +158,7 @@ describe('M7-01 mixed scenario script', () => {
     expect(k6Script).not.toMatch(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i);
     expect(k6Script).not.toMatch(/eyJ[A-Za-z0-9_-]{10,}/);
     expect(k6Script).toContain("open('/secret/customer_password')");
+    expect(k6Script).toContain('data.tokens'); // sign-in is in setup, not at the start of the measured window
     expect(k6Script).toContain('99995'); // the canary NIK prefix: plainly false data
     expect(k6Script).toContain('@example.test');
   });
