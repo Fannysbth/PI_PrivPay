@@ -1,4 +1,4 @@
-# HANDOFF (2026-11-02): M6 di `feat/m6`: Newman 156 request, pengukuran resmi E(s)/penautan/fail-closed pada pohon bersih (gerbang penutup belum)
+# HANDOFF (2026-11-02): M6 di `feat/m6`: Newman 156 request, pengukuran resmi E(s)/penautan/fail-closed pada pohon bersih (gerbang penutup hijau, tag `m6-tutup`)
 
 | Butir | Bukti |
 | --- | --- |
@@ -7,6 +7,7 @@
 | Penautan (200 subjek) | baseline: 200/200 subjek tertaut di keenam pasangan, rantai 200/200 (banyak tepi palsu); usulan: 0 tertaut, 0 tepi, di dalam satu layanan pseudonim masih mengelompokkan 200 pasangan (recall 1, presisi 1). Setelah `revoke_subject` pembayaran berikutnya menerbitkan token baru (N-51); baseline: revoke 500 |
 | Fail-closed (usulan) | Privacy dihentikan dan dijeda: tiap rute yang butuh Privacy 503 dalam bentuk ADR-0008, nol nilai di jawaban/hilir/DB/log; pulih 6,2 detik setelah dinyalakan, pembayaran lolos setelah dilanjutkan. Baseline: tidak berlaku |
 | Run rekonsiliasi | 9,8 detik (usulan) vs 4,4 detik (baseline), 2.500 transaksi; temuan N-58 / ADR-0018, bukan klaim kinerja |
+| Gerbang penutup (Docker mati, satu proses sekaligus, 910d6a1 = kode yang diuji) | lint 0 (18 s); typecheck 0 (6 s); `test` 2 worker 91 suite / 1585 tes, 0 (47 s; tanpa `*.measure.spec.ts`); `test:integration` 69 suite / 1215 tes, 0 (747 s); `test:smoke` 36 tes, 0 (54 s); `audit --prod` 0 (2 s); `secret-scan:tree` 0 (3 s); `gitleaks --all` 463 commit, 0 (3 s); `pii-scan` 0 (127 s; 47 + 159 tes). Memori bebas terendah di gerbang 7,4 GB; terendah sesi 1,03 GB (tumpukan menyala). Putaran 1 berhenti di langkah `test`: 2 tes DK-01 merah (lingkungan Compose punya `BATCH_HTTP_TIMEOUT_MS` yang tidak ada di rencana `dev:up`; regresi dari ADR-0018, `af2b1c0`); akar masalah diperbaiki di `dev:up` (`910d6a1`), tes tidak diubah; putaran 2 penuh dari langkah 1 |
 | Harness | `commitInfo` mengabaikan `docs/hasil` (`b5a4f2f`, 4 tes, mutasi) |
 
 Belum teruji: kinerja (M7, tidak dikerjakan), penautan dengan 1000 subjek, TK-24/TK-28 lewat Gateway, kuasi-pengenal, kedaluwarsa token 30 hari. Butir keputusan untuk Fanny di `docs/RETRO_M6.md` butir 5 (berkas lokal).

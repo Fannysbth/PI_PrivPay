@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### M6 penutup (feat/m6)
+
+- Pengukuran resmi pada commit `b5a4f2f` dengan pohon bersih: `docs/hasil/` (E(s) kedua mode, penautan, fail-closed usulan). `docs/security/review-M6.md`; checklist S-50, S-70, S-71 dicentang, S-72 sebagian. `dev:up` ikut menetapkan `BATCH_HTTP_TIMEOUT_MS` (`910d6a1`) agar lingkungan Compose dan lokal tetap sama (tes DK-01 menangkapnya). Gerbang penuh satu putaran hijau (HANDOFF).
+
 ### M6-01 Newman (feat/m6, 7beec25, a40d6ac)
 
 - `pnpm newman <mode>` (alias `docker:newman`, tes statis). Enam request baru: TF-10 (4.3a, 4.3b), TK-23 (7.1a), TK-27 (7.1b, 7.1c), TK-08 (9.13a); 7.2 dikoreksi dari TK-24 ke TK-25, 8.2 ditandai TK-17 sebagian; 7.6 kini menegaskan tepat dua DENIED dan satu SUCCESS (percobaan TK-23 tercatat DENIED). Hasil: usulan 156 request / 133 asersi / 0 gagal; baseline 156 / 119 / 0. Tabel cakupan: `docs/qa/cakupan-newman.md`.
