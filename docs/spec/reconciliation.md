@@ -68,6 +68,7 @@ Tidak ada nomor rekening di `settlement_items` dan tidak ada hasil pembukaan di 
 | M4-06 | bank simulator: kasus valid, tidak valid, tak berpasangan | TF-13, TF-16 |
 | M5-01 | adapter baseline | FR-23 |
 | M5-02 | `PrivacyClient` baseline: rekening dari `byId` Transaction (N-46); `audit-request` dan `disclosure` dijawab 503 karena tidak ada Privacy (N-47); laporan bank memakai nomor rekening | FR-23 |
+| G5/G6 (N-57) | baseline = pilihan B (Tabel IV): holder (`customer_id`, `nik`, `nama`) dibaca dari daftar `completed` Transaction dan disimpan pada `settlement_items` yang cocok (migrasi baseline-only 0003; kosong bila tidak ada transaksi yang cocok atau transaksi tanpa NIK/nama); Proposed tidak berubah | FR-23, Tabel IV |
 
 ## 7. Di luar cakupan
 

@@ -33,7 +33,7 @@ Langkah: (1) `POST /resolve-domain` ke Privacy dengan JWT `NOTIFICATION` → `no
 
 **[M4-05, N-30, N-31]** Kegagalan `resolve-domain` (langkah 1) tidak menulis baris `notification_log`, karena `recipient_pseudonym` NOT NULL dan penerimanya belum diketahui; Transaction yang mencatatnya dengan `transaction_id`. Hanya kegagalan Privacy dan SMS yang menjadi `FAILED`; galat basis data tetap galat (5xx), bukan notifikasi gagal. Teks dibentuk dari templat tetap tanpa nama atau identitas, hanya nominal: mis. `TX_COMPLETED`: "Transaksi Rp{amount} berhasil."; `TX_HELD_VERIFY`: "Transaksi Rp{amount} sedang diverifikasi."; `TX_REJECTED`: "Transaksi Rp{amount} ditolak." Teks bukan dicatat di basis data maupun log (dapat menjadi profil).
 
-Pada mode baseline: `send` menerima `customer_id` alih-alih `notif_token`, tanpa langkah 1; kontak dicari berkunci `customer_id` (ADR-0006).
+Pada mode baseline: `send` menerima `customer_id` alih-alih `notif_token`, tanpa langkah 1; kontak dicari berkunci `customer_id` (ADR-0006). **[N-57, G4/G6]** Baseline = pilihan B (Tabel IV): pendaftaran (langkah A4) membawa `nik`, `nama`, dan `account_number` selain `customer_id` dan HP, dan `contact_registry` baseline menyimpannya (migrasi baseline-only 0003; kolom nullable). Pesan tidak pernah membacanya. Email tidak diteruskan (G2). Pendaftaran ulang yang hanya membawa HP mengganti HP dan mempertahankan atribut lain (`COALESCE`).
 
 ## 4. SMS simulator
 

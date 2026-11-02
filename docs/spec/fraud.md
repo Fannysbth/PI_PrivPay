@@ -17,7 +17,7 @@ Menilai risiko transaksi di atas ambang dengan mesin aturan berbobot berkunci ps
 
 `POST /fraud/assess`: pemanggil `TRANSACTION` (selain itu 403 `POLICY_NOT_ALLOWED`).
 
-Permintaan `{pseudonym, amount, tx_hour, geohash}`: `pseudonym` `Pseudonym`; `amount` bilangan bulat ≥ 1; `tx_hour` bilangan bulat 0..23 (UTC); `geohash` `^[0-9b-hjkmnp-z]{1,12}$`; field lain ditolak (422). Pada mode baseline `pseudonym` diganti `customer_id` (ADR-0006).
+Permintaan `{pseudonym, amount, tx_hour, geohash}`: `pseudonym` `Pseudonym`; `amount` bilangan bulat ≥ 1; `tx_hour` bilangan bulat 0..23 (UTC); `geohash` `^[0-9b-hjkmnp-z]{1,12}$`; field lain ditolak (422). Pada mode baseline `pseudonym` diganti `customer_id` (ADR-0006). **[N-57, G3/G6]** Baseline = pilihan B (Tabel IV): permintaan juga memuat `nik`, `nama`, dan `account_number` (opsional, bisa kosong); `fraud_assessments` baseline menyimpannya (migrasi baseline-only 0003, kolom `nik`, `nama`, `account_number`); skor tidak pernah membacanya. Email dan HP tidak diteruskan. Proposed tidak berubah: field itu ditolak 422.
 
 Respons 200: `{risk_score (dua desimal), decision: "ALLOW"|"HOLD_FOR_VERIFICATION"|"BLOCK", rules_fired: string[], rules_skipped: string[], prior_count}`.
 

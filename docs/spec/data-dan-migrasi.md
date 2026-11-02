@@ -81,7 +81,7 @@ DDL PRD 11: `settlement_batches`, `settlement_items`, `audit_requests`. Tidak ad
 
 ## 9. Perbedaan skema pada mode baseline (PRD 11 akhir)
 
-Kolom pseudonim diganti kolom identitas asli, selebihnya sama:
+Kolom pseudonim diganti kolom identitas asli. **[N-57, G3 sampai G6]** Baseline = pilihan B (Tabel IV): selain penggantian nama kolom, baseline MENYIMPAN atribut asli yang diteruskan sistem konvensional, lewat migrasi baseline-only `0003` per layanan (kolom nullable; `migrations/proposed` tidak disentuh): transaction-db `transactions.nik`, `nama`; fraud-db `fraud_assessments.nik`, `nama`, `account_number`; notification-db `contact_registry.nik`, `nama`, `account_number`; reconciliation-db `settlement_items.customer_id`, `nik`, `nama`. Email dan HP tidak diteruskan ke layanan hilir (G2). Tes paritas skema memetakan kolom identitas dan kolom atribut baseline-only dikecualikan secara eksplisit. Tabel di bawah hanya memuat penggantian nama kolom:
 
 | Basis data | proposed | baseline |
 | --- | --- | --- |
@@ -92,7 +92,7 @@ Kolom pseudonim diganti kolom identitas asli, selebihnya sama:
 
 **[M5-01, N-42]** Kolom lain yang menyimpan subjek ikut berganti nama supaya skema tidak berbohong: `notification_log.sender_pseudonym` dan `recipient_pseudonym` menjadi `sender_customer_id` dan `recipient_customer_id` di baseline. Panjang kolom: `customer_id` 16, `account_number` 20 (format Gateway); `settlement_items` baseline memakai `CHECK account_number ~ '^[0-9]{8,20}$'` sebagai pengganti pemeriksaan token. Kolom `privacy_synced_at` dan `privacy_rejected_at` tetap ada di transaction-db baseline (kode domain satu untuk kedua mode; Privacy tidak dipanggil, klien status tanpa-aksi menandai baris sebagai terdengar). Tes paritas (`tests/baseline/schema-parity.ts`) membandingkan kolom, tipe, nullability, dan hak peran runtime kedua mode setelah kolom identitas dipetakan. Mode baseline: migrasi memakai folder `baseline/` saja (tanpa `common/`, karena migrasi lama ada di `proposed/`).
 
-Aturan: kolom tambahan khusus baseline tidak boleh dimuat pada migrasi `common`. Tes arsitektur (ADR-0006) menjaga agar kode domain tidak mengimpor apa pun dari `migrations/` atau dari folder repositori per mode. Jumlah kolom identitas per layanan menjadi bukti pendukung E(s) (inspeksi skema, `pengujian-dan-pengukuran.md`).
+Aturan: kolom tambahan khusus baseline tidak boleh dimuat pada migrasi `common`. Tes arsitektur (ADR-0006) menjaga agar kode domain tidak mengimpor apa pun dari `migrations/` atau dari folder repositori per mode. Pengecualian satu-satunya: migrasi baseline-only `0003` (N-57) boleh menambah kolom atribut karena memang tidak ada padanannya di proposed. Jumlah kolom identitas per layanan menjadi bukti pendukung E(s) (inspeksi skema, `pengujian-dan-pengukuran.md`).
 
 ## 10. Data awal dan data uji
 

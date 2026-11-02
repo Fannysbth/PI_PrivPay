@@ -79,7 +79,7 @@ Kunci `azp + sub` (nasabah/manusia/service) dan, untuk `POST /register`, alamat 
 
 ## 8. Mode
 
-`PRIVACY_MODE=proposed`: perilaku di atas. `PRIVACY_MODE=baseline` (M5-03): `tokenize` mengembalikan `customer_id`, `account_number`, dan (bila ada) `nik`, `nama`, `email` apa adanya; Privacy Service tidak dipanggil; JWT, laju, `transaction_id`, dan `ErrorMasker` identik (jalur Gateway sama). Logika bisnis Gateway tidak bercabang menurut mode di luar `Tokenizer` (ADR-0006). **[N-48, G1]** Diimplementasikan untuk `nik` dan `nama` pada `POST /transaction` (opsi `forwardClientIdentity` yang diisi akar komposisi); `email` belum diteruskan karena Tabel IV tidak memasukkannya ke P(s) baseline (G2 terbuka), dan rute lain tidak berubah (`docs/security/kesenjangan-baseline.md`).
+`PRIVACY_MODE=proposed`: perilaku di atas. `PRIVACY_MODE=baseline` (M5-03): `tokenize` mengembalikan `customer_id`, `account_number`, dan (bila ada) `nik`, `nama`, `email` apa adanya; Privacy Service tidak dipanggil; JWT, laju, `transaction_id`, dan `ErrorMasker` identik (jalur Gateway sama). Logika bisnis Gateway tidak bercabang menurut mode di luar `Tokenizer` (ADR-0006). **[N-48, G1]** Diimplementasikan untuk `nik` dan `nama` pada `POST /transaction` (opsi `forwardClientIdentity` yang diisi akar komposisi); `email` tidak diteruskan karena Tabel IV tidak memasukkannya ke P(s) baseline (G2). **[N-57]** Baseline = pilihan B: ini bukan lagi sekadar penggantian pengenal. Sistem konvensional meneruskan atribut asli ke hilir sesuai Tabel IV: `nik` dan `nama` disimpan Transaction dan diteruskan ke Fraud dan Reconciliation, pendaftaran membawa NIK, nama, rekening ke Notification (`docs/security/kesenjangan-baseline.md`). Nilai Tabel IV hanya tercapai bila klien mengirim `nik` dan `nama` pada pembayaran.
 
 ## 9. Invarian keamanan
 
@@ -106,7 +106,7 @@ NIK/nama/email tidak pernah sampai ke layanan hilir pada mode proposed (diuji de
 | M2-11 | muatan keluar tanpa nilai kenari NIK/nama/email/`customer_id`/rekening (pembangunan dari daftar putih); dua panggilan tokenisasi; `transaction_id` unik; Privacy mati → 503 dan tidak ada panggilan hilir; vektor kontrak | FR-02, FR-03, FR-38, NFR-11, TK-16 |
 | M2-11 | settlement: validasi sebelum tokenisasi (item tak valid → 422, nol token terbit); token sama dengan alur D2 | FR-32, TF-13 |
 | M4-08 | pendaftaran: urutan A2, A5, A3, A4; tes gagal per langkah dan kompensasi; HP baru tersimpan hanya setelah A3 berhasil; tidak ada PII di log | TF-01, FR-19, FR-42, ADR-0005 |
-| M5-03 | mode baseline: payload identik kecuali identitas diteruskan apa adanya; Privacy tidak dipanggil | FR-23, US-09 |
+| M5-03 | mode baseline: payload identik kecuali identitas diteruskan apa adanya; Privacy tidak dipanggil (N-57: atribut asli per Tabel IV, bukan hanya pengenal) | FR-23, US-09 |
 | DK-02a | Kong 3.9.4 OSS di depan adapter di kedua mode: TLS di tepi, tanda tangan/`exp` JWT, batas ukuran dan laju ditolak Kong dengan bentuk galat ADR-0008; Newman lulus di kedua mode (ADR-0015) | ADR-0015 |
 | DK-02b | plugin Lua `privacy-tokenizer` lulus vektor kontrak yang sama; Privacy mati = 503 tanpa kebocoran; baseline passthrough; payload hilir hanya PSEU- di kondisi usulan; adapter tidak menokenisasi ulang (ADR-0016) | ADR-0016 |
 | DK-02 | plugin Lua lulus vektor kontrak yang sama (ditunda; dipecah menjadi DK-02b dan titik keputusan DK-02c) | ADR-0004, ADR-0015 |
