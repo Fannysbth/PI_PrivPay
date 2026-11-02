@@ -37,10 +37,11 @@ const completedItem = z.object({
 });
 // G5: in baseline the item also names the holder (Tabel IV); every field is optional because an old row has no NIK or name.
 const completedItemWithHolder = completedItem.extend({
-  customer_id: z.string().min(1).max(16).optional(),
+  customer_id: z.string().max(16).optional(),
   account_number: z.string().regex(ACCOUNT_NUMBER).optional(),
-  nik: z.string().min(1).max(64).optional(),
-  nama: z.string().min(1).max(200).optional(),
+  // Transaction stores what the client sent, an empty string included: it is read as absent, never as a failure of the day.
+  nik: z.string().max(64).optional(),
+  nama: z.string().max(200).optional(),
 });
 const completedPageOf = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), next_cursor: z.string().nullable() });
@@ -65,10 +66,10 @@ const MAX_PAGES = 1_000;
 /** The holder an item names, or none when it names nothing of the four (an old row). */
 function holderOf(item: z.infer<typeof completedItemWithHolder>): ClientHolder | undefined {
   const holder: ClientHolder = {
-    ...(item.customer_id === undefined ? {} : { customerId: item.customer_id }),
-    ...(item.nik === undefined ? {} : { nik: item.nik }),
-    ...(item.nama === undefined ? {} : { nama: item.nama }),
-    ...(item.account_number === undefined ? {} : { accountNumber: item.account_number }),
+    ...(!item.customer_id ? {} : { customerId: item.customer_id }),
+    ...(!item.nik ? {} : { nik: item.nik }),
+    ...(!item.nama ? {} : { nama: item.nama }),
+    ...(!item.account_number ? {} : { accountNumber: item.account_number }),
   };
   return Object.keys(holder).length === 0 ? undefined : holder;
 }

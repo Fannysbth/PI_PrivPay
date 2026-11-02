@@ -87,6 +87,30 @@ describe('M5-01 FR-23 the baseline contact repository is the same domain over th
     expect(await contacts.phoneOf('CUST-000102')).toBeUndefined();
   });
 
+  // Code review of feat/baseline-b: the customer changes the phone through POST /notification/register, which carries only
+  // the phone; that must not wipe the copy that the registration stored.
+  it('G4 G6 a repeat registration with only a phone changes the phone and keeps the NIK, the name and the account number', async () => {
+    const contacts = baselineContactRepository('baseline', db.app);
+    await contacts.upsert(person.customer_id, '081200000061', 'SMS', AT, {
+      nik: person.nik,
+      nama: person.nama,
+      accountNumber: person.rekening,
+    });
+    await contacts.upsert(person.customer_id, '081200000062', 'SMS', AT);
+    const row = await db.owner.query(
+      'SELECT phone, nik, nama, account_number FROM contact_registry WHERE customer_id = $1',
+      [person.customer_id],
+    );
+    expect(row.rows).toEqual([
+      {
+        phone: '081200000062',
+        nik: person.nik,
+        nama: person.nama,
+        account_number: person.rekening,
+      },
+    ]);
+  });
+
   it('G4 G6 a registration keeps the NIK, the name and the account number beside the customer id and the phone', async () => {
     const contacts = baselineContactRepository('baseline', db.app);
     await contacts.upsert(person.customer_id, '081200000053', 'SMS', AT, {

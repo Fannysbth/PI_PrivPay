@@ -83,6 +83,29 @@ describe('G5 D1 the holder of a completed transaction', () => {
     });
   });
 
+  it('G5 an empty NIK or name stored by Transaction is read as absent and does not fail the page', async () => {
+    const t = setup(() =>
+      json(200, {
+        items: [
+          {
+            transaction_id: 'TX-10001',
+            amount: 35_000,
+            completed_at: '2026-10-05T12:00:00.000Z',
+            customer_id: ['CUST', '654321'].join('-'),
+            nik: '',
+            nama: '',
+          },
+        ],
+        next_cursor: null,
+      }),
+    );
+    const [one] = await new HttpTransactionClient({
+      ...t.deps,
+      acceptClientIdentity: true,
+    }).completedOn('2026-10-05');
+    expect(one?.holder).toEqual({ customerId: ['CUST', '654321'].join('-') });
+  });
+
   it('G5 with the flag off nothing of the holder is kept', async () => {
     const t = setup(() => holderPage.clone());
     const [one] = await new HttpTransactionClient(t.deps).completedOn('2026-10-05');

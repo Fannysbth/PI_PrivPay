@@ -78,11 +78,13 @@ export class RegistrationFlow {
         targetService: 'NOTIFICATION',
         purpose: 'NOTIFICATION_REGISTRATION',
       });
-      await this.registerPhone(domain, form.hp, {
-        nik: form.nik,
-        nama: form.nama,
-        account_number: form.rekening,
-      });
+      await this.registerPhone(
+        domain,
+        form.hp,
+        this.deps.forwardClientIdentity === true
+          ? { nik: form.nik, nama: form.nama, account_number: form.rekening }
+          : undefined,
+      );
     } catch (error) {
       await this.compensate(customerId, handle, requestId);
       throw error instanceof DomainError
@@ -95,7 +97,7 @@ export class RegistrationFlow {
   private async registerPhone(
     domain: string,
     phone: string,
-    attributes: { nik: string; nama: string; account_number: string },
+    attributes?: { nik: string; nama: string; account_number: string },
   ): Promise<void> {
     if (!this.deps.domainRef.test(domain))
       throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
@@ -107,7 +109,7 @@ export class RegistrationFlow {
         notification_domain_id: domain,
         phone,
         channel: 'SMS',
-        ...(this.deps.forwardClientIdentity === true ? attributes : {}),
+        ...(attributes ?? {}),
       },
       // Upsert keyed by the domain token (spec notification 3.1): safe to repeat.
       idempotent: true,

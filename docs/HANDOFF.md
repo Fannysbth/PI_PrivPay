@@ -17,6 +17,7 @@
 ## Keterbatasan dan keputusan Fanny
 1. Tabel IV baseline hanya tercapai bila KLIEN MENGIRIM `nik` dan `nama` pada pembayaran (premis N-48). Alat ukur M6 harus mengirimnya; koleksi Postman sekarang tidak.
 2. Spek lama (`fraud.md`, `notification.md`, `reconciliation.md`, `transaction.md`, `gateway-tokenizer.md` 8, `data-dan-migrasi.md` 9) masih menyatakan "hanya penggantian pengenal" untuk baseline; perlu disesuaikan (N-57 c).
+2b. Tinjauan kode (high) menemukan tiga hal yang diperbaiki: nilai kosong `nik`/`nama` di Transaction membuat seluruh halaman `completed` gagal di Reconciliation; pendaftaran ulang hanya-HP menghapus salinan di Notification (kini COALESCE); atribut mentah A4 dibangun juga di mode usulan (kini hanya di cabang baseline). Lima temuan dilewati dan tercatat di N-57 (e sampai g) atau diterima (tidur nyata 11 detik di tes N-52, sengaja).
 3. Subagen G3 dan G4 menulis kode lebih dulu daripada tes (tertulis di laporan mereka); G5 dikerjakan sendiri setelah agennya dihentikan, tes dulu.
 4. Skill tinjauan memakai `origin/HEAD...`; masih butuh rentang manual sampai `main` di-push.
 
