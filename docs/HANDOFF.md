@@ -1,3 +1,18 @@
+# HANDOFF (2026-11-02): M7-A KESIAPAN di `feat/m7a`: monitoring jalan di kedua mode, k6 + runner berselang-seling; BUKAN pengukuran resmi, lingkungan ukur akhir TERBUKA (N-59, Q-16)
+
+| Butir | Bukti |
+| --- | --- |
+| Monitoring | cAdvisor v0.55.1 (v0.52.1 tidak melihat kontainer di Docker Desktop/containerd), Prometheus v3.5.0, Grafana 12.1.0, semua terpin digest, hanya Grafana di loopback. Prometheus per mode (`prometheus.<mode>.yml`, dipilih lewat `PRIVPAY_MODE`, diisi `pnpm docker:compose`/`perf:run`): baseline 7 target up tanpa job Privacy; usulan semua up. CPU dan memori 16 (baseline) dan 17 (usulan) layanan terbaca. Dasbor tertanam dari berkas, BELUM diverifikasi lewat API (kata sandi admin tidak boleh dibaca): buka `http://127.0.0.1:3000` sekali |
+| k6 + runner | `tests/performance/mixed.k6.js` (70/30, suspicious 2.000.000 >= ambang Fraud, data dibangun saat jalan, masuk ke Kong, sign-in di `setup`), `scripts/perf/{plan,run}.cjs`, `pnpm perf:run`; citra `grafana/k6@sha256:3ddc8b1a...`; tumpukan segar (`down -v`) per run; hasil `docs/hasil/kinerja/kesiapan/vu<N>-run-NN-<mode>.json` (commit, mode, tanggal, treeClean, parameter, versi citra); `--official` menolak opsi lain, pohon kotor, dan perubahan commit |
+| Kesiapan (60 detik, tanpa pemanasan, 0 galat semua) | 10 VU: baseline p95 85 ms / 243 req/s; usulan p95 179 ms / 75 req/s. 25 VU: 155 ms / 256; 371 ms / 76. 50 VU: 251 ms / 246; 708 ms / 71. Bukan klaim. Memori bebas host terendah 1,12 GB |
+| Temuan | Throughput usulan datar ±75 req/s sejak 10 VU dengan CPU rata-rata di bawah batas; max latensi usulan 8,7 sampai 10 detik di SETIAP run (juga 5 VU/20 detik); 100 VU belum dijalankan (butuh persetujuan) |
+| Skill | dipakai: simplify (4 agen), code-review (medium), run (bukti lewat runner). `/security-review` gagal mengambil diff (tanpa remote origin): ditinjau manual (lihat bawah). Tidak dipakai: tdd (tes ditulis sesudah, mutasi membuktikan 3 tes), implement |
+| Tinjauan keamanan manual | Argumen proses lewat array (tanpa shell); mode, durasi, angka divalidasi; kata sandi uji lewat berkas terpasang, tidak di argumen/env/hasil; TLS diverifikasi dengan CA dev; hasil memuat nama atribut/angka saja. **Risiko dicatat:** cAdvisor memasang `/var/run` (termasuk soket Docker) dan `/` baca-saja, berjalan root tanpa `cap_drop`: setara akses Docker untuk dev; hanya profil `monitoring`, tanpa port, jaringan `business` internal. Grafana di jaringan `edge` (sudah begitu sebelumnya) |
+| Gerbang ringan (Docker menyala) | lint 0, prettier 0, typecheck 0, `test` 92 suite / 1601 tes 0 (2 worker), secret-scan:tree 0, gitleaks --all 469 commit 0, audit --prod 0. Tanpa `test:integration`, smoke, pii-scan (putaran penuh di penutup M7) |
+
+Belum teruji: 100 pengguna, pemanasan 60 detik, 5 pengulangan, penyebab plafon ±75 req/s dan lonjakan 9 detik, throttling CPU, dasbor Grafana, PostgreSQL 16 untuk perubahan ini (tidak menyentuh kode layanan).
+Utang kecil (hasil /simplify, dilewati): dua berkas Prometheus hampir sama dan mode lewat env; daftar overlay Compose dan `commitInfo` duplikat dengan `tests/measure`; jendela sumber daya dihitung mundur dari akhir k6.
+
 # HANDOFF (2026-11-02): M6 di `feat/m6`: Newman 156 request, pengukuran resmi E(s)/penautan/fail-closed pada pohon bersih (gerbang penutup hijau, tag `m6-tutup`)
 
 | Butir | Bukti |
