@@ -142,7 +142,7 @@ describe('M7-01 mixed scenario script', () => {
 
   it('M7-01 the mode is a parameter and the run measures after a warm-up scenario', () => {
     expect(k6Script).toMatch(/MODE !== 'baseline' && MODE !== 'proposed'/);
-    expect(k6Script).toContain("startTime: WARMUP === '0s' ? '0s' : WARMUP");
+    expect(k6Script).toContain('startTime: WARMUP,');
     expect(k6Script).toContain('scenario:measure');
   });
 

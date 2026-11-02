@@ -44,7 +44,7 @@ const scenarios = {
     executor: 'constant-vus',
     vus: VUS,
     duration: DURATION,
-    startTime: WARMUP === '0s' ? '0s' : WARMUP,
+    startTime: WARMUP,
     gracefulStop: '30s',
   },
 };

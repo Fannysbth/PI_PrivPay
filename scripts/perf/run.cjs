@@ -67,11 +67,11 @@ const composeEnvFor = (mode) => ({ ...composeEnv(mode), RATE_LIMIT_ENABLED: 'fal
 const compose = (mode, rest, stdio = 'inherit') => run('docker', composeArgs(mode, [...FILES, ...rest]), { stdio, env: composeEnvFor(mode) });
 
 function imageVersions(mode) {
-  const out = {};
   const names = docker(['ps', '--filter', `label=com.docker.compose.project=privpay-${mode}`, '--format', '{{.Names}}']).split('\n').filter(Boolean);
-  for (const name of names) {
-    const [image, id] = docker(['inspect', '-f', '{{.Config.Image}} {{.Image}}', name]).trim().split(' ');
-    out[name.replace(`privpay-${mode}-`, '').replace(/-1$/, '')] = `${image} ${String(id).slice(0, 19)}`;
+  const out = {};
+  for (const line of docker(['inspect', '-f', '{{.Name}} {{.Config.Image}} {{.Image}}', ...names]).split('\n').filter(Boolean)) {
+    const [name, image, id] = line.split(' ');
+    out[name.replace(`/privpay-${mode}-`, '').replace(/-1$/, '')] = `${image} ${String(id).slice(0, 19)}`;
   }
   return out;
 }
@@ -106,7 +106,8 @@ async function oneRun(entry, o, label, outRoot) {
     if (up.status !== 0) {
       // Docker frees a published loopback port a moment after `down`; one retry on a clean slate, then give up (seen in M7-A).
       compose(mode, ['down', '-v', '--remove-orphans'], 'ignore');
-      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15000);
+      await new Promise((resolve) => setTimeout(resolve, 15000));
+      meta.upRetried = true;
       up = compose(mode, ['up', '-d', '--wait']);
     }
     if (up.status !== 0) throw new Error('the stack did not come up');
@@ -119,8 +120,9 @@ async function oneRun(entry, o, label, outRoot) {
     k6.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
     let lowest = freeBefore;
     const watch = setInterval(() => {
-      lowest = Math.min(lowest, os.freemem());
-      if (os.freemem() < ABORT_BELOW) { result.status = 'aborted-low-memory'; run('docker', ['kill', `privpay-k6-run-${mode}`]); }
+      const free = os.freemem();
+      lowest = Math.min(lowest, free);
+      if (free < ABORT_BELOW) { result.status = 'aborted-low-memory'; run('docker', ['kill', `privpay-k6-run-${mode}`]); }
     }, 5000);
     const code = await new Promise((resolve) => k6.on('close', resolve));
     clearInterval(watch);
