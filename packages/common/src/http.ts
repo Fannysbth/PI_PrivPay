@@ -30,7 +30,7 @@ export interface HttpRequest {
    */
   readonly idempotent: boolean;
   /**
-   * ADR-0018: the timeout of this one request, in place of the client's . Only an operation that is a batch by
+   * ADR-0018: the timeout of this one request, in place of the client's `timeoutMs`. Only an operation that is a batch by
    * nature (an admin run over a day's data) sets it; everything else keeps the 3 s of NFR-12.
    */
   readonly timeoutMs?: number;
