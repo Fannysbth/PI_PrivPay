@@ -4,7 +4,9 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
-### M6-01 Newman (feat/m6, 7beec25)
+### M6-01 Newman (feat/m6, 7beec25, a40d6ac)
+
+- `pnpm newman <mode>` (alias `docker:newman`, tes statis). Enam request baru: TF-10 (4.3a, 4.3b), TK-23 (7.1a), TK-27 (7.1b, 7.1c), TK-08 (9.13a); 7.2 dikoreksi dari TK-24 ke TK-25, 8.2 ditandai TK-17 sebagian; 7.6 kini menegaskan tepat dua DENIED dan satu SUCCESS (percobaan TK-23 tercatat DENIED). Hasil: usulan 156 request / 133 asersi / 0 gagal; baseline 156 / 119 / 0. Tabel cakupan: `docs/qa/cakupan-newman.md`.
 
 - Nama request memuat ID TF/TK; `nik`/`nama` dikirim pada pembayaran hanya bila environment mengaktifkannya (baseline). Bukti lewat Kong dengan Docker (Keycloak, WSL 6 GB, build satu per satu): usulan 150 request / 119 asersi / 0 gagal; baseline 150 / 107 / 0. `pnpm newman` lokal belum ada; perintahnya `pnpm docker:newman <mode>`. Kriteria M6-01 belum dinyatakan lulus (cakupan TF/TK penuh belum diaudit).
 
