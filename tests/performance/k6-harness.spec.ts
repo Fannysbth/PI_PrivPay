@@ -10,15 +10,12 @@ const read = (...parts: string[]): string => readFileSync(join(root, ...parts), 
 // eslint-disable-next-line @typescript-eslint/no-require-imports -- a CommonJS runner script (like scripts/docker/compose.cjs)
 const plan = require('../../scripts/perf/plan.cjs') as {
   K6_IMAGE: string;
-  OFFICIAL: { vus: number; warmup: string; duration: string; repeats: number; thinkMs: number };
+  OFFICIAL: { vus: number; warmup: string; duration: string; repeats: number; paces: string[] };
+  PACES: string[];
+  pacesFor: (official: boolean, pace: string) => string[];
   alternation: (repeats: number, first?: string) => { run: number; mode: string }[];
   seconds: (duration: string) => number;
-  isOfficialShape: (p: {
-    vus: number;
-    warmup: string;
-    duration: string;
-    thinkMs: number;
-  }) => boolean;
+  isOfficialShape: (p: { vus: number; warmup: string; duration: string; pace: string }) => boolean;
   k6DockerArgs: (o: Record<string, unknown>) => string[];
   resourceQueries: (windowSeconds: number) => Record<string, string>;
 };
@@ -59,22 +56,30 @@ describe('M7-01 run plan', () => {
     expect(() => plan.alternation(0)).toThrow(RangeError);
   });
 
-  it('M7-01 the official shape is 100 users, 60 s warm-up, 300 s, five repeats; a small load is not official', () => {
+  it('M7-01 the official shape is 100 users, 60 s warm-up, 300 s, five repeats, both paces; a small load is not official', () => {
     expect(plan.OFFICIAL).toEqual({
       vus: 100,
       warmup: '60s',
       duration: '300s',
       repeats: 5,
-      thinkMs: 0,
+      paces: ['saturation', 'realistic'],
     });
-    expect(plan.isOfficialShape({ vus: 100, warmup: '1m', duration: '5m', thinkMs: 0 })).toBe(true);
-    expect(plan.isOfficialShape({ vus: 10, warmup: '0s', duration: '60s', thinkMs: 0 })).toBe(
-      false,
-    );
-    expect(plan.isOfficialShape({ vus: 100, warmup: '60s', duration: '300s', thinkMs: 500 })).toBe(
-      false,
-    );
+    const big = { vus: 100, warmup: '1m', duration: '5m' };
+    expect(plan.isOfficialShape({ ...big, pace: 'saturation' })).toBe(true);
+    expect(plan.isOfficialShape({ ...big, pace: 'realistic' })).toBe(true);
+    expect(plan.isOfficialShape({ ...big, pace: 'bogus' })).toBe(false);
+    expect(
+      plan.isOfficialShape({ vus: 10, warmup: '0s', duration: '60s', pace: 'saturation' }),
+    ).toBe(false);
     expect(() => plan.seconds('90')).toThrow(RangeError);
+  });
+
+  it('M7-B the two paces are saturation (no pause) and realistic; --official runs both, separately', () => {
+    expect(plan.PACES).toEqual(['saturation', 'realistic']);
+    expect(plan.pacesFor(true, 'realistic')).toEqual(['saturation', 'realistic']);
+    expect(plan.pacesFor(false, 'realistic')).toEqual(['realistic']);
+    expect(plan.pacesFor(false, 'saturation')).toEqual(['saturation']);
+    expect(() => plan.pacesFor(false, 'bogus')).toThrow(RangeError);
   });
 
   it('M7-01 the runner labels a non-official run as readiness and never calls it official', () => {
@@ -110,7 +115,7 @@ describe('M7-01 load generator container', () => {
     vus: 10,
     warmup: '0s',
     duration: '60s',
-    thinkMs: 0,
+    pace: 'realistic',
     runBase: 123,
   });
 
@@ -126,6 +131,11 @@ describe('M7-01 load generator container', () => {
       Object.keys({ ...pkg.dependencies, ...pkg.devDependencies }).filter((n) => n.includes('k6')),
     ).toEqual([]);
     expect(pkg.scripts['perf:run']).toBe('node scripts/perf/run.cjs');
+  });
+
+  it('M7-B the pace is passed to k6 as PACE, not as a free pause value', () => {
+    expect(args).toContain('PACE=realistic');
+    expect(args.join(' ')).not.toContain('THINK_MS');
   });
 
   it('M7-01 the test password is a mounted file; TLS is verified against the dev CA', () => {
@@ -145,6 +155,15 @@ describe('M7-01 mixed scenario script', () => {
     expect(Number((amount?.[1] ?? '0').replace(/_/g, ''))).toBeGreaterThanOrEqual(1_000_000);
     const normal = /NORMAL_AMOUNT = ([0-9_]+);/.exec(k6Script);
     expect(Number((normal?.[1] ?? '0').replace(/_/g, ''))).toBeLessThan(1_000_000);
+  });
+
+  it('M7-B realistic pace pauses 0.5 to 1.5 s at random; saturation does not pause; the pace is in the summary', () => {
+    expect(k6Script).toContain('PAUSE_MIN_S = 0.5');
+    expect(k6Script).toContain('PAUSE_MAX_S = 1.5');
+    expect(k6Script).toMatch(/PACE === 'realistic'/);
+    expect(k6Script).toMatch(/PACE !== 'realistic' && PACE !== 'saturation'/);
+    expect(k6Script).not.toContain('THINK_MS');
+    expect(k6Script).toMatch(/pace: PACE/);
   });
 
   it('M7-01 the mode is a parameter and the run measures after a warm-up scenario', () => {

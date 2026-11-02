@@ -9,7 +9,8 @@
 // The official run is `--official` (100 users, 60 s warm-up, 300 s, 5 repeats) and is refused with any other parameter.
 //
 //   --repeats N        pairs of runs (default 1)             --first baseline|proposed   which mode starts (default baseline)
-//   --only <mode>      run one mode only, repeats times      --vus N --warmup 60s --duration 300s --think-ms N
+//   --only <mode>      run one mode only, repeats times      --vus N --warmup 60s --duration 300s
+//   --pace saturation|realistic   no pause between requests (default) or a random 0.5 to 1.5 s pause (M7-B); --official runs both, separately
 //   --official         the Metodologi parameters; label `resmi`
 //   --keep             leave the last stack running (default: `down -v` after each run)
 // Safety: free memory is read before each run and every 5 s during it; at or below 0.5 GB the load is stopped and the run is
@@ -26,7 +27,7 @@ const GB = 1024 ** 3;
 const ABORT_BELOW = 0.5 * GB;
 
 function parse(argv) {
-  const o = { repeats: 1, first: 'baseline', only: undefined, vus: 10, warmup: '0s', duration: '60s', thinkMs: 0, official: false, keep: false };
+  const o = { repeats: 1, first: 'baseline', only: undefined, vus: 10, warmup: '0s', duration: '60s', pace: 'saturation', official: false, keep: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -36,20 +37,21 @@ function parse(argv) {
     else if (a === '--vus') o.vus = Number(next());
     else if (a === '--warmup') o.warmup = next();
     else if (a === '--duration') o.duration = next();
-    else if (a === '--think-ms') o.thinkMs = Number(next());
+    else if (a === '--pace') o.pace = next();
     else if (a === '--official') o.official = true;
     else if (a === '--keep') o.keep = true;
     else throw new RangeError(`unknown option ${a}`);
   }
   const given = argv.filter((a) => a.startsWith('--') && a !== '--official' && a !== '--keep');
   if (o.official && given.length > 0) throw new RangeError('--official takes no other option (only --keep)');
-  for (const key of ['repeats', 'vus', 'thinkMs']) {
-    if (!Number.isInteger(o[key]) || o[key] < (key === 'thinkMs' ? 0 : 1)) throw new RangeError(`${key} must be a whole number`);
+  plan.pacesFor(false, o.pace);
+  for (const key of ['repeats', 'vus']) {
+    if (!Number.isInteger(o[key]) || o[key] < 1) throw new RangeError(`${key} must be a whole number`);
   }
   if (o.vus > 5000) throw new RangeError('vus is too large for the canary index range');
   plan.seconds(o.warmup);
   plan.seconds(o.duration);
-  if (o.official) Object.assign(o, { vus: plan.OFFICIAL.vus, warmup: plan.OFFICIAL.warmup, duration: plan.OFFICIAL.duration, thinkMs: plan.OFFICIAL.thinkMs, repeats: plan.OFFICIAL.repeats });
+  if (o.official) Object.assign(o, { vus: plan.OFFICIAL.vus, warmup: plan.OFFICIAL.warmup, duration: plan.OFFICIAL.duration, repeats: plan.OFFICIAL.repeats });
   return o;
 }
 
@@ -103,9 +105,9 @@ async function oneRun(entry, o, label, outRoot) {
   const info = commitInfo();
   if (o.official && info.commit !== o.startCommit) throw new Error('the commit changed during the official session');
   const freeBefore = os.freemem();
-  const meta = { ...info, mode, run: entry.run, date: started.toISOString(), official: o.official, label, params: { vus: o.vus, warmup: o.warmup, duration: o.duration, thinkMs: o.thinkMs }, k6Image: plan.K6_IMAGE, freeMemoryBeforeGB: +(freeBefore / GB).toFixed(2), host: { cpus: os.cpus().length, totalMemoryGB: +(os.totalmem() / GB).toFixed(2), os: `${os.type()} ${os.release()}` } };
+  const meta = { ...info, mode, run: entry.run, date: started.toISOString(), official: o.official, label, params: { vus: o.vus, warmup: o.warmup, duration: o.duration, pace: o.pace }, k6Image: plan.K6_IMAGE, freeMemoryBeforeGB: +(freeBefore / GB).toFixed(2), host: { cpus: os.cpus().length, totalMemoryGB: +(os.totalmem() / GB).toFixed(2), os: `${os.type()} ${os.release()}` } };
   const result = { meta, status: 'ok' };
-  const stem = `vu${String(o.vus)}-run-${String(entry.run).padStart(2, '0')}-${mode}`;
+  const stem = `vu${String(o.vus)}-${o.pace}-run-${String(entry.run).padStart(2, '0')}-${mode}`;
   const taken = fs.existsSync(path.join(outRoot, `${stem}.json`));
   const file = path.join(outRoot, taken ? `${stem}-${started.toISOString().replace(/[-:.]/g, '')}.json` : `${stem}.json`);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'privpay-k6-'));
@@ -126,7 +128,7 @@ async function oneRun(entry, o, label, outRoot) {
     meta.prometheusTargetsBefore = prometheusTargets(mode);
     // The canary indices of this run: distinct per run, below the 100000 of the canary builder.
     const runBase = Math.floor(Date.now() / 1000) % (99000 - o.vus);
-    const k6 = spawn('docker', plan.k6DockerArgs({ containerName: `privpay-k6-run-${mode}`, network: `privpay-${mode}_edge`, caFile: caFile(), passwordFile: path.join(secretsDir(), 'keycloak_password_customer'), scriptDir: path.join(root, 'tests', 'performance'), outDir: tmp, mode, vus: o.vus, warmup: o.warmup, duration: o.duration, thinkMs: o.thinkMs, runBase }), { stdio: ['ignore', 'ignore', 'pipe'] });
+    const k6 = spawn('docker', plan.k6DockerArgs({ containerName: `privpay-k6-run-${mode}`, network: `privpay-${mode}_edge`, caFile: caFile(), passwordFile: path.join(secretsDir(), 'keycloak_password_customer'), scriptDir: path.join(root, 'tests', 'performance'), outDir: tmp, mode, vus: o.vus, warmup: o.warmup, duration: o.duration, pace: o.pace, runBase }), { stdio: ['ignore', 'ignore', 'pipe'] });
     let stderr = '';
     k6.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
     let lowest = freeBefore;
@@ -171,12 +173,14 @@ async function main() {
   fs.mkdirSync(outRoot, { recursive: true });
   const order = o.only === undefined ? plan.alternation(o.repeats, o.first) : Array.from({ length: o.repeats }, (_, i) => ({ run: i + 1, mode: o.only }));
   if (order.some((e) => e.mode !== 'baseline' && e.mode !== 'proposed')) throw new RangeError('mode must be baseline or proposed');
-  let failed = 0;
-  for (const entry of order) {
-    const status = await oneRun(entry, o, label, outRoot);
-    if (status !== 'ok') { failed += 1; break; }
+  // An official session runs each pace as its own alternating set; the pace never changes inside a set.
+  for (const pace of plan.pacesFor(o.official, o.pace)) {
+    o.pace = pace;
+    for (const entry of order) {
+      if ((await oneRun(entry, o, label, outRoot)) !== 'ok') return 1;
+    }
   }
-  return failed === 0 ? 0 : 1;
+  return 0;
 }
 
 main().then((code) => { process.exitCode = code; }, (error) => { process.stderr.write(`${error instanceof Error ? error.message : 'error'}\n`); process.exitCode = 2; });

@@ -6,7 +6,20 @@
 const K6_IMAGE = 'grafana/k6@sha256:3ddc8b1a33a2c3d8edc6e99b6a762ae36cba08788463458f5e6a7703e14eb77d';
 
 /** Metodologi D.4: one level of load; PRD 18.4 and the Metodologi give the official parameters. */
-const OFFICIAL = Object.freeze({ vus: 100, warmup: '60s', duration: '300s', repeats: 5, thinkMs: 0 });
+/**
+ * Two paces, never mixed in one run (M7-B). The Metodologi names closed-loop load and a fixed number of users but says nothing about
+ * a pause; saturation (no pause) is the literal reading, realistic (a random pause of 0.5 to 1.5 s, in mixed.k6.js) the usual one.
+ */
+const PACES = Object.freeze(['saturation', 'realistic']);
+
+const OFFICIAL = Object.freeze({ vus: 100, warmup: '60s', duration: '300s', repeats: 5, paces: PACES });
+
+/** The paces a session runs: an official session runs both (each as its own set of alternating runs), any other one pace. */
+function pacesFor(official, pace) {
+  if (official) return [...PACES];
+  if (!PACES.includes(pace)) throw new RangeError(`pace must be one of ${PACES.join(', ')}`);
+  return [pace];
+}
 
 /** Modes alternate (baseline, proposed, baseline, ...) so a drift of the machine does not fall on one condition (Metodologi D.5). */
 function alternation(repeats, first = 'baseline') {
@@ -32,7 +45,7 @@ function isOfficialShape(p) {
     p.vus === OFFICIAL.vus &&
     seconds(p.warmup) === seconds(OFFICIAL.warmup) &&
     seconds(p.duration) === seconds(OFFICIAL.duration) &&
-    p.thinkMs === OFFICIAL.thinkMs
+    PACES.includes(p.pace)
   );
 }
 
@@ -54,7 +67,7 @@ function k6DockerArgs(o) {
     '-e', `VUS=${String(o.vus)}`,
     '-e', `WARMUP=${o.warmup}`,
     '-e', `DURATION=${o.duration}`,
-    '-e', `THINK_MS=${String(o.thinkMs)}`,
+    '-e', `PACE=${o.pace}`,
     '-e', `RUN_BASE=${String(o.runBase)}`,
     '-e', 'BASE_URL=https://kong:8443',
     '-e', 'IDP_URL=http://keycloak:8080',
@@ -75,4 +88,4 @@ function resourceQueries(windowSeconds) {
   };
 }
 
-module.exports = { K6_IMAGE, OFFICIAL, SERVICE_LABEL, alternation, seconds, isOfficialShape, k6DockerArgs, resourceQueries };
+module.exports = { K6_IMAGE, OFFICIAL, PACES, pacesFor, SERVICE_LABEL, alternation, seconds, isOfficialShape, k6DockerArgs, resourceQueries };
