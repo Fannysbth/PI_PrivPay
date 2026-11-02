@@ -1,7 +1,12 @@
-# Monitoring for M7 (NFR-18): Prometheus, Grafana and cAdvisor. DEFINITION ONLY in DK-01a: every service is in the profile
-# `monitoring`, so nothing here starts with `up` unless `--profile monitoring` is given, and none of it has been run yet.
-# Add it with: docker compose -f docker-compose.yml -f mode.<condition>.yml -f docker-compose.monitoring.yml --profile monitoring up
-# Memory of these three is NOT yet measured (docs/dk/KELAYAKAN.md); measure before relying on them next to the full stack.
+# Monitoring for M7 (NFR-18): Prometheus, Grafana and cAdvisor. Every service is in the profile `monitoring`, so nothing here
+# starts with `up` unless `--profile monitoring` is given. Needs PRIVPAY_MODE=<proposed|baseline> (it picks the Prometheus file;
+# `pnpm docker:compose` sets it). Start with:
+#   pnpm docker:compose <mode> -f deploy/compose/docker-compose.monitoring.yml --profile monitoring up -d --wait
+# Only Grafana is published, and only on the loopback of the host. Images are pinned by digest; no secret is written here
+# (the Grafana administrator password is a Docker secret read from a file).
+# Memory limits are the same in both conditions. cAdvisor reads the cgroups of the host through read-only mounts; it keeps only
+# CPU and memory (the two metrics of Metodologi Tabel V) to stay small. v0.55.1, not v0.52.1: on Docker Desktop (containerd image
+# store) v0.52.1 fails with "failed to identify the read-write layer ID" and reports no container at all (found in M7-A).
 
 services:
   prometheus:
@@ -11,11 +16,15 @@ services:
     security_opt: ['no-new-privileges:true']
     read_only: true
     restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=2d
     deploy:
       resources:
         limits: { cpus: '0.50', memory: 256M }
     volumes:
-      - ../prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../prometheus/prometheus.${PRIVPAY_MODE:?set PRIVPAY_MODE to proposed or baseline}.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
     # It scrapes the business zone and, in the proposed condition, the Privacy Service over TLS (job `privpay-privacy`).
     secrets: [tls_ca_crt]
@@ -23,13 +32,18 @@ services:
 
   cadvisor:
     profiles: [monitoring]
-    image: gcr.io/cadvisor/cadvisor:v0.52.1@sha256:f40e65878e25c2e78ea037f73a449527a0fb994e303dc3e34cb6b187b4b91435
+    image: gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
     restart: unless-stopped
+    command:
+      - --docker_only=true
+      - --housekeeping_interval=10s
+      - --store_container_labels=false
+      - --whitelisted_container_labels=com.docker.compose.service,com.docker.compose.project
+      - --disable_metrics=advtcp,cpu_topology,cpuLoad,memory_numa,percpu,sched,tcp,udp,process,hugetlb,referenced_memory,resctrl,disk,diskIO,network,oom_event
     deploy:
       resources:
-        limits: { cpus: '0.25', memory: 128M }
-    # cAdvisor reads the cgroups of the host; these read-only mounts are what it needs, and it is the only service here
-    # that cannot run read-only with all capabilities dropped. Decide at M7 whether to keep it.
+        limits: { cpus: '0.25', memory: 256M }
+    # cAdvisor cannot run read-only with all capabilities dropped (it reads /sys and the Docker socket); these mounts are all it has.
     volumes:
       - /:/rootfs:ro
       - /var/run:/var/run:ro
@@ -48,9 +62,18 @@ services:
         limits: { cpus: '0.50', memory: 256M }
     environment:
       GF_SECURITY_ADMIN_PASSWORD__FILE: /run/secrets/grafana_admin_password
+      GF_USERS_ALLOW_SIGN_UP: 'false'
+      GF_AUTH_ANONYMOUS_ENABLED: 'false'
+      GF_ANALYTICS_REPORTING_ENABLED: 'false'
+      GF_ANALYTICS_CHECK_FOR_UPDATES: 'false'
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: 'false'
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
     secrets: [grafana_admin_password]
     ports: ['127.0.0.1:${GRAFANA_HOST_PORT:-3000}:3000']
-    volumes: ['grafana-data:/var/lib/grafana']
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ../grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../grafana/dashboards:/etc/grafana/dashboards:ro
     networks: [business, edge]
 
 volumes:

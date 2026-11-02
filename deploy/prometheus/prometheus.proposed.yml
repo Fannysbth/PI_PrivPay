@@ -1,5 +1,6 @@
-# Prometheus scrape configuration for the Compose stack (definition only in DK-01a). /metrics of every service listens on
-# the service port inside the internal network; a service that is not in the chosen condition is simply down.
+# Prometheus scrape configuration, PROPOSED condition. Chosen by docker-compose.monitoring.yml from PRIVPAY_MODE; the
+# baseline condition uses prometheus.baseline.yml, which leaves out the Privacy Service (there is no such service in baseline).
+# /metrics of every service listens on the service port inside the internal network.
 global:
   scrape_interval: 15s
 
@@ -23,6 +24,8 @@ scrape_configs:
       ca_file: /run/secrets/tls_ca_crt
     static_configs:
       - targets: ['privacy-service:4001']
+  # NFR-18: CPU and memory of every container (Metodologi Tabel V). A shorter interval than the services: a rate needs samples.
   - job_name: cadvisor
+    scrape_interval: 10s
     static_configs:
       - targets: ['cadvisor:8080']

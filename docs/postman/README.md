@@ -104,16 +104,17 @@ Postman tidak bisa menjalankan `docker exec`, jadi request di sini hanya memangg
 
 Perhatikan bahwa Notification menyimpan nomor HP di kedua mode (ia perlu mengirim SMS); bedanya hanya pada kunci pencariannya (token versus id asli). Perintah 10.5 memakai nilai uji Anda; bentuk umumnya `docker logs privpay-proposed-gateway-1 2>&1 | grep -c -E '<nilai>'`.
 
-## 6. Memantau Grafana dan Prometheus (belum diuji di sesi ini)
+## 6. Memantau Grafana dan Prometheus (M7-A: terjalan di kedua mode)
 
-Definisinya ada (`deploy/compose/docker-compose.monitoring.yml`, profil `monitoring`) tetapi **belum pernah dijalankan** dan citranya belum diunduh; memorinya belum diukur dan dapat menekan batas WSL 6 GB. Bila ingin mencoba setelah tumpukan menyala:
+Profil `monitoring` (`deploy/compose/docker-compose.monitoring.yml`) sudah dijalankan di baseline dan usulan (cAdvisor v0.55.1, Prometheus v3.5.0, Grafana 12.1.0, terpin dengan digest). Butuh `PRIVPAY_MODE`, yang diisi oleh `pnpm docker:compose`:
 
 ```powershell
-docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f docs/postman/compose.postman.yml -f deploy/compose/docker-compose.monitoring.yml --profile monitoring up -d
+pnpm docker:compose proposed -f docs/postman/compose.postman.yml -f deploy/compose/docker-compose.monitoring.yml --profile monitoring up -d --wait
 ```
 
-- Grafana: `http://127.0.0.1:3000`, pengguna `admin`, kata sandi ada di berkas `secrets/docker/grafana_admin_password` (buka sendiri; jangan ditempel ke chat).
-- Prometheus tidak dipublikasikan ke host; ia hanya terjangkau dari Grafana. Tambahkan sumber data Prometheus dengan URL `http://prometheus:9090`. Belum ada dasbor siap pakai; buat panel dari metrik layanan (`/metrics`).
+- Grafana: `http://127.0.0.1:3000`, pengguna `admin`, kata sandi ada di berkas `secrets/docker/grafana_admin_password` (buka sendiri; jangan ditempel ke chat). Sumber data Prometheus dan dasbor "PrivPay: CPU and memory per container" ditanam dari berkas (`deploy/grafana/`); dasbor belum diperiksa lewat API Grafana (butuh kata sandi admin), buka sekali di peramban.
+- Prometheus tidak dipublikasikan ke host. Daftar target: `docker exec privpay-<mode>-prometheus-1 wget -qO- http://127.0.0.1:9090/api/v1/targets`. Baseline tidak punya target Privacy Service (file `deploy/prometheus/prometheus.baseline.yml`).
+- cAdvisor sengaja hanya CPU dan memori. v0.52.1 tidak melihat satu kontainer pun di Docker Desktop dengan image store containerd (`failed to identify the read-write layer ID`).
 - Mematikannya: tambahkan `--profile monitoring` pada perintah `down` yang sama.
 
 ## 7. Bukti otomatis tanpa Postman (Newman, smoke, edge-check)

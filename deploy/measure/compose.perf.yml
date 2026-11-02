@@ -1,0 +1,10 @@
+# M7 performance overlay (NOT part of the official stack). Pair with the two official files, docs/postman/compose.postman.yml
+# (Keycloak and the SMS simulator on `edge`, so the load generator on `edge` can sign in) and docker-compose.monitoring.yml.
+# It changes ONE thing, identically in both conditions: the rate limit of the Gateway adapter is off (ticket M7-01, security
+# note: "rate limit dimatikan identik di kedua mode"). The limit of Kong is switched off by the harness with RATE_LIMIT_ENABLED=false
+# in the shell that runs `docker compose`. Unlike deploy/measure/compose.measure.yml there is NO observer in the path: nothing
+# sits between Kong and the services that the official stack does not have.
+services:
+  gateway:
+    environment:
+      RATE_LIMIT_ENABLED: 'false'
