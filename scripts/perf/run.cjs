@@ -115,6 +115,8 @@ async function oneRun(entry, o, label, outRoot) {
     if (freeBefore < 1.0 * GB) throw new Error(`free memory ${(freeBefore / GB).toFixed(2)} GB before the run; stopping`);
     process.stdout.write(`run ${entry.run} ${mode}: fresh stack\n`);
     // Both modes publish the same loopback ports: a stack left over from the other mode would make this one fail to start.
+    process.stdout.write(`run ${entry.run} ${mode}: removing the ${mode === 'baseline' ? 'proposed' : 'baseline'} stack if it is running
+`);
     compose(mode === 'baseline' ? 'proposed' : 'baseline', ['down', '-v', '--remove-orphans'], 'ignore');
     compose(mode, ['down', '-v', '--remove-orphans']);
     let up = compose(mode, ['up', '-d', '--wait']);
@@ -177,9 +179,13 @@ async function main() {
   if (order.some((e) => e.mode !== 'baseline' && e.mode !== 'proposed')) throw new RangeError('mode must be baseline or proposed');
   // An official session runs each pace as its own alternating set; the pace never changes inside a set.
   for (const pace of plan.pacesFor(o.official, o.pace)) {
-    o.pace = pace;
+    const set = { ...o, pace };
     for (const entry of order) {
-      if ((await oneRun(entry, o, label, outRoot)) !== 'ok') return 1;
+      if ((await oneRun(entry, set, label, outRoot)) !== 'ok') {
+        if (o.official) process.stderr.write(`the official session is INCOMPLETE: stopped in the ${pace} set
+`);
+        return 1;
+      }
     }
   }
   return 0;
