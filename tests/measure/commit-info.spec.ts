@@ -45,6 +45,15 @@ describe('M6 commitInfo', () => {
     expect(commitInfo(dir).dirty).toBe(true);
   });
 
+  it('M6 outside a git work tree it throws instead of reporting a clean tree with no commit', () => {
+    const plain = mkdtempSync(join(tmpdir(), 'privpay-not-a-repo-'));
+    try {
+      expect(() => commitInfo(plain)).toThrow(/git/);
+    } finally {
+      rmSync(plain, { recursive: true, force: true });
+    }
+  });
+
   it('M6 a modified tracked file makes the tree dirty', () => {
     writeFileSync(join(dir, 'a.txt'), 'changed');
     expect(commitInfo(dir).dirty).toBe(true);

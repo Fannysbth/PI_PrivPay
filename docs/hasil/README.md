@@ -19,3 +19,4 @@
 3. Uji penautan bersifat empiris pada data run ini; bukan bukti ketaktertautan, dan penyerang tidak memegang kunci atau Privacy Service.
 4. Tidak ada klaim kinerja. Durasi run rekonsiliasi (temuan N-58) dan waktu pemulihan adalah waktu dinding laptop ini (ADR-0004).
 5. Pembukaan identitas (usulan) dilaporkan terpisah dari E(s) utama: paparan terkontrol, lima percobaan, lima berhasil hanya atribut disetujui.
+6. Setiap run resmi butuh tumpukan segar (`down -v` sebelum menyalakan): data kenari penghubung (`linkage`) tetap dari rentang tetap dan data tumpukan bertahan antar-run, jadi run ulang di tumpukan yang sama gagal 409 atau mencampur baris lama. Berkas hasil ditulis `afterAll` bahkan bila ada tes gagal; periksa kode keluar (0) dan `git diff` sebelum mengomit.
