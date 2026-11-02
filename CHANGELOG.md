@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Baseline = pilihan B (feat/baseline-b, N-57, ADR-0006 tambahan)
+
+- G2 sampai G6: baseline meneruskan dan menyimpan atribut asli sesuai Tabel IV v9 (customer id, NIK, nama, rekening; HP di Notification; email tidak). Transaction menyimpan `nik`/`nama` dan meneruskannya ke Fraud; langkah A4 pendaftaran meneruskan NIK, nama, rekening ke Notification; Reconciliation membaca holder dari daftar `completed` dan menyimpannya pada item yang cocok. Migrasi baseline-only 0003 di Transaction, Fraud, Notification, Reconciliation; `migrations/proposed` tidak berubah.
+- Mode usulan tidak berubah: payload scan Docker (Transaction/Fraud/Reconciliation hanya PSEU-, Notification hanya HP), Newman 149/115/0, smoke 9/9.
+- Sekilas E(s) teramati sama dengan Tabel IV di kedua mode (`exposure-glance.integration.spec.ts`, bukan pengukuran resmi). Newman baseline 149/103/0 (koleksi tidak mengirim NIK/nama pada pembayaran).
+- `test-db-cleanup` (N-52): penahan sesi adalah `pg.Client` khusus; kasus lambat (>10 detik) ditambahkan dan dibuktikan dengan mutasi.
+- `docs/HANDOFF.md`, `docs/OPEN_QUESTIONS.md`, `docs/tickets/` dilacak di git (isi diperiksa: tanpa rahasia dan data pribadi).
+
 ### DK-04c: token per audiens dan kata sandi per kelas (feat/dk-04c, ADR-0017)
 
 - Token akun layanan memuat satu audiens: scope klien opsional `aud-<layanan>` per layanan tujuan di realm, klien hanya boleh meminta barisnya sendiri (selain itu 400 `invalid_scope`); `createIdpTokenCache` mengirim `scope`; Gateway memegang cache token per audiens; plugin Kong meminta `aud-privacy-service`; `authenticate()` menolak token akun layanan yang menyebut lebih dari satu layanan (403, `audience`).

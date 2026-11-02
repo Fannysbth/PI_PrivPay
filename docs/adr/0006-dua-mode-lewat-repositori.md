@@ -26,6 +26,10 @@ Skema layanan hilir berbeda antara `baseline` (kolom identitas) dan `proposed` (
 - Dampak pada pengujian dan pengukuran: tes kesetaraan menjadi bukti validitas internal M5 dan M7.
 - Yang harus diubah: spec `data-dan-migrasi` dan `pengujian-dan-pengukuran`, struktur folder tiap layanan.
 
+## Tambahan (2026-11-02): arti `baseline` (keputusan Fanny, pilihan B)
+
+Mekanisme di atas tidak berubah. Yang diputuskan adalah isi mode `baseline`: sistem konvensional tanpa pseudonimisasi yang meneruskan atribut asli persis seperti Tabel IV Metodologi v9 (customer id, NIK, nama, rekening di Transaction, Fraud, Reconciliation; ditambah HP di Notification; email tidak diteruskan). Seluruhnya lewat adapter dan SQL per mode (`SubjectReferencePort.identityForFraud`, bendera `acceptClientIdentity` pada skema masuk, `storesClientIdentity`/`storesClientAttributes`/`storeHolders` pada `SubjectSql`) dan migrasi `baseline/` 0003 per layanan; kode domain tetap tidak menyebut mode (tes `mode-folders`). Nilai Tabel IV adalah harapan yang diukur, bukan target. Lihat `docs/security/kesenjangan-baseline.md` dan N-57.
+
 ## Kapan ditinjau ulang
 
 Bila tes kesetaraan menemukan logika yang terpaksa berbeda antara mode.

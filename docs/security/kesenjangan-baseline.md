@@ -89,12 +89,34 @@ E(s) teramati: 1/6 (rekening). Harapan: 4/6. **Seluruh selisih AMBIGU** dan satu
 | G6 | Layanan **menyimpan salinan** NIK/nama | AMBIGU dan **berhenti**: butuh migrasi baseline | Metodologi (B) vs PRD 11 dan data 9 (A) |
 | G7 | Log baseline bersih/tidak | belum diverifikasi | tes tidak menuntutnya; akan dicakup tes baru bila log dapat dipindai |
 
-## 4. Keputusan yang diminta dari pemilik skripsi
+## 4. Keputusan pemilik skripsi (2026-11-02): baseline = PILIHAN B
 
-1. Mana yang berlaku untuk baseline: **A (penggantian pengenal)** atau **B (passthrough penuh, Tabel IV)**? Bila A, Tabel IV harus diubah menjadi 2/6, 1/6, 1/6, 2/6 (naskah metodologi dan `pengujian-dan-pengukuran.md` bagian 6, bukan kode). Bila B, G3 sampai G6 dikerjakan dan G6 membutuhkan migrasi baseline.
-2. Email diteruskan di baseline atau tidak (G2).
+Baseline adalah sistem konvensional tanpa pseudonimisasi yang meneruskan atribut asli persis seperti Tabel IV v9 (bukan penggantian pengenal saja). Nilai Tabel IV adalah harapan yang DIUKUR, bukan target untuk disetel: atribut tidak ditambah atau dikurangi agar angka cocok. Email tidak diteruskan (Tabel IV tidak memuatnya di baris layanan mana pun). Dikerjakan di `feat/baseline-b`:
 
-G1 dikerjakan lebih dulu karena dua sumber (gateway bagian 8 dan Tabel IV) sepakat dan spek Transaction bagian 3.1 hanya diam soal baseline; ia tidak bergantung pada G3 sampai G6. Bila keputusan nomor 1 ternyata A, G1 dibatalkan dengan satu commit (ia berdiri sendiri) dan Tabel IV diubah.
+| # | Status | Apa yang dikerjakan |
+| --- | --- | --- |
+| G1 | SELESAI (N-48) | Gateway meneruskan `nik` dan `nama` bila klien mengirimnya pada `POST /transaction` |
+| G2 | SELESAI | email tidak diteruskan ke layanan mana pun; bukti kenari email di payload, DB, dan log (`registration-identity`, `client-identity`) |
+| G3 | SELESAI | Transaction menyimpan `nik`/`nama` (migrasi baseline 0003) dan meneruskan customer id, NIK, nama, rekening ke Fraud; Fraud menyimpannya (migrasi baseline 0003), skor tidak memakainya |
+| G4 | SELESAI | langkah A4 pendaftaran meneruskan NIK, nama, rekening ke Notification (bersama customer id dan HP); Notification menyimpannya (migrasi baseline 0003); teks SMS tetap generik |
+| G5 | SELESAI | daftar `completed` dan detail Transaction baseline memuat customer id, NIK, nama, rekening; Reconciliation membacanya dan menyimpan customer id, NIK, nama pada item yang cocok (migrasi baseline 0003); hasil pencocokan tidak berubah |
+| G6 | SELESAI | kolom salinan hanya di `migrations/baseline` (empat layanan); `migrations/proposed` tidak disentuh; tes paritas skema memuat daftar kolom tambahan |
+| G7 | SELESAI | tes kenari menyatakan log semua layanan bersih di kedua mode (dengan kontrol positif) |
+
+Aturan yang dijaga: kode domain tidak menyebut mode (ADR-0006; tes `mode-folders`), skema masuk tetap `strict` dan di mode usulan menolak `nik`/`nama`/`account_number`, tidak ada dependensi dan kode error baru.
+
+### Sekilas E(s) (bukan pengukuran resmi; resmi di M6-02)
+
+`services/gateway/test/e2e/exposure-glance.integration.spec.ts`: satu pendaftaran, dua pembayaran (satu di atas ambang Fraud), laporan bank, dan satu run lewat layanan asli; atribut himpunan P ditemukan di payload yang DITERIMA tiap layanan, di basis datanya, dan di log. Harapan Tabel IV ditulis di tes sebelum dijalankan; tidak disetel.
+
+| Layanan | Harapan baseline | Teramati baseline | Harapan usulan | Teramati usulan |
+| --- | --- | --- | --- | --- |
+| Transaction | 4/6 | 4/6 (customer_id, NIK, nama, rekening) | 0 | 0 |
+| Fraud | 4/6 | 4/6 (sama) | 0 | 0 |
+| Notification | 5/6 | 5/6 (+ HP) | 1/6 (HP) | 1/6 (HP) |
+| Reconciliation | 4/6 | 4/6 (sama) | 0 | 0 |
+
+Tidak ada selisih pada sekilas ini. Dua catatan kejujuran: (1) kecocokan penuh di baseline memang diharapkan karena rancangan G3 sampai G5 meniru Tabel IV; ini bukan bukti independen dari kebenaran Tabel IV, hanya bahwa implementasi dan tabel konsisten. (2) Nilai itu hanya tercapai bila KLIEN MENGIRIM NIK dan nama pada pembayaran (premis G1/N-48): koleksi Postman tidak mengirimnya, jadi pada Newman baseline Transaction, Fraud, dan Reconciliation tidak melihat NIK dan nama (asersi baseline tetap 103). Alat ukur M6 (Newman, k6) harus mengirim kedua field itu pada pembayaran baseline.
 
 ## 5. Pembaruan terhadap Bab Metodologi v9 (2026-10-24; tanpa perubahan kode)
 
