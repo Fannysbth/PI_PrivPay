@@ -1,3 +1,26 @@
+# HANDOFF (2026-11-02): DK DITUTUP, tag `dk-tutup` (dua putaran gerbang penuh hijau berurutan, Docker mati)
+
+| Butir | Bukti |
+| --- | --- |
+| Tag | `dk-tutup` di `main` lokal, commit `3f02421` (kode yang diuji); sesudahnya hanya dokumen (`docs/dk-tutup`); belum di-push |
+| Putaran 1 dan 2 | lint, typecheck, `test` (85 suite, 1546 tes, 2 worker), `test:integration` (69 suite, 1215 tes), `test:smoke` (36), `audit --prod`, `secret-scan:tree`, `gitleaks --all`, `pii-scan` (35 + 159): semua kode keluar 0 di kedua putaran |
+| Durasi integrasi | 1386 s dan 1350 s; memori bebas terendah 5,53 GB |
+| N-52 | `test-db-cleanup` 6/6 hijau di kedua putaran (kasus lambat >10 detik termasuk); pengecualian N-52 ditutup |
+| Spek | N-57 (c) ditutup: enam spek lama diselaraskan dengan baseline = pilihan B (hanya dokumen) |
+
+## Perintah (keadaan sistem)
+`pnpm lint | typecheck | test | test:integration | test:smoke | pii-scan | secret-scan:tree`, `pnpm audit --prod --audit-level high`, `gitleaks detect --log-opts="--all"`, `pnpm db:migrate`, `pnpm dev:up [--mode baseline]`; perintah Docker (`docker:*`, `test:edge`) butuh Docker menyala dan tidak diulang di penutup ini. Gunakan `corepack pnpm` bila `pnpm` tidak di PATH.
+
+## Keterbatasan terbuka
+- **N-51**: token baru dapat terbit sesudah `revoke_subject` (bentuk 1 tanpa pemeriksaan pencabutan); kajian saja, belum diimplementasikan; token `ACCOUNT` tidak ikut dicabut oleh pencabutan `CUSTOMER`.
+- **N-53**: pemisah database di dalam zona hanya peran dan kata sandi, bukan jaringan (diterima).
+- **N-54**: plugin `jwt` Kong OSS tidak memeriksa `aud`; Lua tanpa kerangka uji; batas laju berlapis; satu proksi tepercaya.
+- **N-55**: pola skema di dua tempat (zod dan Lua); Kong bertetangga dengan Privacy; settlement memanggil Privacy berurutan dan belum diukur; `/register` tidak ditokenisasi di tepi.
+- **N-56**: `idp-admin` Keycloak tidak dapat dibatasi (Gateway tepercaya sebagai asumsi); DK-04c (audiens satu per token, kata sandi per kelas) sudah di-merge ke `main`.
+- **N-57**: (a) nilai Tabel IV baseline hanya bila klien mengirim `nik` dan `nama`, alat ukur M6 harus mengirimnya; (e) ulangan idempotensi dengan `nik`/`nama` berbeda dijawab hasil lama; (f) skema atribut salinan di tiga layanan belum dipusatkan; (g) dua UPDATE tambahan per run di Reconciliation; (d) payload scan Docker baseline hanya kontrol positif atas rekening.
+
+Belum teruji: pengukuran resmi E(s) dan kinerja (M6, M7), `test:integration` penuh di PostgreSQL 16 pada penutup ini, gerbang dengan Docker menyala, build dingin.
+
 # HANDOFF (2026-11-02): baseline = PILIHAN B SELESAI di `feat/baseline-b` (G2 sampai G6, N-57); D dan C dikerjakan lebih dulu
 
 | Butir | Bukti |
