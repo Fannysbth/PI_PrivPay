@@ -47,7 +47,16 @@
           "      },",
           "    );",
           "  }",
-          "}"
+          "}",
+          "",
+          "// M6-01 pay_identity: nik and nama go along with a payment only in an environment that defines send_identity_with_payment=true",
+          "// (the baseline one; Tabel IV, N-48). In the proposed environment the variable does not exist, so the body is unchanged.",
+          "// The values are the ones built at runtime for the customer of folder 2 (fictional canaries), never typed here.",
+          "const withIdentity = pm.environment.get('send_identity_with_payment') === 'true';",
+          "const payNik = pm.collectionVariables.get('cust_nik');",
+          "const payNama = pm.collectionVariables.get('cust_nama');",
+          "pm.collectionVariables.set('pay_identity', withIdentity && payNik && payNama",
+          "  ? ',\\n  \"nik\": \"' + payNik + '\",\\n  \"nama\": \"' + payNama + '\"' : '');"
         ]
       }
     }
@@ -404,7 +413,7 @@
       "description": "Mendaftarkan nasabah fiktif baru lewat `POST /register` (tanpa token). Semua nilai dibangun saat dijalankan; awalan 9999 menandainya palsu. Formulir berisi data pribadi: Gateway memasukkannya ke Privacy Service (mode usulan) dan tidak pernah mengembalikannya.",
       "item": [
         {
-          "name": "2.1 Daftar nasabah baru",
+          "name": "2.1 Daftar nasabah baru [TF-01]",
           "event": [
             {
               "listen": "prerequest",
@@ -552,7 +561,7 @@
       "description": "Pembayaran lewat `POST /transaction` dengan token nasabah dan header `Idempotency-Key` (UUID). Gateway menukar nomor rekening dan `customer_id` menjadi token sebelum meneruskan ke Transaction Service.",
       "item": [
         {
-          "name": "3.1 Bayar Rp35.000 (normal)",
+          "name": "3.1 Bayar Rp35.000 (normal) [TF-02]",
           "event": [
             {
               "listen": "prerequest",
@@ -573,6 +582,7 @@
                   "pm.test('Diharapkan: 201', () => pm.response.to.have.status(201));",
                   "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
                   "pm.test('Diharapkan: status COMPLETED', () => pm.expect(body.status).to.eql('COMPLETED'));",
+                  "pm.test('Diharapkan: badan pembayaran membawa nik dan nama hanya di environment baseline (N-48)', () => { const sent = pm.request.body.raw; const has = sent.includes(pm.collectionVariables.get('cust_nik')) && sent.includes(pm.collectionVariables.get('cust_nama')); pm.expect(has).to.eql(pm.environment.get('send_identity_with_payment') === 'true'); });",
                   "pm.test('Diharapkan: transaction_id berbentuk TX-<angka>', () => pm.expect(body.transaction_id).to.match(/^TX-[0-9]+$/));",
                   "pm.collectionVariables.set('tx_normal_id', body.transaction_id);",
                   "console.log('transaction_id =', body.transaction_id);"
@@ -598,7 +608,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 35000,\n  \"geohash\": \"qqgu4\"\n}",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 35000,\n  \"geohash\": \"qqgu4\"{{pay_identity}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -618,7 +628,7 @@
           }
         },
         {
-          "name": "3.2 Ulangi kunci idempotensi yang sama",
+          "name": "3.2 Ulangi kunci idempotensi yang sama [TF-08]",
           "event": [
             {
               "listen": "test",
@@ -651,7 +661,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 35000,\n  \"geohash\": \"qqgu4\"\n}",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 35000,\n  \"geohash\": \"qqgu4\"{{pay_identity}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -671,7 +681,7 @@
           }
         },
         {
-          "name": "3.3 Kunci yang sama, isi berbeda",
+          "name": "3.3 Kunci yang sama, isi berbeda [TF-08]",
           "event": [
             {
               "listen": "test",
@@ -704,7 +714,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 36000,\n  \"geohash\": \"qqgu4\"\n}",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 36000,\n  \"geohash\": \"qqgu4\"{{pay_identity}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -721,6 +731,76 @@
               ]
             },
             "description": "Kunci yang sudah dipakai untuk isi lain ditolak sebagai konflik, bukan diam-diam dianggap sama."
+          }
+        },
+        {
+          "name": "3.4 Bayar dengan nik dan nama di isi (usulan: dibuang di Gateway; baseline: diteruskan) [N-48]",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('idem_key', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const baseline = pm.environment.get('mode') === 'baseline';",
+                  "console.log(baseline",
+                  "  ? '[Diharapkan] baseline: 201 COMPLETED; nik dan nama diteruskan ke Transaction (sistem konvensional, Tabel IV)'",
+                  "  : '[Diharapkan] usulan: 201 COMPLETED; Gateway membuang nik dan nama sebelum Transaction (N-48), bukan 422');",
+                  "let body; try { body = pm.response.json(); } catch (e) { body = undefined; }",
+                  "pm.test('Diharapkan: 201', () => pm.response.to.have.status(201));",
+                  "pm.test('Diharapkan: status COMPLETED', () => pm.expect(body.status).to.eql('COMPLETED'));",
+                  "pm.test('Diharapkan: jawaban tidak memuat nik atau nama', () => {",
+                  "  const text = pm.response.text();",
+                  "  pm.expect(text.includes(pm.collectionVariables.get('cust_nik'))).to.eql(false);",
+                  "  pm.expect(text.includes(pm.collectionVariables.get('cust_nama'))).to.eql(false);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token_customer}}"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idem_key}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 35000,\n  \"geohash\": \"qqgu4\",\n  \"nik\": \"{{cust_nik}}\",\n  \"nama\": \"{{cust_nama}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/transaction",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "transaction"
+              ]
+            },
+            "description": "N-48/N-57: pembayaran membawa nik dan nama di KEDUA mode. Baseline meneruskannya ke Transaction; usulan membuangnya di Gateway (diukur oleh pemindaian payload M6-02). Nilai dari formulir pendaftaran folder 2 (kenari fiktif)."
           }
         }
       ]
@@ -772,7 +852,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 2000000,\n  \"geohash\": \"qqgu7\"\n}",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 2000000,\n  \"geohash\": \"qqgu7\"{{pay_identity}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -792,7 +872,7 @@
           }
         },
         {
-          "name": "4.2 Bayar Rp8.000.000 dari lokasi baru (ditahan)",
+          "name": "4.2 Bayar Rp8.000.000 dari lokasi baru (ditahan) [TF-03]",
           "event": [
             {
               "listen": "prerequest",
@@ -835,7 +915,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 8000000,\n  \"geohash\": \"qqt8h\"\n}",
+              "raw": "{\n  \"source_account\": \"{{cust_rekening}}\",\n  \"merchant_id\": \"MRC-001\",\n  \"amount\": 8000000,\n  \"geohash\": \"qqt8h\"{{pay_identity}}\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -908,7 +988,7 @@
           }
         },
         {
-          "name": "4.4 Analis: setujui transaksi ditahan",
+          "name": "4.4 Analis: setujui transaksi ditahan [TF-09]",
           "event": [
             {
               "listen": "test",
@@ -1016,7 +1096,7 @@
       "description": "Bank mengirim laporan settlement (nomor rekening mentah) lewat Gateway; Gateway menukarnya menjadi token sebelum sampai ke Reconciliation Service. Admin menjalankan pencocokan; auditor meminta token audit untuk satu transaksi.",
       "item": [
         {
-          "name": "5.1 Bank: kirim laporan settlement hari ini",
+          "name": "5.1 Bank: kirim laporan settlement hari ini [TF-13]",
           "event": [
             {
               "listen": "prerequest",
@@ -1076,7 +1156,7 @@
           }
         },
         {
-          "name": "5.2 Admin: jalankan rekonsiliasi hari ini",
+          "name": "5.2 Admin: jalankan rekonsiliasi hari ini [TF-05, TF-16]",
           "event": [
             {
               "listen": "test",
@@ -1128,7 +1208,7 @@
           }
         },
         {
-          "name": "5.3 Auditor: minta token audit untuk transaksi 3.1",
+          "name": "5.3 Auditor: minta token audit untuk transaksi 3.1 [TK-22]",
           "event": [
             {
               "listen": "test",
@@ -1358,7 +1438,7 @@
           }
         },
         {
-          "name": "7.2 Auditor mencoba menyetujui pengajuannya sendiri",
+          "name": "7.2 Auditor mencoba menyetujui pengajuannya sendiri [TK-24]",
           "event": [
             {
               "listen": "test",
@@ -1475,7 +1555,7 @@
           }
         },
         {
-          "name": "7.4 Auditor: buka identitas (pemakaian pertama)",
+          "name": "7.4 Auditor: buka identitas (pemakaian pertama) [TK-21, TF-06]",
           "event": [
             {
               "listen": "test",
@@ -1531,7 +1611,7 @@
           }
         },
         {
-          "name": "7.5 Auditor: buka lagi dengan persetujuan yang sama",
+          "name": "7.5 Auditor: buka lagi dengan persetujuan yang sama [TK-26]",
           "event": [
             {
               "listen": "test",
@@ -1585,7 +1665,7 @@
           }
         },
         {
-          "name": "7.6 Auditor: jejak audit pembukaan ini",
+          "name": "7.6 Auditor: jejak audit pembukaan ini [TF-06]",
           "event": [
             {
               "listen": "test",
@@ -1762,7 +1842,7 @@
       "description": "Semua request di sini **harus ditolak**; lulus berarti penolakannya benar. Ke klien eksternal hanya delapan kode error (ADR-0008); alasan rinci tidak pernah keluar.",
       "item": [
         {
-          "name": "9.1 Tanpa token",
+          "name": "9.1 Tanpa token [TK-19]",
           "event": [
             {
               "listen": "test",
@@ -1795,7 +1875,7 @@
           }
         },
         {
-          "name": "9.2 Token rusak",
+          "name": "9.2 Token rusak [TK-19]",
           "event": [
             {
               "listen": "test",
@@ -2384,7 +2464,7 @@
           }
         },
         {
-          "name": "9.14 Rate limit: banjiri gateway sampai 429",
+          "name": "9.14 Rate limit: banjiri gateway sampai 429 [TK-11]",
           "event": [
             {
               "listen": "prerequest",
