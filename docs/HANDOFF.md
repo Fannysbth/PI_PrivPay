@@ -1,3 +1,18 @@
+# HANDOFF (2026-11-03): M7-B di `feat/m7b`: diagnosis plafon dan lonjakan (N-60), jeda `--pace`, ukur ulang kesiapan; BUKAN pengukuran resmi, lingkungan ukur TERBUKA
+
+| Butir | Bukti |
+| --- | --- |
+| Lonjakan 8 sampai 10 detik | **Cacat konfigurasi, diperbaiki.** Hanya pembayaran pertama setelah Kong menyala; di dalam Kong kueri SRV ke DNS Docker 3,97 dan 3,99 detik (NXDOMAIN) untuk `keycloak` dan `privacy-service`, A 10 ms. `KONG_DNS_ORDER=LAST,A,AAAA,CNAME` di Compose (kedua mode); tes `docker.spec.ts`; hidup: tumpukan segar 5 pengguna maks 682 ms |
+| Plafon throughput | **Kuota CPU 0,5 per layanan × biaya desain; tidak diubah.** Usulan 25 pengguna: 105 req/s, `privacy-service` 0,42 core / 80% periode ter-throttle, `pg-privacy` 77%; baseline 300 req/s, hambatan `transaction-service` 85%. ±5,3 panggilan Privacy sinkron TLS per pembayaran (3,3 pseudonymize, 1 resolve-domain, 1 PATCH). Eksperimen (tidak di-commit): CPU Privacy 1,5, DB 1,0, Transaction 1,0 menghasilkan 155 req/s (+48%). Bukan penyebab: rate limit (nol 429), retry/timeout, keepalive (undici), kolam DB. Tidak diukur: event loop lag |
+| Jeda | `--pace saturation` (bawaan, tanpa jeda) dan `realistic` (0,5 sampai 1,5 detik acak); `--official` menjalankan dua set terpisah; Metodologi v9 tidak menyebut jeda (hanya konkuren + closed-loop) |
+| Ukur ulang 60 detik, nol galat (semua) | saturasi p95 / req/s baseline→usulan: 10: 80/273→154/100; 25: 145/281→358/92; 50: 270/252→689/89; **100: 454/224→1373/73 (maks 3283 ms)**. Realistis p95: 10: 23→73; 25: 29→86; 50: 46→153 (req/s sama ±5%). Memori bebas terendah 2,34 GB; tidak ada proses dihentikan. Berkas `docs/hasil/kinerja/kesiapan/vu<N>-<pace>-run-NN-<mode>.json`, commit `010d5b4`, pohon bersih |
+| Skill | dipakai: tdd (tes merah dulu untuk pace, DNS, runner), simplify (inline, diff kecil), code-review (medium; 4 temuan diterapkan, sisanya dilewati: tes berbasis teks sesuai gaya repo, `isOfficialShape` longgar, pemanasan mengikuti pace dicatat di README), run (runner). `/security-review` tidak dipanggil (gagal tanpa remote di M7-A): tinjauan manual di bawah |
+| Tinjauan keamanan manual | Perubahan: satu variabel lingkungan Kong (tidak menyentuh gerbang, STEP 0, AAD, fail-closed, audit, ADR); runner menghapus tumpukan mode lain (hanya proyek `privpay-<mode>`, tidak menyentuh proyek lain); tidak ada rahasia di argumen/hasil; tidak ada kode error atau dependensi baru |
+| Gerbang ringan | lihat bagian bawah |
+
+Kata sandi admin Grafana: dibangkitkan `pnpm docker:secrets` (`scripts/docker/make-secrets.cjs`), berkas `secrets/docker/grafana_admin_password` (di-gitignore, tidak dibaca).
+Belum teruji: 100 pengguna dengan pemanasan 5 menit dan 5 pengulangan, ekor p99 awal skenario realistis, event loop lag, efek menaikkan batas CPU (perlu keputusan/ADR), PostgreSQL 16 untuk perubahan ini (tanpa kode layanan).
+
 # HANDOFF (2026-11-02): M7-A KESIAPAN di `feat/m7a`: monitoring jalan di kedua mode, k6 + runner berselang-seling; BUKAN pengukuran resmi, lingkungan ukur akhir TERBUKA (N-59, Q-16)
 
 | Butir | Bukti |

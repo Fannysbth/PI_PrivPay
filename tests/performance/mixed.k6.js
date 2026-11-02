@@ -7,7 +7,7 @@
 // canary shaped like tests/pii-scan/canary.ts (plainly false: NIK 99995..., e-mail ...@example.test). The one test password is
 // read from a mounted file, never from an argument. TLS is verified against the development CA (SSL_CERT_FILE of the container).
 //
-// Parameters (-e): MODE, VUS, WARMUP, DURATION, THINK_MS, BASE_URL, IDP_URL, RUN_BASE. The payment form carries nik and nama in
+// Parameters (-e): MODE, VUS, WARMUP, DURATION, PACE (saturation: no pause; realistic: 0.5 to 1.5 s at random), BASE_URL, IDP_URL, RUN_BASE. The payment form carries nik and nama in
 // both conditions (the client behaviour of the Tabel IV premise, N-48); the Kong tokenizer removes them in the proposed one.
 import http from 'k6/http';
 import { check, sleep } from 'k6';
@@ -19,7 +19,11 @@ if (MODE !== 'baseline' && MODE !== 'proposed')
 const VUS = Number(__ENV.VUS || '100');
 const WARMUP = __ENV.WARMUP || '60s';
 const DURATION = __ENV.DURATION || '300s';
-const THINK_MS = Number(__ENV.THINK_MS || '0');
+const PACE = __ENV.PACE || 'saturation';
+if (PACE !== 'realistic' && PACE !== 'saturation')
+  throw new Error('PACE must be saturation or realistic');
+const PAUSE_MIN_S = 0.5;
+const PAUSE_MAX_S = 1.5;
 const BASE_URL = __ENV.BASE_URL || 'https://kong:8443';
 const IDP_URL = __ENV.IDP_URL || 'http://keycloak:8080';
 const RUN_BASE = Number(__ENV.RUN_BASE || '0');
@@ -178,7 +182,7 @@ export default function (data) {
   });
   (outcome[response.status] || outcomeOther).add(1);
   check(response, { 'payment created (201)': (r) => r.status === 201 });
-  if (THINK_MS > 0) sleep(THINK_MS / 1000);
+  if (PACE === 'realistic') sleep(PAUSE_MIN_S + Math.random() * (PAUSE_MAX_S - PAUSE_MIN_S));
 }
 
 const PICK = [
@@ -204,7 +208,7 @@ export function handleSummary(data) {
     vus: VUS,
     warmup: WARMUP,
     duration: DURATION,
-    thinkMs: THINK_MS,
+    pace: PACE,
     metrics,
     payStatusAllPhases: status,
   };
