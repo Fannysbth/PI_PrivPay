@@ -1,8 +1,8 @@
-import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { Finding } from '../pii-scan/scan';
 import { docker, PROJECT } from '../docker/helpers';
+export { commitInfo } from './commit-info';
 
 // Shared by the M6 measurements (`pnpm measure:exposure`, docs/hasil/README.md). They drive the RUNNING Compose stack
 // started with deploy/measure/compose.measure.yml. Secrets are read from their files at run time by this code and are never
@@ -130,12 +130,6 @@ export const pgDump = (service: string): string =>
   ]);
 
 export const containerLogs = (name: string): string => docker(['logs', name]);
-
-export function commitInfo(): { commit: string; dirty: boolean } {
-  const run = (args: string[]): string =>
-    spawnSync('git', args, { encoding: 'utf8' }).stdout.trim();
-  return { commit: run(['rev-parse', 'HEAD']), dirty: run(['status', '--porcelain']).length > 0 };
-}
 
 export function imageVersions(): Record<string, string> {
   const out: Record<string, string> = {};
