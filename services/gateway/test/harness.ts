@@ -236,7 +236,12 @@ export interface Harness {
 export async function startGateway(
   env: Record<string, string | undefined> = {},
   // `wrapFetch` lets a test send some hosts to a real service (an integration test) and the rest to the fake network.
-  options: { routes?: readonly Route[]; wrapFetch?: (inner: typeof fetch) => typeof fetch } = {},
+  options: {
+    routes?: readonly Route[];
+    wrapFetch?: (inner: typeof fetch) => typeof fetch;
+    /** Replaces the timer of the HTTP client, so a test can read the timeout of each call without waiting for it. */
+    timeoutSignal?: (ms: number) => AbortSignal;
+  } = {},
 ): Promise<Harness> {
   const clock = new FakeClock(START);
   const network = new FakeNetwork(clock);
@@ -250,6 +255,7 @@ export async function startGateway(
       modules: gatewayModules({
         fetch: options.wrapFetch === undefined ? network.fetch : options.wrapFetch(network.fetch),
         ...(options.routes === undefined ? {} : { routes: options.routes }),
+        ...(options.timeoutSignal === undefined ? {} : { timeoutSignal: options.timeoutSignal }),
       }),
     },
     {

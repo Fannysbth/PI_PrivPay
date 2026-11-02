@@ -413,6 +413,8 @@ services:
       IDP_USER_PASSWORD_FILE: /run/secrets/keycloak_password_customer
       # DK-02a: Kong is the one proxy in front; the address it appended to X-Forwarded-For is the client (K-14).
       EDGE_PROXY_HOPS: '1'
+      # ADR-0018: the downstream wait of POST /reconciliation/run only; every other route keeps HTTP_TIMEOUT_MS (3 s, NFR-12).
+      BATCH_HTTP_TIMEOUT_MS: ${BATCH_HTTP_TIMEOUT_MS:-60000}
     secrets: [api-gateway_client_secret, idp-admin_client_secret, keycloak_password_customer]
     networks: [business]
     depends_on:
@@ -435,6 +437,8 @@ services:
       KONG_UPSTREAM_URL: http://gateway:4010
       KONG_CONFIG_OUT: /state/kong.json
       RATE_LIMIT_ENABLED: ${RATE_LIMIT_ENABLED:-true}
+      # ADR-0018: Kong waits this long for the adapter on POST /reconciliation/run (its own Kong service), the same value as the adapter.
+      BATCH_HTTP_TIMEOUT_MS: ${BATCH_HTTP_TIMEOUT_MS:-60000}
       KONG_RATE_LIMIT_PER_MINUTE: ${KONG_RATE_LIMIT_PER_MINUTE:-300}
     volumes: ['kong-config:/state']
     networks: [business]

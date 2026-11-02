@@ -28,6 +28,20 @@ const answer =
   () =>
     Promise.resolve(new Response(JSON.stringify(body), { status }));
 
+describe('ADR-0018 renderKongConfig takes the batch timeout from configuration', () => {
+  const batchTimeout = async (env: Record<string, string>): Promise<number | undefined> => {
+    const text = await renderKongConfig({ ...ENV, ...env }, answer({ keys: [jwk()] }));
+    const config = JSON.parse(text) as { services: { name: string; read_timeout: number }[] };
+    return config.services.find((service) => service.name === 'gateway-adapter-batch')
+      ?.read_timeout;
+  };
+
+  it('ADR-0018 60 s when nothing is set, the configured value otherwise', async () => {
+    expect(await batchTimeout({})).toBe(60_000);
+    expect(await batchTimeout({ BATCH_HTTP_TIMEOUT_MS: '90000' })).toBe(90_000);
+  });
+});
+
 describe('DK-02a renderKongConfig reads the IdP JWKS and writes the Kong file', () => {
   it('DK-02a makes the consumer from the single RS256 key and the configured issuer', async () => {
     const text = await renderKongConfig(ENV, answer({ keys: [jwk()] }));

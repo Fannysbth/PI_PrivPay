@@ -218,6 +218,13 @@ describe('M0-03 timeouts end the request and count as a failed attempt (NFR-12)'
     expect(timeouts).toEqual([30, 30]);
   });
 
+  it('ADR-0018 a request that names its own timeout gets that one, the next request the configured one', async () => {
+    const { client, timeouts } = setup([json(200), json(200)]);
+    await client.request(get({ timeoutMs: 60_000 }));
+    await client.request(get());
+    expect(timeouts).toEqual([60_000, 30]);
+  });
+
   it('M0-03 aborts a request that does not answer and retries an idempotent one', async () => {
     const { client, calls } = setup(['hang', json(200)], { timeoutSignal: abortsSoon });
     // The second attempt gets a signal that also fires, but a scripted answer arrives first.

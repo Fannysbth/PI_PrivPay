@@ -41,6 +41,8 @@ export interface Route {
   readonly query: z.ZodType | null;
   /** Largest accepted body in bytes (gateway spec 3: 16 KiB, 64 KiB for settlement). */
   readonly maxBodyBytes: number;
+  /** ADR-0018: an admin batch operation; its downstream call gets BATCH_HTTP_TIMEOUT_MS instead of HTTP_TIMEOUT_MS. */
+  readonly batch?: boolean;
 }
 
 // Shared shapes (platform spec 3).
@@ -131,7 +133,14 @@ const forward = (
     Partial<
       Pick<
         Route,
-        'params' | 'body' | 'query' | 'upstreamPath' | 'caller' | 'tokenize' | 'maxBodyBytes'
+        | 'params'
+        | 'body'
+        | 'query'
+        | 'upstreamPath'
+        | 'caller'
+        | 'tokenize'
+        | 'maxBodyBytes'
+        | 'batch'
       >
     >,
 ): Route => ({
@@ -196,6 +205,7 @@ export const ROUTES: readonly Route[] = [
     upstream: 'reconciliation-service',
     auth: 'gateway-token+actor',
     body: body.run,
+    batch: true,
   }),
   forward({
     id: 'AZ-10',
