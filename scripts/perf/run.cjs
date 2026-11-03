@@ -13,6 +13,9 @@
 //   --pace saturation|realistic   no pause between requests (default) or a random 0.5 to 1.5 s pause (M7-B); --official runs both, separately
 //   --official         the Metodologi parameters; label `resmi`
 //   --keep             leave the last stack running (default: `down -v` after each run)
+//   --remote-k6        M7-D (N-61): k6 runs on a SECOND laptop (docs/hasil/kinerja/RUNBOOK-dua-mesin.md). The stack is also published on the one LAN
+//                      address in PRIVPAY_LAN_IP (deploy/measure/compose.lan.yml: Kong and Keycloak only); the runner prints the k6 command,
+//                      waits for k6-summary.json to be copied to the printed folder, then reads CPU and memory when it arrives.
 // Safety: free memory is read before each run and every 5 s during it; at or below 0.5 GB the load is stopped and the run is
 // written as `aborted`.
 const { spawnSync, spawn } = require('node:child_process');
@@ -27,7 +30,7 @@ const GB = 1024 ** 3;
 const ABORT_BELOW = 0.5 * GB;
 
 function parse(argv) {
-  const o = { repeats: 1, first: 'baseline', only: undefined, vus: 10, warmup: '0s', duration: '60s', pace: 'saturation', official: false, keep: false };
+  const o = { repeats: 1, first: 'baseline', only: undefined, vus: 10, warmup: '0s', duration: '60s', pace: 'saturation', official: false, keep: false, remote: false };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -40,10 +43,11 @@ function parse(argv) {
     else if (a === '--pace') o.pace = next();
     else if (a === '--official') o.official = true;
     else if (a === '--keep') o.keep = true;
+    else if (a === '--remote-k6') o.remote = true;
     else throw new RangeError(`unknown option ${a}`);
   }
-  const given = argv.filter((a) => a.startsWith('--') && a !== '--official' && a !== '--keep');
-  if (o.official && given.length > 0) throw new RangeError('--official takes no other option (only --keep)');
+  const given = argv.filter((a) => a.startsWith('--') && a !== '--official' && a !== '--keep' && a !== '--remote-k6');
+  if (o.official && given.length > 0) throw new RangeError('--official takes no other option (only --keep and --remote-k6)');
   plan.pacesFor(false, o.pace);
   for (const key of ['repeats', 'vus']) {
     if (!Number.isInteger(o[key]) || o[key] < 1) throw new RangeError(`${key} must be a whole number`);
@@ -72,9 +76,12 @@ function commitInfo() {
   return { commit: git(['rev-parse', 'HEAD']), treeClean: git(['status', '--porcelain', '--', '.', ':(exclude)docs/hasil']).length === 0 };
 }
 
+const LAN_FILE = path.join(root, 'deploy', 'measure', 'compose.lan.yml');
 const FILES = ['-f', path.join(root, 'docs', 'postman', 'compose.postman.yml'), '-f', path.join(root, 'deploy', 'measure', 'compose.perf.yml'), '-f', path.join(root, 'deploy', 'compose', 'docker-compose.monitoring.yml'), '--profile', 'monitoring'];
-const composeEnvFor = (mode) => ({ ...composeEnv(mode), RATE_LIMIT_ENABLED: 'false', KONG_RATE_LIMIT_PER_MINUTE: '100000', COMPOSE_PARALLEL_LIMIT: '1' });
-const compose = (mode, rest, stdio = 'inherit') => run('docker', composeArgs(mode, [...FILES, ...rest]), { stdio, env: composeEnvFor(mode) });
+const lanEnv = () => (process.env['PRIVPAY_LAN_IP'] === undefined ? {} : { PRIVPAY_LAN_IP: plan.assertLanIp(process.env['PRIVPAY_LAN_IP']) });
+const composeEnvFor = (mode) => ({ ...composeEnv(mode), ...lanEnv(), RATE_LIMIT_ENABLED: 'false', KONG_RATE_LIMIT_PER_MINUTE: '100000', COMPOSE_PARALLEL_LIMIT: '1' });
+// The LAN file is read only for a remote-k6 run; `down` of the other mode needs no address because it removes containers, not ports.
+const compose = (mode, rest, stdio = 'inherit', files = FILES) => run('docker', composeArgs(mode, [...files, ...rest]), { stdio, env: composeEnvFor(mode) });
 
 function imageVersions(mode) {
   const names = docker(['ps', '--filter', `label=com.docker.compose.project=privpay-${mode}`, '--format', '{{.Names}}']).split('\n').filter(Boolean);
@@ -86,11 +93,11 @@ function imageVersions(mode) {
   return out;
 }
 
-function promQuery(mode, expr) {
+function promQuery(mode, expr, label = plan.SERVICE_LABEL) {
   const url = `http://127.0.0.1:9090/api/v1/query?query=${encodeURIComponent(expr)}`;
   const body = JSON.parse(docker(['exec', `privpay-${mode}-prometheus-1`, 'wget', '-qO-', url]));
   const bySvc = {};
-  for (const r of body.data.result) bySvc[r.metric[plan.SERVICE_LABEL]] = Number(r.value[1]);
+  for (const r of body.data.result) bySvc[r.metric[label]] = Number(r.value[1]);
   return bySvc;
 }
 
@@ -111,6 +118,7 @@ async function oneRun(entry, o, label, outRoot) {
   const taken = fs.existsSync(path.join(outRoot, `${stem}.json`));
   const file = path.join(outRoot, taken ? `${stem}-${started.toISOString().replace(/[-:.]/g, '')}.json` : `${stem}.json`);
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'privpay-k6-'));
+  const files = o.remote ? [...FILES, '-f', LAN_FILE] : FILES;
   try {
     if (freeBefore < 1.0 * GB) throw new Error(`free memory ${(freeBefore / GB).toFixed(2)} GB before the run; stopping`);
     process.stdout.write(`run ${entry.run} ${mode}: fresh stack\n`);
@@ -118,48 +126,71 @@ async function oneRun(entry, o, label, outRoot) {
     process.stdout.write(`run ${entry.run} ${mode}: removing the ${mode === 'baseline' ? 'proposed' : 'baseline'} stack if it is running
 `);
     compose(mode === 'baseline' ? 'proposed' : 'baseline', ['down', '-v', '--remove-orphans'], 'ignore');
-    compose(mode, ['down', '-v', '--remove-orphans']);
-    let up = compose(mode, ['up', '-d', '--wait']);
+    compose(mode, ['down', '-v', '--remove-orphans'], 'inherit', files);
+    let up = compose(mode, ['up', '-d', '--wait'], 'inherit', files);
     if (up.status !== 0) {
       // Docker frees a published loopback port a moment after `down`; one retry on a clean slate, then give up (seen in M7-A).
-      compose(mode, ['down', '-v', '--remove-orphans'], 'ignore');
+      compose(mode, ['down', '-v', '--remove-orphans'], 'ignore', files);
       await new Promise((resolve) => setTimeout(resolve, 15000));
       meta.upRetried = true;
-      up = compose(mode, ['up', '-d', '--wait']);
+      up = compose(mode, ['up', '-d', '--wait'], 'inherit', files);
     }
     if (up.status !== 0) throw new Error('the stack did not come up');
     meta.imageVersions = imageVersions(mode);
     meta.prometheusTargetsBefore = prometheusTargets(mode);
     // The canary indices of this run: distinct per run, below the 100000 of the canary builder.
     const runBase = Math.floor(Date.now() / 1000) % (99000 - o.vus);
-    const k6 = spawn('docker', plan.k6DockerArgs({ containerName: `privpay-k6-run-${mode}`, network: `privpay-${mode}_edge`, caFile: caFile(), passwordFile: path.join(secretsDir(), 'keycloak_password_customer'), scriptDir: path.join(root, 'tests', 'performance'), outDir: tmp, mode, vus: o.vus, warmup: o.warmup, duration: o.duration, pace: o.pace, runBase }), { stdio: ['ignore', 'ignore', 'pipe'] });
-    let stderr = '';
-    k6.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
+    const k6Options = { containerName: `privpay-k6-run-${mode}`, caFile: caFile(), passwordFile: path.join(secretsDir(), 'keycloak_password_customer'), scriptDir: path.join(root, 'tests', 'performance'), outDir: tmp, mode, vus: o.vus, warmup: o.warmup, duration: o.duration, pace: o.pace, runBase };
     let lowest = freeBefore;
-    const watch = setInterval(() => {
-      const free = os.freemem();
-      lowest = Math.min(lowest, free);
-      if (free < ABORT_BELOW) { result.status = 'aborted-low-memory'; run('docker', ['kill', `privpay-k6-run-${mode}`]); }
-    }, 5000);
-    const code = await new Promise((resolve, reject) => {
-      k6.on('error', reject);
-      k6.on('close', resolve);
-    }).finally(() => clearInterval(watch));
+    const summaryFile = path.join(tmp, 'k6-summary.json');
+    let code = 0;
+    if (o.remote) {
+      // The second laptop runs k6; this one waits for its summary and reads CPU and memory when it arrives (no k6 stderr here).
+      const lan = plan.lanTarget(process.env['PRIVPAY_LAN_IP'] ?? '', Number(process.env['KONG_LAN_PORT'] ?? 4443), Number(process.env['IDP_LAN_PORT'] ?? 8080));
+      meta.remoteK6 = true;
+      process.stdout.write(`run ${entry.run} ${mode}: start k6 on the second laptop with:
+  docker ${plan.k6DockerArgs({ ...k6Options, ...lan, caFile: '<CA>', passwordFile: '<PASSWORD-FILE>', scriptDir: '<SCRIPT-DIR>', outDir: '<OUT-DIR>' }).join(' ')}
+  then copy <OUT-DIR>/k6-summary.json to ${tmp}
+`);
+      const limit = Date.now() + (plan.seconds(o.warmup) + plan.seconds(o.duration) + 1800) * 1000;
+      while (!fs.existsSync(summaryFile) && result.status === 'ok') {
+        if (Date.now() > limit) { result.status = 'remote-k6-timeout'; break; }
+        lowest = Math.min(lowest, os.freemem());
+        if (os.freemem() < ABORT_BELOW) result.status = 'aborted-low-memory';
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      meta.summaryArrivedAt = new Date().toISOString();
+      result.resourcesNote = 'remote k6: CPU and memory are evaluated when the summary arrived here, so the window may end a little after k6 did';
+    } else {
+      const k6 = spawn('docker', plan.k6DockerArgs({ ...k6Options, network: `privpay-${mode}_edge` }), { stdio: ['ignore', 'ignore', 'pipe'] });
+      let stderr = '';
+      k6.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
+      const watch = setInterval(() => {
+        const free = os.freemem();
+        lowest = Math.min(lowest, free);
+        if (free < ABORT_BELOW) { result.status = 'aborted-low-memory'; run('docker', ['kill', `privpay-k6-run-${mode}`]); }
+      }, 5000);
+      code = await new Promise((resolve, reject) => {
+        k6.on('error', reject);
+        k6.on('close', resolve);
+      }).finally(() => clearInterval(watch));
+      if (result.status === 'ok' && code !== 0) { result.status = 'k6-failed'; result.k6Stderr = stderr.replace(/s+/g, ' ').slice(-600); }
+    }
     meta.freeMemoryLowestGB = +(lowest / GB).toFixed(2);
     meta.k6ExitCode = code;
-    if (result.status === 'ok' && code !== 0) { result.status = 'k6-failed'; result.k6Stderr = stderr.replace(/\s+/g, ' ').slice(-600); }
-    const summaryFile = path.join(tmp, 'k6-summary.json');
     if (fs.existsSync(summaryFile)) result.k6 = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
     const window = plan.seconds(o.duration);
     const q = plan.resourceQueries(window);
     result.resources = { windowSeconds: window, note: 'cAdvisor through Prometheus; window = the measured phase, evaluated when k6 ended (the warm-up before it is outside the window)', cpuCoresMean: promQuery(mode, q.cpuCoresMean), memoryBytesPeak: promQuery(mode, q.memoryBytesPeak), memoryBytesMean: promQuery(mode, q.memoryBytesMean) };
+    // M7-D: 5xx answers per service since the stack started (a fresh stack per run). Timeouts and retries are not metered by the services.
+    result.errors5xxByInstance = promQuery(mode, plan.errorQueries().http5xxByInstance, 'instance');
     meta.prometheusTargetsAfter = prometheusTargets(mode);
   } catch (error) {
     result.status = 'error';
     result.error = String(error instanceof Error ? error.message : error).slice(0, 400);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
-    if (!o.keep) compose(mode, ['down', '-v', '--remove-orphans'], 'ignore');
+    if (!o.keep) compose(mode, ['down', '-v', '--remove-orphans'], 'ignore', files);
   }
   fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}\n`);
   process.stdout.write(`run ${entry.run} ${mode}: ${result.status}; lowest free memory ${meta.freeMemoryLowestGB ?? '?'} GB; ${path.relative(root, file)}\n`);
@@ -169,6 +200,7 @@ async function oneRun(entry, o, label, outRoot) {
 async function main() {
   const o = parse(process.argv.slice(2));
   if (o.official && !plan.isOfficialShape(o)) throw new RangeError('--official needs the Metodologi parameters');
+  if (o.remote) plan.assertLanIp(process.env['PRIVPAY_LAN_IP'] ?? '');
   const label = o.official ? 'resmi' : 'kesiapan';
   const start = commitInfo();
   if (o.official && !start.treeClean) throw new Error('an official run needs a clean tree');

@@ -55,7 +55,7 @@ function isOfficialShape(p) {
  */
 function k6DockerArgs(o) {
   return [
-    'run', '--rm', '--name', o.containerName, '--network', o.network,
+    'run', '--rm', '--name', o.containerName, ...(o.network === undefined ? [] : ['--network', o.network]),
     '-e', 'SSL_CERT_FILE=/ca/ca.crt',
     '-v', `${o.caFile}:/ca/ca.crt:ro`,
     '-v', `${o.passwordFile}:/secret/customer_password:ro`,
@@ -69,10 +69,31 @@ function k6DockerArgs(o) {
     '-e', `DURATION=${o.duration}`,
     '-e', `PACE=${o.pace}`,
     '-e', `RUN_BASE=${String(o.runBase)}`,
-    '-e', 'BASE_URL=https://kong:8443',
-    '-e', 'IDP_URL=http://keycloak:8080',
+    '-e', `BASE_URL=${o.baseUrl ?? 'https://kong:8443'}`,
+    '-e', `IDP_URL=${o.idpUrl ?? 'http://keycloak:8080'}`,
+    ...(o.kongAddr === undefined ? [] : ['-e', `KONG_ADDR=${o.kongAddr}`]),
+    ...(o.idpAddr === undefined ? [] : ['-e', `IDP_ADDR=${o.idpAddr}`]),
     '/script/mixed.k6.js',
   ];
+}
+
+/** M7-D (N-61, option A): the one LAN address the stack is published on; a private IPv4 only (never 0.0.0.0, loopback or a name). */
+function assertLanIp(ip) {
+  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  const p = m === null ? [] : m.slice(1).map(Number);
+  const private4 = p.length === 4 && p.every((n) => n <= 255) && (p[0] === 10 || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168));
+  if (!private4) throw new RangeError('PRIVPAY_LAN_IP must be one private IPv4 address (10/8, 172.16/12 or 192.168/16)');
+  return ip;
+}
+
+/**
+ * The addresses k6 maps the names to on the second machine (plain host:port values, so no JSON has to survive a shell). The names stay
+ * `kong` and `keycloak`, so the Host header, the TLS name (the certificate covers `kong`) and the token issuer
+ * (`http://keycloak:8080/realms/privpay`) are what they are inside the stack; only the address changes.
+ */
+function lanTarget(ip, kongPort, idpPort) {
+  assertLanIp(ip);
+  return { kongAddr: `${ip}:${String(kongPort)}`, idpAddr: `${ip}:${String(idpPort)}` };
 }
 
 const SERVICE_LABEL = 'container_label_com_docker_compose_service';
@@ -88,4 +109,9 @@ function resourceQueries(windowSeconds) {
   };
 }
 
-module.exports = { K6_IMAGE, OFFICIAL, PACES, pacesFor, SERVICE_LABEL, alternation, seconds, isOfficialShape, k6DockerArgs, resourceQueries };
+/** M7-D: 5xx answers counted by each service since it started (a fresh stack per run). Timeouts and retries are not metered. */
+function errorQueries() {
+  return { http5xxByInstance: 'sum by (instance) (privpay_http_requests_total{status=~"5.."})' };
+}
+
+module.exports = { assertLanIp, lanTarget, errorQueries, K6_IMAGE, OFFICIAL, PACES, pacesFor, SERVICE_LABEL, alternation, seconds, isOfficialShape, k6DockerArgs, resourceQueries };

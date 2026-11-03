@@ -1,0 +1,12 @@
+# MEASUREMENT ONLY (M7-D, N-61 option A): publishes Kong and Keycloak on ONE LAN address of the main laptop so that k6 on a second
+# laptop can reach them. Nothing else: the Gateway adapter, the services, the databases, Prometheus, Grafana and cAdvisor keep their
+# own bindings (loopback or none). PRIVPAY_LAN_IP has no default and the file refuses to load without it; it must be that one
+# private address, never 0.0.0.0 (scripts/perf/run.cjs checks it). Loopback bindings of the other files stay: ports are added.
+# Keycloak is plain HTTP and answers the password grant of the fictional test users: see docs/hasil/kinerja/RUNBOOK-dua-mesin.md
+# (risks, firewall rule limited to the second laptop, how to close it). Keycloak is put on `edge`, as docs/postman/compose.postman.yml does.
+services:
+  keycloak:
+    networks: [edge]
+    ports: ['${PRIVPAY_LAN_IP:?set PRIVPAY_LAN_IP to the private LAN address of this laptop}:${IDP_LAN_PORT:-8080}:8080']
+  kong:
+    ports: ['${PRIVPAY_LAN_IP:?set PRIVPAY_LAN_IP to the private LAN address of this laptop}:${KONG_LAN_PORT:-4443}:8443']
