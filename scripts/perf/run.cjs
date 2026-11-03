@@ -14,8 +14,11 @@
 //   --official         the Metodologi parameters; label `resmi`
 //   --keep             leave the last stack running (default: `down -v` after each run)
 //   --remote-k6        M7-D (N-61): k6 runs on a SECOND laptop (docs/hasil/kinerja/RUNBOOK-dua-mesin.md). The stack is also published on the one LAN
-//                      address in PRIVPAY_LAN_IP (deploy/measure/compose.lan.yml: Kong and Keycloak only); the runner prints the k6 command,
-//                      waits for k6-summary.json to be copied to the printed folder, then reads CPU and memory when it arrives.
+//                      address in PRIVPAY_LAN_IP (deploy/measure/compose.lan.yml: Kong and Keycloak only). M7-E: the runner prints ONE PowerShell
+//                      command for B (k6, then an upload of k6-summary.json) and listens for that single PUT on PRIVPAY_LAN_IP:SUMMARY_UPLOAD_PORT
+//                      (default 4444; scripts/perf/upload.cjs). Copying the file by hand to the printed folder still works.
+//   --peer-ip IP       (with --remote-k6, required) the private IPv4 of B: the only address the upload listener accepts
+//   --upload-timeout 15m   how long the listener stays open (default 15m)      --b-dir C:\k6test   folder on B (ca.crt, password, script, out)
 // Safety: free memory is read before each run and every 5 s during it; at or below 0.5 GB the load is stopped and the run is
 // written as `aborted`.
 const { spawnSync, spawn } = require('node:child_process');
@@ -24,13 +27,14 @@ const os = require('node:os');
 const path = require('node:path');
 const { composeArgs, composeEnv, caFile, secretsDir } = require('../docker/compose.cjs');
 const plan = require('./plan.cjs');
+const upload = require('./upload.cjs');
 
 const root = path.join(__dirname, '..', '..');
 const GB = 1024 ** 3;
 const ABORT_BELOW = 0.5 * GB;
 
 function parse(argv) {
-  const o = { repeats: 1, first: 'baseline', only: undefined, vus: 10, warmup: '0s', duration: '60s', pace: 'saturation', official: false, keep: false, remote: false };
+  const o = { repeats: 1, first: 'baseline', only: undefined, vus: 10, warmup: '0s', duration: '60s', pace: 'saturation', official: false, keep: false, remote: false, peerIp: undefined, uploadTimeout: undefined, bDir: undefined };
   for (let i = 0; i < argv.length; i += 1) {
     const a = argv[i];
     const next = () => argv[++i];
@@ -44,10 +48,15 @@ function parse(argv) {
     else if (a === '--official') o.official = true;
     else if (a === '--keep') o.keep = true;
     else if (a === '--remote-k6') o.remote = true;
+    else if (a === '--peer-ip') o.peerIp = next();
+    else if (a === '--upload-timeout') o.uploadTimeout = next();
+    else if (a === '--b-dir') o.bDir = next();
     else throw new RangeError(`unknown option ${a}`);
   }
-  const given = argv.filter((a) => a.startsWith('--') && a !== '--official' && a !== '--keep' && a !== '--remote-k6');
-  if (o.official && given.length > 0) throw new RangeError('--official takes no other option (only --keep and --remote-k6)');
+  const given = argv.filter((a) => a.startsWith('--') && a !== '--official' && a !== '--keep' && a !== '--remote-k6' && a !== '--peer-ip' && a !== '--upload-timeout' && a !== '--b-dir');
+  if (o.official && given.length > 0) throw new RangeError('--official takes no other option (only --keep, --remote-k6, --peer-ip, --upload-timeout and --b-dir)');
+  if (!o.remote && (o.peerIp !== undefined || o.uploadTimeout !== undefined || o.bDir !== undefined)) throw new RangeError('--peer-ip, --upload-timeout and --b-dir need --remote-k6');
+  if (o.remote) o.upload = upload.uploadSettings({ peerIp: o.peerIp, env: process.env, timeout: o.uploadTimeout, bDir: o.bDir });
   plan.pacesFor(false, o.pace);
   for (const key of ['repeats', 'vus']) {
     if (!Number.isInteger(o[key]) || o[key] < 1) throw new RangeError(`${key} must be a whole number`);
@@ -94,8 +103,9 @@ function imageVersions(mode) {
   return out;
 }
 
-function promQuery(mode, expr, label = plan.SERVICE_LABEL) {
-  const url = `http://127.0.0.1:9090/api/v1/query?query=${encodeURIComponent(expr)}`;
+/** `atSeconds` (unix seconds) evaluates the query at that instant instead of now (M7-E: the window ends at k6.endedAt). */
+function promQuery(mode, expr, label = plan.SERVICE_LABEL, atSeconds = undefined) {
+  const url = `http://127.0.0.1:9090/api/v1/query?query=${encodeURIComponent(expr)}${atSeconds === undefined ? '' : `&time=${atSeconds.toFixed(3)}`}`;
   const body = JSON.parse(docker(['exec', `privpay-${mode}-prometheus-1`, 'wget', '-qO-', url]));
   const bySvc = {};
   for (const r of body.data.result) bySvc[r.metric[label]] = Number(r.value[1]);
@@ -107,21 +117,45 @@ function prometheusTargets(mode) {
   return body.data.activeTargets.map((t) => ({ job: t.labels.job, instance: t.labels.instance, health: t.health }));
 }
 
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** M7-E: Docker Desktop must be up BEFORE free memory is read (Docker takes several GB when it starts); waits at most 5 minutes. */
+async function waitForDocker() {
+  const end = Date.now() + 5 * 60 * 1000;
+  while (run('docker', ['info'], { stdio: 'ignore', timeout: 10000 }).status !== 0) {
+    if (Date.now() > end) return false;
+    await sleep(5000);
+  }
+  return true;
+}
+
 async function oneRun(entry, o, label, outRoot) {
   const { mode } = entry;
   const started = new Date();
   const info = commitInfo();
   if (o.official && info.commit !== o.startCommit) throw new Error('the commit changed during the official session');
+  const dockerUp = await waitForDocker();
+  const gate = dockerUp ? await upload.waitForFreeMemory({ readFree: os.freemem, now: Date.now, sleep }) : { ok: false, freeGB: +(os.freemem() / GB).toFixed(2), waitedSeconds: 300, message: 'Docker did not answer within 5 minutes; start Docker Desktop first' };
   const freeBefore = os.freemem();
-  const meta = { ...info, mode, run: entry.run, date: started.toISOString(), official: o.official, label, params: { vus: o.vus, warmup: o.warmup, duration: o.duration, pace: o.pace }, k6Image: plan.K6_IMAGE, freeMemoryBeforeGB: +(freeBefore / GB).toFixed(2), host: { cpus: os.cpus().length, totalMemoryGB: +(os.totalmem() / GB).toFixed(2), os: `${os.type()} ${os.release()}` } };
+  const meta = { ...info, mode, run: entry.run, date: started.toISOString(), official: o.official, label, params: { vus: o.vus, warmup: o.warmup, duration: o.duration, pace: o.pace }, k6Image: plan.K6_IMAGE, freeMemoryBeforeGB: +(freeBefore / GB).toFixed(2), memoryGate: { minGB: +(upload.MIN_FREE_BYTES / GB).toFixed(2), freeGB: gate.freeGB, waitedSeconds: gate.waitedSeconds, dockerUp }, host: { cpus: os.cpus().length, totalMemoryGB: +(os.totalmem() / GB).toFixed(2), os: `${os.type()} ${os.release()}` } };
   const result = { meta, status: 'ok' };
   const stem = `vu${String(o.vus)}-${o.pace}-run-${String(entry.run).padStart(2, '0')}-${mode}`;
   const taken = fs.existsSync(path.join(outRoot, `${stem}.json`));
   const file = path.join(outRoot, taken ? `${stem}-${started.toISOString().replace(/[-:.]/g, '')}.json` : `${stem}.json`);
+  if (!gate.ok) {
+    // M7-E: refuse to start (nothing was brought up, so nothing is torn down); the figure is in the file.
+    result.status = 'refused-low-memory';
+    result.error = gate.message;
+    fs.writeFileSync(file, `${JSON.stringify(result, null, 2)}
+`);
+    process.stdout.write(`run ${entry.run} ${mode}: refused. ${gate.message}
+`);
+    return result.status;
+  }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'privpay-k6-'));
+  let listener;
   const files = o.remote ? [...FILES, '-f', LAN_FILE] : FILES;
   try {
-    if (freeBefore < 1.0 * GB) throw new Error(`free memory ${(freeBefore / GB).toFixed(2)} GB before the run; stopping`);
     process.stdout.write(`run ${entry.run} ${mode}: fresh stack\n`);
     // Both modes publish the same loopback ports: a stack left over from the other mode would make this one fail to start.
     process.stdout.write(`run ${entry.run} ${mode}: removing the ${mode === 'baseline' ? 'proposed' : 'baseline'} stack if it is running
@@ -132,7 +166,7 @@ async function oneRun(entry, o, label, outRoot) {
     if (up.status !== 0) {
       // Docker frees a published loopback port a moment after `down`; one retry on a clean slate, then give up (seen in M7-A).
       compose(mode, ['down', '-v', '--remove-orphans'], 'ignore', files);
-      await new Promise((resolve) => setTimeout(resolve, 15000));
+      await sleep(15000);
       meta.upRetried = true;
       up = compose(mode, ['up', '-d', '--wait'], 'inherit', files);
     }
@@ -151,13 +185,24 @@ async function oneRun(entry, o, label, outRoot) {
     };
     const summaryFile = path.join(tmp, 'k6-summary.json');
     let code = 0; // local k6 only: the remote k6 exit code is never seen (recorded as null)
+    let uploaded; // the listener result once it ends (received, timeout, closed)
     if (o.remote) {
-      // The second laptop runs k6; this one waits for its summary and reads CPU and memory when it arrives (no k6 stderr here).
-      const lan = plan.lanTarget(process.env['PRIVPAY_LAN_IP'] ?? '', Number(process.env['KONG_LAN_PORT'] ?? 4443), Number(process.env['IDP_LAN_PORT'] ?? 8080));
+      // The second laptop runs k6 and uploads its summary; this one waits for the file (upload or a manual copy) and reads CPU and memory.
+      const lanIp = process.env['PRIVPAY_LAN_IP'] ?? '';
+      const lan = plan.lanTarget(lanIp, Number(process.env['KONG_LAN_PORT'] ?? 4443), Number(process.env['IDP_LAN_PORT'] ?? 8080));
       meta.remoteK6 = true;
-      process.stdout.write(`run ${entry.run} ${mode}: start k6 on the second laptop with:
-  docker ${plan.k6DockerArgs({ ...k6Options, ...lan, caFile: '<CA>', passwordFile: '<PASSWORD-FILE>', scriptDir: '<SCRIPT-DIR>', outDir: '<OUT-DIR>' }).join(' ')}
-  then copy <OUT-DIR>/k6-summary.json to ${tmp}
+      const up = o.upload;
+      // The listener is open BEFORE the command is printed. Bound to the one LAN address; one PUT from B's address with the token.
+      listener = await upload.startUploadListener({ host: lanIp, port: up.port, peerIp: up.peerIp, expectedMode: mode, outFile: summaryFile, timeoutMs: up.timeoutMs });
+      listener.done.then((r) => {
+        uploaded = r;
+        if (r.status === 'timeout') process.stdout.write('upload listener closed after its timeout; copy k6-summary.json by hand to the folder above\n');
+      });
+      const command = upload.remoteCommand({ k6Args: plan.k6DockerArgs({ ...k6Options, ...lan, ...upload.bPaths(up.bDir) }), bDir: up.bDir, ip: lanIp, port: listener.port, token: listener.token });
+      process.stdout.write(`run ${entry.run} ${mode}: on the second laptop, in PowerShell, run this ONE command (k6, then the upload):
+${command}
+listening on ${lanIp}:${String(listener.port)} for ONE upload from ${up.peerIp}; closes after ${String(Math.round(up.timeoutMs / 60000))} min or the upload.
+fallback: copy out\\k6-summary.json by hand to ${tmp}
 `);
       const limit = Date.now() + (plan.seconds(o.warmup) + plan.seconds(o.duration) + 1800) * 1000;
       while (!fs.existsSync(summaryFile) && result.status === 'ok') {
@@ -166,14 +211,15 @@ async function oneRun(entry, o, label, outRoot) {
           result.status = 'aborted-low-memory';
           process.stdout.write('free memory is below the abort line: STOP k6 on the second laptop now (Ctrl+C)\n');
         }
-        await new Promise((resolve) => setTimeout(resolve, 5000));
+        await sleep(5000);
       }
-      // A copy in progress can leave a half file: wait until it parses (a few tries), so a truncated summary does not fail the run.
+      // A manual copy in progress can leave a half file: wait until it parses (a few tries). An upload is written whole (rename).
       for (let tries = 0; tries < 12 && fs.existsSync(summaryFile); tries += 1) {
-        try { JSON.parse(fs.readFileSync(summaryFile, 'utf8')); break; } catch { await new Promise((resolve) => setTimeout(resolve, 5000)); }
+        try { JSON.parse(fs.readFileSync(summaryFile, 'utf8')); break; } catch { await sleep(5000); }
       }
-      meta.summaryArrivedAt = new Date().toISOString();
-      result.resourcesNote = 'remote k6: CPU and memory are evaluated when the summary arrived here, so the window may end a little after k6 did';
+      meta.summaryVia = uploaded?.status === 'received' ? 'upload' : 'manual';
+      meta.summaryArrivedAt = uploaded?.receivedAt ?? new Date().toISOString();
+      result.resourcesNote = 'remote k6: CPU and memory are evaluated at k6.endedAt (the clock of the second laptop); see summaryLagSeconds and resourcesWindowReliable';
     } else {
       const k6 = spawn('docker', plan.k6DockerArgs({ ...k6Options, network: `privpay-${mode}_edge` }), { stdio: ['ignore', 'ignore', 'pipe'] });
       let stderr = '';
@@ -190,11 +236,22 @@ async function oneRun(entry, o, label, outRoot) {
     meta.freeMemoryLowestGB = +(lowest / GB).toFixed(2);
     meta.k6ExitCode = o.remote ? null : code;
     if (fs.existsSync(summaryFile)) result.k6 = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
-    // Remote only: how long after k6 ended (its own clock) the summary arrived here; the resource window is that much too late. Needs similar clocks.
-    if (o.remote && result.k6?.endedAt !== undefined) meta.summaryLagSeconds = Math.round((Date.parse(meta.summaryArrivedAt) - Date.parse(result.k6.endedAt)) / 1000);
+    // Remote only (M7-E): how long after k6 ended (k6's clock, laptop B) the summary arrived here (this clock). The window is read AT endedAt, not
+    // when the file came; the lag also holds the clock difference of the two laptops, so beyond 30 s either way the window is flagged unreliable.
+    let evalAt; // unix seconds; undefined = now (k6 ran here and has just ended)
+    if (o.remote) {
+      const ended = Date.parse(result.k6?.endedAt ?? '');
+      if (Number.isFinite(ended)) {
+        meta.summaryLagSeconds = Math.round((Date.parse(meta.summaryArrivedAt) - ended) / 1000);
+        evalAt = Math.min(ended, Date.now()) / 1000;
+        // The upload leaves B right after k6 exits, so for an upload the lag is also a rough (upper bound) estimate of clock(A) - clock(B).
+        if (meta.summaryVia === 'upload') meta.clockOffsetEstimateSeconds = meta.summaryLagSeconds;
+      }
+      result.resourcesWindowReliable = plan.resourceWindow(meta.summaryLagSeconds).reliable;
+    }
     const window = plan.seconds(o.duration);
     const q = plan.resourceQueries(window);
-    result.resources = { windowSeconds: window, note: 'cAdvisor through Prometheus; window = the measured phase, evaluated when k6 ended (the warm-up before it is outside the window)', cpuCoresMean: promQuery(mode, q.cpuCoresMean), memoryBytesPeak: promQuery(mode, q.memoryBytesPeak), memoryBytesMean: promQuery(mode, q.memoryBytesMean) };
+    result.resources = { windowSeconds: window, evaluatedAt: new Date(evalAt === undefined ? Date.now() : evalAt * 1000).toISOString(), note: 'cAdvisor through Prometheus; window = the measured phase, evaluated when k6 ended (the warm-up before it is outside the window)', cpuCoresMean: promQuery(mode, q.cpuCoresMean, plan.SERVICE_LABEL, evalAt), memoryBytesPeak: promQuery(mode, q.memoryBytesPeak, plan.SERVICE_LABEL, evalAt), memoryBytesMean: promQuery(mode, q.memoryBytesMean, plan.SERVICE_LABEL, evalAt) };
     // M7-D: 5xx answers per service since the stack started (a fresh stack per run). Timeouts and retries are not metered by the services.
     result.errors5xxByInstance = promQuery(mode, plan.errorQueries().http5xxByInstance, 'instance'); // keyed host:port; {} = no 5xx series, so also read prometheusTargetsAfter
     meta.prometheusTargetsAfter = prometheusTargets(mode);
@@ -202,6 +259,7 @@ async function oneRun(entry, o, label, outRoot) {
     result.status = 'error';
     result.error = String(error instanceof Error ? error.message : error).slice(0, 400);
   } finally {
+    if (listener !== undefined) await listener.close();
     fs.rmSync(tmp, { recursive: true, force: true });
     if (!o.keep) compose(mode, ['down', '-v', '--remove-orphans'], 'ignore', files);
   }
