@@ -26,6 +26,11 @@ const PAUSE_MIN_S = 0.5;
 const PAUSE_MAX_S = 1.5;
 const BASE_URL = __ENV.BASE_URL || 'https://kong:8443';
 const IDP_URL = __ENV.IDP_URL || 'http://keycloak:8080';
+// M7-D: on a second machine the names stay kong and keycloak (TLS name, Host header and token issuer unchanged) and k6 maps them to the
+// LAN address of the main laptop: KONG_ADDR=<ip>:<port>, IDP_ADDR=<ip>:<port>. Both unset: no mapping (one machine).
+const HOSTS = {};
+if (__ENV.KONG_ADDR) HOSTS['kong:8443'] = __ENV.KONG_ADDR;
+if (__ENV.IDP_ADDR) HOSTS['keycloak:8080'] = __ENV.IDP_ADDR;
 const RUN_BASE = Number(__ENV.RUN_BASE || '0');
 const PASSWORD = open('/secret/customer_password').trim();
 
@@ -60,12 +65,17 @@ if (WARMUP !== '0s') {
 const keep = ['max>=0'];
 export const options = {
   scenarios,
+  ...(Object.keys(HOSTS).length === 0 ? {} : { hosts: HOSTS }),
   setupTimeout: '600s',
   summaryTrendStats: ['avg', 'min', 'med', 'max', 'p(90)', 'p(95)', 'p(99)'],
   thresholds: {
     'http_req_duration{scenario:measure,target:kong}': keep,
     'http_req_duration{scenario:measure,target:kong,kind:normal}': keep,
     'http_req_duration{scenario:measure,target:kong,kind:suspicious}': keep,
+    // M7-D: where the time goes (waiting for a connection, connecting, waiting for the first byte): kept in the result.
+    'http_req_blocked{scenario:measure,target:kong}': keep,
+    'http_req_connecting{scenario:measure,target:kong}': keep,
+    'http_req_waiting{scenario:measure,target:kong}': keep,
     'http_req_failed{scenario:measure,target:kong}': ['rate>=0'],
     'http_reqs{scenario:measure,target:kong}': ['count>=0'],
     'checks{scenario:measure}': ['rate>=0'],
@@ -186,6 +196,9 @@ export default function (data) {
 }
 
 const PICK = [
+  'http_req_blocked{scenario:measure,target:kong}',
+  'http_req_connecting{scenario:measure,target:kong}',
+  'http_req_waiting{scenario:measure,target:kong}',
   'http_req_duration{scenario:measure,target:kong}',
   'http_req_duration{scenario:measure,target:kong,kind:normal}',
   'http_req_duration{scenario:measure,target:kong,kind:suspicious}',
@@ -209,6 +222,7 @@ export function handleSummary(data) {
     warmup: WARMUP,
     duration: DURATION,
     pace: PACE,
+    endedAt: new Date().toISOString(),
     metrics,
     payStatusAllPhases: status,
   };

@@ -13,7 +13,8 @@
     "cpus": 16,
     "totalMemoryGB": 13.81,
     "freeMemoryGB": 6.75,
-    "os": "Windows_NT 10.0.26200"
+    "os": "Windows_NT 10.0.26200",
+    "notOfficial": "treeClean was false when this file was made (M7-C, before the commit): not citable; repeat on a clean tree (M7-D)"
   },
   "tokenIssue": {
     "count": 200000,

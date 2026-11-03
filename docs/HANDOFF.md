@@ -1,3 +1,17 @@
+# HANDOFF (2026-11-03): M7-D di `feat/m7d`: k6 di laptop kedua (N-61 pilihan A), metrik waktu k6, aturan memori diperjelas; BUKAN pengukuran resmi
+
+| Butir | Bukti |
+| --- | --- |
+| Aturan memori (diperjelas) | Diukur SETELAH Docker Desktop menyala, tepat sebelum build atau menyalakan tumpukan: bebas ≥ 3,5 GB (laporkan angkanya); berhenti bila < 0,5 GB atau sistem menghentikan proses. Gerbang penuh tetap Docker mati dan ≥ 5 GB. Tercatat di CLAUDE.md (lokal) dan RENCANA-RUN-RESMI. Angka sesi: 3,68 dan 3,74 GB sebelum build tumpukan |
+| Issuer | **Aman tanpa mengubah konfigurasi.** `KC_HOSTNAME=http://keycloak:8080` (alamat penuh) membuat `iss` selalu `http://keycloak:8080/realms/privpay`: discovery lewat IP LAN dan loopback sama. k6 di kontainer tanpa jaringan Compose, `kong:8443` dan `keycloak:8080` dipetakan ke IP LAN: 754 pembayaran 201, 0 galat (JWT RS256 Kong, iss/aud adapter). TLS diverifikasi dengan CA proyek lewat nama `kong` (sertifikat memuat DNS:kong); tanpa CA k6 gagal x509 |
+| Dukungan dua mesin | `deploy/measure/compose.lan.yml`: hanya kong dan keycloak, satu port masing-masing di `${PRIVPAY_LAN_IP:?}` (tanpa bawaan; port 4443 dan 8080), loopback lama tetap; `perf:run --remote-k6` (menolak alamat selain IPv4 privat, mencetak perintah k6 untuk laptop B, menunggu `k6-summary.json`, lalu membaca Prometheus); skrip k6 menerima `KONG_ADDR`/`IDP_ADDR` (opsi `hosts`); `RUNBOOK-dua-mesin.md` (firewall dibatasi ke IP B + pencabutan, uji ping, risiko Keycloak HTTP di LAN, cara menutup) |
+| Metrik k6 | `http_req_blocked`, `http_req_connecting`, `http_req_waiting` dan `endedAt` di ringkasan; `errors5xxByInstance` dari metrik layanan. Hitungan timeout/retry TIDAK tersedia (layanan hanya menghitung permintaan per status) |
+| Mikrobenchmark ulang | `token-microbench-20261103T020746.json`, treeClean true, commit d08a4ea: rata-rata 4,39 µs, p50 3,8, p95 5,7, p99 9,8, maks 2259 µs. Berkas M7-C ditandai tidak resmi |
+| Skill | tdd (tes dua mesin merah dulu; tes lain bersama berkas), simplify (inline: pembantu `lowMemory`), code-review medium: 10 temuan; DIPERBAIKI 7: regex `\s+` di run.cjs yang kehilangan garis miring (regresi dari skrip penyunting saya), berkas ringkasan yang baru separuh tersalin (coba parse ulang), `k6ExitCode` remote kini `null`, pesan hentikan k6 saat memori rendah, `PRIVPAY_LAN_IP` hanya divalidasi bila berkas LAN dimuat, alamat bernol di depan ditolak, selang kedatangan ringkasan (`summaryLagSeconds`) dan catatan `errors5xxByInstance`, regex loopback di tes. DILEWATI 3: jendela sumber daya tetap dievaluasi saat ringkasan tiba (jam dua laptop belum tentu sama; selang dicatat), kunci `hosts` tetap (BASE_URL/IDP_URL bawaan tidak berubah), `down` mode lain tanpa berkas LAN (dihapus per nama proyek) |
+| Perintah untuk Fanny | firewall (Administrator) di RUNBOOK: `New-NetFirewallRule ... -RemoteAddress <IP-B>` dan `Remove-NetFirewallRule -DisplayName "privpay-m7-lan"` |
+
+Belum teruji: dua laptop sungguhan (jangkauan jaringan, firewall, aturan Docker Desktop yang membuka port ke LAN), alur `--remote-k6` ujung ke ujung di runner (hanya sintaks, tes statis, dan k6 manual), dasbor Grafana di UI.
+
 # HANDOFF (2026-11-03): M7-C di `feat/m7c`: persiapan (mikrobenchmark, override sensitivitas, monitoring, rencana run resmi); k6 mesin kedua BERHENTI di N-61; BUKAN pengukuran resmi
 
 | Butir | Bukti |

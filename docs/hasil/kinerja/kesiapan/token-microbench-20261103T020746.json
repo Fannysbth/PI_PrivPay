@@ -1,0 +1,27 @@
+{
+  "meta": {
+    "official": false,
+    "what": "TokenMint.mint of the Privacy Service (HMAC-SHA256, PSEU- + 8 hex), in process, throwaway keys, no I/O",
+    "date": "2026-11-03T02:07:46.919Z",
+    "commit": "d08a4ea3be1789bb3bd8add107fe009def73f56b",
+    "treeClean": true,
+    "iterations": 200000,
+    "warmup": 20000,
+    "timer": "process.hrtime.bigint per call (its own cost is inside every sample)",
+    "nodeVersion": "v24.12.0",
+    "cpuModel": "AMD Ryzen 7 8845HS w/ Radeon 780M Graphics",
+    "cpus": 16,
+    "totalMemoryGB": 13.81,
+    "freeMemoryGB": 3.64,
+    "os": "Windows_NT 10.0.26200"
+  },
+  "tokenIssue": {
+    "count": 200000,
+    "minNs": 3600,
+    "meanNs": 4393.1435,
+    "p50Ns": 3800,
+    "p95Ns": 5700,
+    "p99Ns": 9800,
+    "maxNs": 2258900
+  }
+}
