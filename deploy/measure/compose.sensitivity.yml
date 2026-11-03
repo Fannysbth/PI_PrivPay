@@ -1,0 +1,27 @@
+# SENSITIVITY ANALYSIS ONLY: NOT THE MAIN RESULT, and never part of the official stack (M7-C; decision: the official limit stays 0.5 CPU
+# per service in BOTH conditions). It raises the CPU quota of the services the request path crosses to 1.00 so a reader can see how
+# much of the ceiling found in M7-B (N-60) is the quota. Memory limits do not change. Use it with the SAME value in both conditions:
+# this file for the services both conditions have, plus compose.sensitivity.proposed.yml for the two that exist only in the
+# proposed condition (same 1.00). Example (one mode at a time):
+#   docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.baseline.yml -f deploy/measure/compose.sensitivity.yml ...
+#   docker compose -f deploy/compose/docker-compose.yml -f deploy/compose/mode.proposed.yml -f deploy/measure/compose.sensitivity.yml \
+#                  -f deploy/measure/compose.sensitivity.proposed.yml ...
+# `pnpm perf:run` does not read it, so no official or readiness file can come from it by accident. Any figure taken with it must
+# be labelled "sensitivity, 1.00 CPU" and kept apart from the 0.5 CPU results.
+services:
+  kong:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  gateway:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  transaction-service:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  fraud-service:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  notification-service:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  pg-transaction:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  pg-fraud:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  pg-notification:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
