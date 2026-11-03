@@ -1,3 +1,18 @@
+# HANDOFF (2026-11-03): M7-C di `feat/m7c`: persiapan (mikrobenchmark, override sensitivitas, monitoring, rencana run resmi); k6 mesin kedua BERHENTI di N-61; BUKAN pengukuran resmi
+
+| Butir | Bukti |
+| --- | --- |
+| 1. k6 di mesin kedua | **Tidak dikerjakan (butir 1(d)).** `mixed.k6.js` memanggil Keycloak (`setup` dan pembaruan token tiap 240 detik); Keycloak tanpa port ke host. Empat opsi di N-61 (buka port Keycloak ke LAN, token dari berkas, Kong meneruskan `/realms/*` dengan ADR, atau k6 tetap satu mesin). RUNBOOK-dua-mesin.md belum ditulis |
+| 2. Mikrobenchmark | `scripts/perf/token-microbench.cjs` (TokenMint nyata dari `dist`, kunci acak di memori, 200.000 panggilan + 20.000 pemanasan, di luar Jest, tanpa dependensi). Uji kesiapan sekali: rata-rata 4,5 µs, p50 3,9 µs, p95 5,9 µs, p99 10 µs, maks 645 µs (AMD Ryzen 7 8845HS, Node 24.12.0, Windows, memori bebas 6,75 GB; `treeClean` false karena belum di-commit). Bukan klaim; ukur ulang di lingkungan ukur akhir |
+| 3. Maks 3283 ms | Lihat N-60 (tambahan M7-C): timeout 3 detik per panggilan, k6 mengukur seluruh rantai; antre/koneksi dicatat k6 tetapi tidak disimpan; retry 3 detik tidak dapat disingkirkan dari data |
+| 4. Override sensitivitas | `deploy/measure/compose.sensitivity.yml` (kong, gateway, tiga layanan + tiga DB hilir) dan `compose.sensitivity.proposed.yml` (privacy-service, pg-privacy), semua 1,00 CPU, memori tidak berubah; ditandai "NOT THE MAIN RESULT"; `docker compose config` valid di kedua mode; tidak dibaca `perf:run`; belum dijalankan |
+| 5. Monitoring (usulan) | Dinyalakan lalu dimatikan (`down -v`). Prometheus 9/9 target up, cAdvisor melaporkan 18 kontainer, Grafana `/api/health` ok (12.1.0), log: datasource Prometheus (uid `privpay-prometheus`) disisipkan, "finished to provision dashboards"; Grafana mencapai Prometheus. Dasbor `PrivPay: CPU and memory per container (NFR-18)` tertanam; masuk ke UI TIDAK diuji (butuh kata sandi). URL `http://127.0.0.1:3000`, pengguna `admin` (bawaan Grafana), kata sandi `secrets/docker/grafana_admin_password` (tidak dibaca). Menyalakan: `pnpm docker:compose proposed -f docs/postman/compose.postman.yml -f deploy/measure/compose.perf.yml -f deploy/compose/docker-compose.monitoring.yml --profile monitoring up -d --build --wait` |
+| 6. Rencana | `docs/hasil/kinerja/RENCANA-RUN-RESMI.md` (20 run, ±3 sampai 4 jam perkiraan) |
+| Skill | tdd (tes merah dulu untuk mikrobenchmark; tes override ditulis bersama berkas konfigurasi), simplify dan code-review: lihat bagian gerbang |
+| Gerbang ringan | lihat bagian bawah |
+
+Belum teruji: k6 dua mesin, dasbor di UI, hasil override sensitivitas, mikrobenchmark di lingkungan akhir, log retry 100 pengguna.
+
 # HANDOFF (2026-11-03): M7-B di `feat/m7b`: diagnosis plafon dan lonjakan (N-60), jeda `--pace`, ukur ulang kesiapan; BUKAN pengukuran resmi, lingkungan ukur TERBUKA
 
 | Butir | Bukti |

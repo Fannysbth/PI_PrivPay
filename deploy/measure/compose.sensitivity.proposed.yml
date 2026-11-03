@@ -1,0 +1,7 @@
+# SENSITIVITY ANALYSIS ONLY: NOT THE MAIN RESULT. The two services that exist only in the proposed condition, at the same 1.00 CPU
+# as the others in compose.sensitivity.yml. Use it only with mode.proposed.yml; with the baseline files Compose would reject it.
+services:
+  privacy-service:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
+  pg-privacy:
+    deploy: { resources: { limits: { cpus: '1.00' } } }
