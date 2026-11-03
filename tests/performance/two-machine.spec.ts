@@ -62,7 +62,7 @@ describe('M7-D LAN override (Kong and Keycloak only)', () => {
       expect(text).not.toContain('PRIVPAY_LAN_IP');
       const doc = parse(text) as { services?: Record<string, { ports?: string[] }> };
       for (const svc of Object.values(doc.services ?? {}))
-        for (const port of svc.ports ?? []) expect(port).toMatch(/^127.0.0.1:/);
+        for (const port of svc.ports ?? []) expect(port).toMatch(/^127\.0\.0\.1:/);
     }
   });
 
@@ -75,6 +75,8 @@ describe('M7-D LAN override (Kong and Keycloak only)', () => {
       '8.8.8.8',
       'localhost',
       '192.168.1.0/24',
+      '010.0.0.5',
+      '192.168.001.20',
       '192.168.1',
       '',
     ])

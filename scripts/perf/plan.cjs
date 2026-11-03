@@ -79,7 +79,7 @@ function k6DockerArgs(o) {
 
 /** M7-D (N-61, option A): the one LAN address the stack is published on; a private IPv4 only (never 0.0.0.0, loopback or a name). */
 function assertLanIp(ip) {
-  const m = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(ip);
+  const m = /^(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})\.(0|[1-9]\d{0,2})$/.exec(ip);
   const p = m === null ? [] : m.slice(1).map(Number);
   const private4 = p.length === 4 && p.every((n) => n <= 255) && (p[0] === 10 || (p[0] === 172 && p[1] >= 16 && p[1] <= 31) || (p[0] === 192 && p[1] === 168));
   if (!private4) throw new RangeError('PRIVPAY_LAN_IP must be one private IPv4 address (10/8, 172.16/12 or 192.168/16)');

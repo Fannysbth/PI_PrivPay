@@ -79,9 +79,10 @@ function commitInfo() {
 const LAN_FILE = path.join(root, 'deploy', 'measure', 'compose.lan.yml');
 const FILES = ['-f', path.join(root, 'docs', 'postman', 'compose.postman.yml'), '-f', path.join(root, 'deploy', 'measure', 'compose.perf.yml'), '-f', path.join(root, 'deploy', 'compose', 'docker-compose.monitoring.yml'), '--profile', 'monitoring'];
 const lanEnv = () => (process.env['PRIVPAY_LAN_IP'] === undefined ? {} : { PRIVPAY_LAN_IP: plan.assertLanIp(process.env['PRIVPAY_LAN_IP']) });
-const composeEnvFor = (mode) => ({ ...composeEnv(mode), ...lanEnv(), RATE_LIMIT_ENABLED: 'false', KONG_RATE_LIMIT_PER_MINUTE: '100000', COMPOSE_PARALLEL_LIMIT: '1' });
+const composeEnvFor = (mode) => ({ ...composeEnv(mode), RATE_LIMIT_ENABLED: 'false', KONG_RATE_LIMIT_PER_MINUTE: '100000', COMPOSE_PARALLEL_LIMIT: '1' });
 // The LAN file is read only for a remote-k6 run; `down` of the other mode needs no address because it removes containers, not ports.
-const compose = (mode, rest, stdio = 'inherit', files = FILES) => run('docker', composeArgs(mode, [...files, ...rest]), { stdio, env: composeEnvFor(mode) });
+// The address is validated and passed on only when the LAN file is in the set, so a stale PRIVPAY_LAN_IP cannot break an ordinary run or its cleanup.
+const compose = (mode, rest, stdio = 'inherit', files = FILES) => run('docker', composeArgs(mode, [...files, ...rest]), { stdio, env: { ...composeEnvFor(mode), ...(files.includes(LAN_FILE) ? lanEnv() : {}) } });
 
 function imageVersions(mode) {
   const names = docker(['ps', '--filter', `label=com.docker.compose.project=privpay-${mode}`, '--format', '{{.Names}}']).split('\n').filter(Boolean);
@@ -149,7 +150,7 @@ async function oneRun(entry, o, label, outRoot) {
       return free < ABORT_BELOW;
     };
     const summaryFile = path.join(tmp, 'k6-summary.json');
-    let code = 0;
+    let code = 0; // local k6 only: the remote k6 exit code is never seen (recorded as null)
     if (o.remote) {
       // The second laptop runs k6; this one waits for its summary and reads CPU and memory when it arrives (no k6 stderr here).
       const lan = plan.lanTarget(process.env['PRIVPAY_LAN_IP'] ?? '', Number(process.env['KONG_LAN_PORT'] ?? 4443), Number(process.env['IDP_LAN_PORT'] ?? 8080));
@@ -161,8 +162,15 @@ async function oneRun(entry, o, label, outRoot) {
       const limit = Date.now() + (plan.seconds(o.warmup) + plan.seconds(o.duration) + 1800) * 1000;
       while (!fs.existsSync(summaryFile) && result.status === 'ok') {
         if (Date.now() > limit) { result.status = 'remote-k6-timeout'; break; }
-        if (lowMemory()) result.status = 'aborted-low-memory';
+        if (lowMemory()) {
+          result.status = 'aborted-low-memory';
+          process.stdout.write('free memory is below the abort line: STOP k6 on the second laptop now (Ctrl+C)\n');
+        }
         await new Promise((resolve) => setTimeout(resolve, 5000));
+      }
+      // A copy in progress can leave a half file: wait until it parses (a few tries), so a truncated summary does not fail the run.
+      for (let tries = 0; tries < 12 && fs.existsSync(summaryFile); tries += 1) {
+        try { JSON.parse(fs.readFileSync(summaryFile, 'utf8')); break; } catch { await new Promise((resolve) => setTimeout(resolve, 5000)); }
       }
       meta.summaryArrivedAt = new Date().toISOString();
       result.resourcesNote = 'remote k6: CPU and memory are evaluated when the summary arrived here, so the window may end a little after k6 did';
@@ -177,16 +185,18 @@ async function oneRun(entry, o, label, outRoot) {
         k6.on('error', reject);
         k6.on('close', resolve);
       }).finally(() => clearInterval(watch));
-      if (result.status === 'ok' && code !== 0) { result.status = 'k6-failed'; result.k6Stderr = stderr.replace(/s+/g, ' ').slice(-600); }
+      if (result.status === 'ok' && code !== 0) { result.status = 'k6-failed'; result.k6Stderr = stderr.replace(/\s+/g, ' ').slice(-600); }
     }
     meta.freeMemoryLowestGB = +(lowest / GB).toFixed(2);
-    meta.k6ExitCode = code;
+    meta.k6ExitCode = o.remote ? null : code;
     if (fs.existsSync(summaryFile)) result.k6 = JSON.parse(fs.readFileSync(summaryFile, 'utf8'));
+    // Remote only: how long after k6 ended (its own clock) the summary arrived here; the resource window is that much too late. Needs similar clocks.
+    if (o.remote && result.k6?.endedAt !== undefined) meta.summaryLagSeconds = Math.round((Date.parse(meta.summaryArrivedAt) - Date.parse(result.k6.endedAt)) / 1000);
     const window = plan.seconds(o.duration);
     const q = plan.resourceQueries(window);
     result.resources = { windowSeconds: window, note: 'cAdvisor through Prometheus; window = the measured phase, evaluated when k6 ended (the warm-up before it is outside the window)', cpuCoresMean: promQuery(mode, q.cpuCoresMean), memoryBytesPeak: promQuery(mode, q.memoryBytesPeak), memoryBytesMean: promQuery(mode, q.memoryBytesMean) };
     // M7-D: 5xx answers per service since the stack started (a fresh stack per run). Timeouts and retries are not metered by the services.
-    result.errors5xxByInstance = promQuery(mode, plan.errorQueries().http5xxByInstance, 'instance');
+    result.errors5xxByInstance = promQuery(mode, plan.errorQueries().http5xxByInstance, 'instance'); // keyed host:port; {} = no 5xx series, so also read prometheusTargetsAfter
     meta.prometheusTargetsAfter = prometheusTargets(mode);
   } catch (error) {
     result.status = 'error';
