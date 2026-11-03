@@ -142,6 +142,12 @@ async function oneRun(entry, o, label, outRoot) {
     const runBase = Math.floor(Date.now() / 1000) % (99000 - o.vus);
     const k6Options = { containerName: `privpay-k6-run-${mode}`, caFile: caFile(), passwordFile: path.join(secretsDir(), 'keycloak_password_customer'), scriptDir: path.join(root, 'tests', 'performance'), outDir: tmp, mode, vus: o.vus, warmup: o.warmup, duration: o.duration, pace: o.pace, runBase };
     let lowest = freeBefore;
+    // One memory sample for both ways of waiting: remembers the lowest value and says whether the abort line is crossed.
+    const lowMemory = () => {
+      const free = os.freemem();
+      lowest = Math.min(lowest, free);
+      return free < ABORT_BELOW;
+    };
     const summaryFile = path.join(tmp, 'k6-summary.json');
     let code = 0;
     if (o.remote) {
@@ -155,8 +161,7 @@ async function oneRun(entry, o, label, outRoot) {
       const limit = Date.now() + (plan.seconds(o.warmup) + plan.seconds(o.duration) + 1800) * 1000;
       while (!fs.existsSync(summaryFile) && result.status === 'ok') {
         if (Date.now() > limit) { result.status = 'remote-k6-timeout'; break; }
-        lowest = Math.min(lowest, os.freemem());
-        if (os.freemem() < ABORT_BELOW) result.status = 'aborted-low-memory';
+        if (lowMemory()) result.status = 'aborted-low-memory';
         await new Promise((resolve) => setTimeout(resolve, 5000));
       }
       meta.summaryArrivedAt = new Date().toISOString();
@@ -166,9 +171,7 @@ async function oneRun(entry, o, label, outRoot) {
       let stderr = '';
       k6.stderr.on('data', (d) => { stderr = (stderr + d).slice(-2000); });
       const watch = setInterval(() => {
-        const free = os.freemem();
-        lowest = Math.min(lowest, free);
-        if (free < ABORT_BELOW) { result.status = 'aborted-low-memory'; run('docker', ['kill', `privpay-k6-run-${mode}`]); }
+        if (lowMemory()) { result.status = 'aborted-low-memory'; run('docker', ['kill', `privpay-k6-run-${mode}`]); }
       }, 5000);
       code = await new Promise((resolve, reject) => {
         k6.on('error', reject);
