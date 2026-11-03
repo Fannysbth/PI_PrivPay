@@ -1,3 +1,16 @@
+# HANDOFF (2026-11-03): M7-E di `feat/m7e-upload-handoff`: serah-terima ringkasan k6 otomatis (unggahan), jendela sumber daya dari `k6.endedAt`, gerbang memori 3,5 GB; BUKAN pengukuran resmi
+
+| Butir | Bukti |
+| --- | --- |
+| Pendengar unggahan | `scripts/perf/upload.cjs` (hanya `node:http`/`node:crypto`): terikat HANYA ke `PRIVPAY_LAN_IP` (wajib, tanpa bawaan, bukan 0.0.0.0), port `SUMMARY_UPLOAD_PORT` (4444; bukan port Kong/Keycloak), tepat satu PUT ke `/upload/<48 hex>` (token `randomBytes`, `timingSafeEqual`). Ditolak: asal selain `--peer-ip` 403, metode 405, token 404, badan > 1 MiB 413, bukan JSON 400, tanpa metrik/mode lain 422, kegagalan simpan 500 (token tetap hidup). Tutup setelah satu unggahan sukses atau `--upload-timeout` (15m). Tulis ke berkas sementara lalu rename ke folder serah-terima lama; salin manual tetap jalan |
+| Perintah B | SATU baris PowerShell: hapus ringkasan lama; `docker run` k6; `Invoke-RestMethod -Method Put -InFile ... -Uri http://IP:4444/upload/TOKEN`. Folder bawaan `C:\k6test` (`--b-dir`, divalidasi ketat), tanpa kurung siku atau tag. Token tidak ditulis ke JSON |
+| Jendela sumber daya | Prometheus dievaluasi pada `k6.endedAt`; hasil memuat `summaryLagSeconds`, `resourcesWindowReliable` (false bila \|selang\| > 30 detik), `clockOffsetEstimateSeconds` (unggahan saja, batas atas kasar), `summaryVia`, `resources.evaluatedAt` |
+| Gerbang memori | `waitForFreeMemory`: setelah Docker menyala (`docker info`, maks 5 menit), tunggu bebas ≥ 3,5 GB maks 5 menit; kurang = status `refused-low-memory` di JSON, tumpukan tidak dinyalakan; angka di `meta.memoryGate` |
+| Dokumen | RUNBOOK-dua-mesin (aturan `privpay-m7-upload`, opsi RTT/ICMP `privpay-m7-ping`, alasan keamanan, salin manual, pengingat aturan Docker Desktop, pembersihan) dan RENCANA-RUN-RESMI (RTT/closed-loop, kabel di B, sesi dan jaringan sama) |
+| Skill | tdd (tes merah dulu: 27 tes `summary-upload.spec.ts`), simplify (inline: `sleep` dipakai ulang), code-review medium: 8 temuan; DIPERBAIKI 4: soket dihancurkan sebelum 200 terkirim (kini Connection: close), galat tulis berkas mematikan runner (kini 500 + token hidup), `docker info` tanpa batas waktu, komentar `--b-dir`. DILEWATI 4: jendela memakai jam B (diminta eksplisit; selisih tercatat dan ditandai), token di jalur URL (diminta eksplisit; sekali pakai, metrik saja; bentrok dengan larangan CLAUDE.md soal secret di URL: butuh keputusan Fanny bila ingin pindah ke header), badan 413 tidak dihancurkan (batas 30 detik), batas tunggu remote tidak diikat ke timeout pendengar (pesan dicetak, salin manual tetap bisa). Tinjauan keamanan manual: lihat laporan akhir |
+
+Belum teruji: alur dua laptop sungguhan (firewall, jangkauan LAN, Docker Desktop, PowerShell di B, `Invoke-RestMethod` terhadap pendengar), runner `--remote-k6` ujung ke ujung (hanya sintaks, validasi opsi, dan tes unit).
+
 # HANDOFF (2026-11-03): M7-D di `feat/m7d`: k6 di laptop kedua (N-61 pilihan A), metrik waktu k6, aturan memori diperjelas; BUKAN pengukuran resmi
 
 | Butir | Bukti |

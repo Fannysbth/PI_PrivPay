@@ -96,6 +96,15 @@ function lanTarget(ip, kongPort, idpPort) {
   return { kongAddr: `${ip}:${String(kongPort)}`, idpAddr: `${ip}:${String(idpPort)}` };
 }
 
+/**
+ * M7-E: with a remote k6 the CPU and memory window is read at k6.endedAt (B's clock). The lag is how long after that the summary reached A
+ * (it includes the clock difference of the two laptops); beyond 30 s either way the window cannot be trusted and the file says so.
+ */
+const RESOURCE_LAG_LIMIT_SECONDS = 30;
+function resourceWindow(lagSeconds) {
+  return { reliable: Number.isFinite(lagSeconds) && Math.abs(lagSeconds) <= RESOURCE_LAG_LIMIT_SECONDS, limitSeconds: RESOURCE_LAG_LIMIT_SECONDS };
+}
+
 const SERVICE_LABEL = 'container_label_com_docker_compose_service';
 
 /** PromQL for CPU (cores, mean) and memory (peak working set) per container over the last `windowSeconds`. */
@@ -114,4 +123,4 @@ function errorQueries() {
   return { http5xxByInstance: 'sum by (instance) (privpay_http_requests_total{status=~"5.."})' };
 }
 
-module.exports = { assertLanIp, lanTarget, errorQueries, K6_IMAGE, OFFICIAL, PACES, pacesFor, SERVICE_LABEL, alternation, seconds, isOfficialShape, k6DockerArgs, resourceQueries };
+module.exports = { resourceWindow, assertLanIp, lanTarget, errorQueries, K6_IMAGE, OFFICIAL, PACES, pacesFor, SERVICE_LABEL, alternation, seconds, isOfficialShape, k6DockerArgs, resourceQueries };
