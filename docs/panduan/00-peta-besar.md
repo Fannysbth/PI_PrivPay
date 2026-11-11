@@ -95,6 +95,8 @@ Yang **sama** di kedua mode: autentikasi (JWT), otorisasi per peran, batas laju,
 
 ## Status proyek (per penulisan panduan)
 
+> **Pembaruan 2026-11-11:** bagian ini ditulis saat M5 dan sebagian usang (Docker/Compose, Kong, Keycloak, Newman, dan k6 kini ada; kinerja v2 tahap A dan B selesai). Keadaan terbaru ada di [`docs/DOKUMENTASI_SISTEM.md`](../DOKUMENTASI_SISTEM.md) dan [`docs/LOG_KERJA.md`](../LOG_KERJA.md).
+
 - Milestone M0 sampai M5 selesai di `main` lokal; gerbang terakhir hijau (unit 1340, integrasi 1134, smoke 36, pii-scan 35 + 116 tes; [`docs/HANDOFF.md`](../HANDOFF.md)).
 - **Belum ada**: Docker/Compose, Kong dan plugin Lua, Keycloak, Newman (M6), pengukuran k6 dan E(s) (M6/M7). Angka latensi dari mesin lokal sengaja belum diukur dan tidak masuk laporan.
 - Rincian keterbatasan: [08-batasan-dan-pertanyaan-dosen.md](08-batasan-dan-pertanyaan-dosen.md).

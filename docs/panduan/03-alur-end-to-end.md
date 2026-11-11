@@ -60,8 +60,8 @@ sequenceDiagram
   participant N as Notification
   K->>G: POST /transaction (rekening, merchant, jumlah, geohash) + Idempotency-Key
   G->>G: JWT, laju, rute, peran, skema; customer_id dari klaim JWT
-  G->>P: pseudonymize CUSTOMER (P1) dan ACCOUNT (P2), transaction_id baru
-  P-->>G: dua token
+  G->>P: POST /pseudonymize/batch: CUSTOMER (P1) dan ACCOUNT (P2), transaction_id baru (ADR-0019)
+  P-->>G: dua token (semua atau tidak sama sekali)
   G->>T: POST /transaction (customer_token, account_token, ... tanpa identitas)
   T->>T: insertPending (ON CONFLICT DO NOTHING)
   alt jumlah >= ambang
@@ -82,7 +82,7 @@ sequenceDiagram
 
 1. `Gateway.handle`: `authenticate` dengan `acceptCustomerToken: true` (hanya Gateway menerima token nasabah), hitung laju, cocokkan rute `AZ-03`, `mayCall` (harus `CUSTOMER` dengan `customerId`), periksa ukuran dan skema `transactionBody`.
 2. `Gateway.tokenized` mengambil header `idempotency-key` (harus string tunggal) dan **`customer_id` dari klaim JWT yang terverifikasi, bukan dari body** (invarian 7).
-3. `Tokenizer.transaction`: membuat `transaction_id` (`TX-` + epoch ms + penghitung, K-17) lalu `Promise.all` dua `pseudonymize` (CUSTOMER dan ACCOUNT, tujuan `TRANSACTION` / `PAYMENT_PROCESSING`). Bila salah satu gagal, **seluruh permintaan gagal** dan tidak ada yang diteruskan (gagal tertutup). Payload keluar disusun dari daftar izin: `transaction_id`, `idempotency_key`, `customer_token`, `account_token`, `merchant_id`, `amount`, `geohash`.
+3. `Tokenizer.transaction`: membuat `transaction_id` (`TX-` + epoch ms + penghitung, K-17) lalu satu `pseudonymizeBatch` (CUSTOMER dan ACCOUNT, tujuan `TRANSACTION` / `PAYMENT_PROCESSING`; sejak kinerja v2 tahap B, ADR-0019, menggantikan dua panggilan `pseudonymize`). Bila Privacy menolak atau tidak menjawab untuk salah satu, **seluruh permintaan gagal** dan tidak ada yang diteruskan (gagal tertutup). Payload keluar disusun dari daftar izin: `transaction_id`, `idempotency_key`, `customer_token`, `account_token`, `merchant_id`, `amount`, `geohash`.
 4. Di Privacy, `TokenService.generate` (form 1): `PolicyEngine.evaluate` (Tabel 3: pemanggil `API_GATEWAY`, konteks P1/P2), lalu `issue`: kunci penasihat per kombinasi, tandai token kedaluwarsa, **pakai ulang** token aktif yang ada atau enkripsi subjek dan sisipkan baris baru (`ON CONFLICT (pseudonym) DO NOTHING`, ulangi sampai 20 kali bila tabrakan), tulis `transaction_link`, satu baris audit.
 5. `TransactionHttp.create` ([`transaction-http.ts`](../../services/transaction-service/src/transaction-http.ts)): pemanggil harus `API_GATEWAY` (selain itu `POLICY_NOT_ALLOWED`), baru skema dibaca; token harus berbentuk `PSEU-XXXXXXXX`.
 6. `TransactionProcessor.process`: jumlah bilangan bulat >= 1, pedagang ada, lalu `insertPending`. `ON CONFLICT DO NOTHING` berarti dua permintaan bersamaan dengan kunci yang sama menghasilkan tepat satu pemenang. Pemenang menjalankan `orchestrate`; yang kalah menjalankan `replay` (di bawah).

@@ -23,14 +23,15 @@ Penyebab: sekitar 5,3 panggilan sinkron ber-TLS ke Privacy Service per pembayara
 ## Tahap A: pangkas query per operasi di Privacy Service
 
 - Apa: `expireStale` dan `findActive` digabung menjadi `expireAndFindActive` (satu statement, satu round trip). Perilaku, otorisasi, dan audit tidak berubah.
-- Status: KODE SELESAI di cabang `feat/perf-v2-privacy-hot-path`, belum di-commit. Tes `PERF-01` (2 tes hitung statement) merah dulu, lalu hijau. Integrasi Privacy Service: 17 suite, 456 tes lulus.
-- Sisa: gerbang penuh (butuh Docker mati dan memori bebas >= 5 GB), `/code-review`, CHANGELOG, commit.
+- Status (2026-11-11): SELESAI di kode dan di-commit `07b185c` di cabang `feat/perf-v2-privacy-hot-path`. Tes `PERF-01` merah dulu, lalu hijau. Integrasi penuh 70 suite / 1243 tes lulus.
+- Sisa: `/code-review`, gerbang yang tersisa (lihat `docs/LOG_KERJA.md`), pengukuran.
 - Dampak ke naskah: tidak ada.
 
 ## Tahap B: `POST /pseudonymize/batch` untuk P1 dan P2
 
 - Apa: Gateway (adapter dan plugin Kong) meminta token nasabah dan rekening dalam satu panggilan. Panggilan sinkron per pembayaran turun dari sekitar 5,3 menjadi sekitar 4,3 (perkiraan, belum diukur).
 - Aturan keamanan (ADR-0019, Proposed): tiap elemen tetap lewat Policy Engine dan menulis tepat satu baris audit; satu elemen ditolak berarti seluruh batch ditolak (all-or-nothing); pemanggil hanya `API_GATEWAY`; `requesting_service` dari JWT; 1 sampai 2 elemen; skema menolak field tak dikenal; Privacy mati tetap 503 tanpa fallback.
+- Status (2026-11-11): langkah 1 sampai 6 SELESAI, commit `b52d31a`, ADR-0019 Accepted (dengan penyempitan satu elemen per `subject_type`). Langkah 7 (Newman kedua mode) dan payload scan BELUM diuji (butuh Docker dan memori bebas >= 3,5 GB). Langkah 8: gerbang sebagian, `/code-review` belum.
 - Langkah: (1) Fanny menyatakan ADR-0019 Accepted; (2) spec privacy bagian 4 dan PRD_ERRATA; (3) tes dulu (TK untuk rute baru: pemanggil salah, elemen ditolak, ukuran, Privacy mati, dua elemen = dua baris audit); (4) rute di Privacy; (5) klien TS di Gateway; (6) plugin Lua dan vektor kontrak; (7) Newman kedua mode; (8) gerbang, `/code-review`.
 - Butuh Docker (Lua, luacheck, Newman, payload scan) dan memori bebas >= 3,5 GB saat Docker menyala.
 - Dampak ke naskah: satu kalimat di Metodologi.
@@ -38,6 +39,8 @@ Penyebab: sekitar 5,3 panggilan sinkron ber-TLS ke Privacy Service per pembayara
 ## Tahap C: cache token terbatas (diputuskan setelah A dan B diukur)
 
 Fanny menyetujui arah C (2026-11-11) karena tetap pseudonimisasi dinamis, tetap Privacy-by-Design, dan penyamaran tetap terjadi di Gateway. Parameter dan ADR-nya ditetapkan setelah ada angka A+B.
+
+Pembaruan 2026-11-11: Fanny meminta T memakai nilai normal industri. Usulan Claude T = 5 detik (dasar di `docs/OPEN_QUESTIONS.md` N-63 dan `docs/LOG_KERJA.md`); belum disetujui. Tahap C belum dikerjakan; menunggu persetujuan dua ADR.
 
 - Apa: Gateway menyimpan token P1/P2 yang baru diterima; Transaction menyimpan hasil exchange X2 (dan X1) per token sumber; Notification menyimpan hasil resolve-domain per token P4. Pembayaran berikutnya dari nasabah yang sama tidak perlu ke Privacy.
 - Pengaman wajib:

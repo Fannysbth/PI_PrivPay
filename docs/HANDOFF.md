@@ -1,3 +1,19 @@
+# HANDOFF (2026-11-11): kinerja v2 tahap A dan B di `feat/perf-v2-privacy-hot-path` (commit `07b185c`, `b52d31a`); tahap C belum; BUKAN pengukuran
+
+| Butir | Bukti |
+| --- | --- |
+| Tahap A | `TokenService`: `expireStale` + `findActive` menjadi satu statement `expireAndFindActive` (PERF-01, 2 tes hitung statement). Perilaku, otorisasi, audit tidak berubah |
+| Tahap B | `POST /pseudonymize/batch` (ADR-0019 Accepted): 1 sampai 2 elemen bentuk 1, hanya `API_GATEWAY`, satu transaksi, satu baris audit per elemen, semua atau tidak sama sekali. Penyempitan disetujui Fanny: satu elemen per `subject_type`, kunci advisory menurut urutan `subject_type` (cegah deadlock) |
+| Gateway | `PrivacyPort.pseudonymizeBatch` (HTTP, fake, passthrough baseline); `Tokenizer` meminta P1+P2 dalam satu panggilan. Plugin Kong: `privacy.pseudonymize_batch`, `core.tokenize(input, privacy, privacy_batch)`, `run-vectors.lua` melaporkan `privacy_batches` |
+| Dokumen | spec privacy 4.1a, AZ-18b, PRD_ERRATA E-34, CHANGELOG, `docs/DOKUMENTASI_SISTEM.md` (baru), `docs/LOG_KERJA.md` (baru), ADR-0019 butir 2a |
+| Tes | `pseudonymize-batch.integration.spec.ts` (23 kasus), `token-service.integration.spec.ts` (urutan kunci, satu BEGIN/COMMIT, ukuran batch), adapter, tokenizer, kontrak, E2E TF-04 (fixture exchange pertama kini panggilan pertama ke `/pseudonymize`) |
+| Mutasi | pengurutan `subject_type` dihapus: tes urutan kunci gagal; dikembalikan: 41 tes hijau. Tes konkurensi lewat HTTP tidak gagal saat dimutasi, diganti tes deterministik |
+| Gerbang (2026-11-11) | lint dan typecheck bersih; `pnpm test` 96 suite / 1663 lulus; `test:integration` 70 suite / 1243 lulus (bebas 5,65 GB, Docker mati); `test:edge` Lua 11 lulus; `secret-scan:tree` bersih. `test:security` 24 lulus; `audit --prod` bersih; `gitleaks --all` 493 commit bersih (kode keluar 0 semua) |
+| Skill | tdd (manual, tes merah dulu), mutasi, `/code-review medium` (9 temuan: 4 diperbaiki, 3 ditolak dengan alasan, 1 dicatat, 1 menunggu Fanny, lihat `docs/LOG_KERJA.md`); `/simplify` dan `/security-review` BELUM dijalankan |
+| Perintah untuk Fanny | setujui T = 5 detik dan dua ADR tahap C (cache token; klaim gagal-tertutup "setelah jendela T"); sediakan memori bebas minimal 3,5 GB dengan Docker menyala untuk Newman dan payload scan |
+
+Belum teruji: Newman kedua mode dan payload scan lewat Kong dengan rute batch (butuh Docker dan tumpukan), dampak kinerja A dan B (butuh k6 di laptop kedua), tahap C seluruhnya. Catatan: tiga temuan `gitleaks --no-git` adalah kunci TLS dev di `secrets/docker/` (di-gitignore).
+
 # HANDOFF (2026-11-03): M7-E di `feat/m7e-upload-handoff`: serah-terima ringkasan k6 otomatis (unggahan), jendela sumber daya dari `k6.endedAt`, gerbang memori 3,5 GB; BUKAN pengukuran resmi
 
 | Butir | Bukti |

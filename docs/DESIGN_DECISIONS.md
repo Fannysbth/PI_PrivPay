@@ -49,3 +49,11 @@ Status FINAL berarti tidak diubah tanpa ADR yang disetujui user (Fanny). Sumber:
 ## E. Keterbatasan yang tidak boleh disembunyikan
 
 Lihat `docs/PRD_RINGKAS.md` bagian 13. Jangan "memperbaiki" keterbatasan ini secara diam-diam di kode; kalau mau, jadikan ADR.
+
+## Tambahan 2026-11-11: kinerja v2
+
+| # | Keputusan | Alasan | Dampak bila diubah |
+| --- | --- | --- | --- |
+| D-20 | **Gateway meminta P1 dan P2 dalam satu panggilan `POST /pseudonymize/batch`** (ADR-0019, Accepted oleh Fanny 2026-11-11): 1 sampai 2 elemen, semua atau tidak sama sekali, satu baris audit per elemen, hanya `API_GATEWAY`, paling banyak satu elemen per `subject_type`. | Biaya kinerja v1 didominasi jumlah panggilan sinkron ber-TLS ke Privacy; keamanan (Policy Engine, audit, gagal tertutup) tidak turun. | Kembali ke dua panggilan; ubah adapter, plugin Lua, vektor kontrak |
+| D-21 | **Cache token terbatas (tahap C): arah disetujui, parameter belum.** Usulan T = 5 detik (env, dibatasi sisa umur token), digest berkunci acak per proses, kunci cache hilir = token sumber, entri dibatasi jumlahnya, tanpa tulis disk/log. Harga: gagal tertutup menjadi "tertutup setelah jendela T", pencabutan admin tertunda paling lama T, pemakaian dari cache tidak menulis baris audit di Privacy. | Pembayaran berulang dari nasabah yang sama tidak perlu ke Privacy; masih pseudonimisasi dinamis dan penyamaran di Gateway. | Perlu dua ADR (cache; perubahan klaim D-09) yang disetujui Fanny sebelum kode. **Belum Accepted.** |
+
