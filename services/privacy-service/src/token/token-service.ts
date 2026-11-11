@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DomainError, type Clock } from '@privpay/common';
-import type { AuditedOperation, OperationTx } from '../audit';
+import type { AuditedOperation, OperationTx, SuccessEntry } from '../audit';
 import { mappingBinding, type BlindIndex, type FieldCipher, type TokenMint } from '../crypto';
 import type { PolicyEngine } from '../policy';
 import { effectiveStatus, type StoredStatus } from './status';
@@ -85,6 +85,9 @@ export const TOKEN_SQL = {
      WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4 AND pseudonym = $6`,
 } as const;
 
+/** ADR-0019: a batch is the pair of one payment, P1 and P2. */
+const MAX_BATCH = 2;
+
 /** Spec privacy 7.2 step 6: the limit chosen by the spec (K-12). */
 const MAX_PSEUDONYM_ATTEMPTS = 20;
 
@@ -163,36 +166,77 @@ export class TokenService {
   /** Form 1, from identity (the Gateway only, Tabel 3): spec 7.3. */
   async generate(request: GenerateRequest): Promise<TokenResult> {
     assertGenerate(request);
-    const base = baseOf('GENERATE_TOKEN', request);
     return this.deps.operation.run<TokenResult>(async (tx) => {
-      // Spec 7.3 STEP 0. A refusal is a decision and is audited (spec 9.4): the type of the error says so.
-      const context = decide(base, {}, () =>
-        this.deps.policy.evaluate({
-          operation: 'GENERATE_FROM_IDENTITY',
-          requestingService: request.requestingService,
-          context: {
-            serviceId: request.targetService,
-            purpose: request.purpose,
-            subjectType: request.subjectType,
-          },
-        }),
-      );
-      const issued = await this.issue(tx, {
-        subjectType: request.subjectType,
-        subjectId: request.subjectId,
-        targetService: request.targetService,
-        purpose: request.purpose,
-        transactionId: request.transactionId,
-        ttlSeconds: context.ttlSeconds,
-      });
-      await this.link(tx, base, {}, issued, {
-        transactionId: request.transactionId,
-        subjectType: request.subjectType,
-        serviceId: request.targetService,
-        purpose: request.purpose,
-      });
-      return { result: resultOf(issued), audit: successEntry(base, issued) };
+      const { result, entry } = await this.generateIn(tx, request);
+      return { result, audit: entry };
     });
+  }
+
+  /**
+   * ADR-0019: the P1 and P2 tokens of one payment in one transaction. Every element goes through the same steps as
+   * `generate` (policy STEP 0, lock, issue, link) and leaves its own SUCCESS row; a refusal of any element rolls the
+   * whole batch back and leaves one DENIED row for that element, so no token is issued without its pair. At most one
+   * element per subject type, and the work is done in the order of the subject type, not of the request: two batches
+   * that name the same pair in opposite order would otherwise take the advisory locks in opposite order (deadlock).
+   * The results follow the order of the request.
+   */
+  async generateBatch(requests: readonly GenerateRequest[]): Promise<readonly TokenResult[]> {
+    if (requests.length < 1 || requests.length > MAX_BATCH)
+      throw new DomainError('VALIDATION_ERROR');
+    for (const request of requests) assertGenerate(request);
+    if (new Set(requests.map((request) => request.subjectType)).size !== requests.length) {
+      throw new DomainError('VALIDATION_ERROR');
+    }
+    const order = requests
+      .map((request, index) => ({ request, index }))
+      .sort((a, b) => (a.request.subjectType < b.request.subjectType ? -1 : 1));
+    return this.deps.operation.run<readonly TokenResult[]>(async (tx) => {
+      const results: TokenResult[] = [];
+      const entries: SuccessEntry[] = [];
+      for (const { request, index } of order) {
+        const { result, entry } = await this.generateIn(tx, request);
+        results[index] = result;
+        entries.push(entry);
+      }
+      const [first, ...rest] = entries;
+      if (first === undefined) throw new DomainError('INTERNAL_ERROR', 'batch_empty');
+      return { result: results, audit: [first, ...rest] };
+    });
+  }
+
+  /** Spec 7.3 for one identity, inside the transaction the caller opened. */
+  private async generateIn(
+    tx: OperationTx,
+    request: GenerateRequest,
+  ): Promise<{ result: TokenResult; entry: SuccessEntry }> {
+    const base = baseOf('GENERATE_TOKEN', request);
+    // Spec 7.3 STEP 0. A refusal is a decision and is audited (spec 9.4): the type of the error says so.
+    const context = decide(base, {}, () =>
+      this.deps.policy.evaluate({
+        operation: 'GENERATE_FROM_IDENTITY',
+        requestingService: request.requestingService,
+        context: {
+          serviceId: request.targetService,
+          purpose: request.purpose,
+          subjectType: request.subjectType,
+        },
+      }),
+    );
+    const issued = await this.issue(tx, {
+      subjectType: request.subjectType,
+      subjectId: request.subjectId,
+      targetService: request.targetService,
+      purpose: request.purpose,
+      transactionId: request.transactionId,
+      ttlSeconds: context.ttlSeconds,
+    });
+    await this.link(tx, base, {}, issued, {
+      transactionId: request.transactionId,
+      subjectType: request.subjectType,
+      serviceId: request.targetService,
+      purpose: request.purpose,
+    });
+    return { result: resultOf(issued), entry: successEntry(base, issued) };
   }
 
   /** Form 2, exchange (TRANSACTION only; Tabel 2): spec 7.5, PRD 7.2. */

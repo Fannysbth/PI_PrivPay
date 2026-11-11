@@ -48,6 +48,8 @@ const fromTransaction = z.strictObject({
 });
 // The three forms have different required fields, so a body that mixes them matches none (spec privacy 4.1).
 const pseudonymize = z.union([identity, exchange, fromTransaction]);
+// ADR-0019: the pair of one payment. Only the identity form; the rest (types, formats) is checked again by TokenService.
+const pseudonymizeBatch = z.strictObject({ requests: z.array(identity).min(1).max(2) });
 const reIssue = z.strictObject({ pseudonym: text, transaction_id: text });
 const resolveDomain = z.strictObject({ notif_token: text });
 const noBody = z.strictObject({});
@@ -130,7 +132,12 @@ export interface PrivacyHttpDeps {
   readonly keys: JwksKeys;
   readonly tokens: Pick<
     TokenService,
-    'generate' | 'exchange' | 'generateFromTransaction' | 'reIssue' | 'resolveDomain'
+    | 'generate'
+    | 'generateBatch'
+    | 'exchange'
+    | 'generateFromTransaction'
+    | 'reIssue'
+    | 'resolveDomain'
   >;
   readonly statuses: Pick<TransactionStatusService, 'update'>;
   readonly vault: Pick<IdentityVault, 'store'>;
@@ -260,6 +267,28 @@ export class PrivacyHttp {
         }),
       );
     });
+  }
+
+  /** ADR-0019: `{requests}` in, `{items}` out in the same order. Caller and service come from the token (D-16). */
+  async pseudonymizeBatch(headers: AuthHeaders, body: unknown) {
+    const who = await this.caller(headers);
+    const input = shape(pseudonymizeBatch, headers, body);
+    const results = await this.run(() =>
+      this.deps.tokens.generateBatch(
+        input.requests.map((element) => ({
+          requestingService: who.requestingService,
+          ...(who.actor === undefined ? {} : { actorId: who.actor.actorId }),
+          subjectType: element.subject_type,
+          subjectId: element.subject_id,
+          targetService: element.target_service,
+          purpose: element.purpose,
+          ...(element.transaction_id === undefined
+            ? {}
+            : { transactionId: element.transaction_id }),
+        })),
+      ),
+    );
+    return { items: results.map(answer) };
   }
 
   async reIssue(headers: AuthHeaders, body: unknown) {

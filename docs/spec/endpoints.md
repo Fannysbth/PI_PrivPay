@@ -42,6 +42,7 @@ Rute manusia ke Privacy (AZ-10..AZ-17) meneruskan token manusia apa adanya sebag
 | AZ | Endpoint | Pemanggil sah | Peran | Kasus N2 spesifik | Tiket |
 | --- | --- | --- | --- | --- | --- |
 | AZ-18 | `POST /pseudonymize` bentuk 1 (identitas) | `API_GATEWAY` | service | `TRANSACTION` mengirim `subject_id` → `POLICY_NOT_ALLOWED` (TK-07) | M2-05 |
+| AZ-18b | `POST /pseudonymize/batch` (ADR-0019) | `API_GATEWAY` | service | `TRANSACTION` memanggil → `POLICY_NOT_ALLOWED` untuk seluruh batch; satu elemen ditolak → tidak ada token yang terbit | ADR-0019 |
 | AZ-19 | `POST /pseudonymize` bentuk 2 (pertukaran) | `TRANSACTION` | service | `FRAUD`/`NOTIFICATION` menukar → `POLICY_NOT_ALLOWED` (TK-13) | M2-06 |
 | AZ-20 | `POST /pseudonymize` bentuk 3 (dari transaksi) | `RECONCILIATION` | service; P7 + `auditor` | P7 tanpa aktor auditor → `FORBIDDEN_ROLE` | M2-06 |
 | AZ-21 | `POST /resolve-domain` | `NOTIFICATION` | service | `TRANSACTION` memanggil → `POLICY_NOT_ALLOWED` | M3-01 |

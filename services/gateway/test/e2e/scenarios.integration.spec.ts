@@ -316,13 +316,14 @@ describe('M4-09 FR-40 NFR-24 TF-11 a block, and a Fraud that is gone', () => {
 
 describe('M4-09 TF-04 TX-10003: the tokens end in the middle and are issued again', () => {
   it('M4-09 TF-04 FR-10 the exchange for Fraud finds the token expired, both tokens are re-issued once, the payment completes and the customer is told', async () => {
-    // The third call to Privacy for a token is the exchange for Fraud (the Gateway made the first two): 71 s later the
-    // payment token (60 s and 10 s of grace) has ended, while every JWT (300 s) is still good.
+    // The Gateway asks for P1 and P2 in one call to /pseudonymize/batch (ADR-0019), so the first call to /pseudonymize
+    // is the first exchange, the one the Fraud step is waiting for: 71 s later the payment token (60 s and 10 s of
+    // grace) has ended, while every JWT (300 s) is still good.
     let issued = 0;
     stack.hook = (host, _method, path) => {
       if (host === 'privacy.test' && path === '/pseudonymize') {
         issued += 1;
-        if (issued === 3) stack.clock.advance(71);
+        if (issued === 1) stack.clock.advance(71);
       }
     };
     const answer = await pay(TX_10003);

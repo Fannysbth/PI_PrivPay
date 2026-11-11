@@ -613,3 +613,61 @@ describe('M2-05 NFR-04 the queries of buat_token use the indexes at 20,000 rows'
     expect(both).not.toMatch(/Seq Scan/);
   });
 });
+
+describe('ADR-0019 generateBatch', () => {
+  const account = (over: Partial<GenerateRequest> = {}): GenerateRequest =>
+    p1({ subjectType: 'ACCOUNT', subjectId: '90000000001', ...over });
+
+  function observed(statements: string[], lookups: string[]): TokenService {
+    return new TokenService({
+      operation: new AuditedOperation(recording(db.app, statements), new AuditWriter()),
+      policy: new PolicyEngine(TTL),
+      // The order of the lookups is the order in which the advisory locks are taken (lookup comes right before the lock).
+      index: {
+        lookup: (subjectType, subjectId) => {
+          lookups.push(subjectType);
+          return index.lookup(subjectType, subjectId);
+        },
+      },
+      cipher,
+      mint,
+      clock,
+      graceSeconds: 30,
+      keyVersion: 1,
+    });
+  }
+
+  it('ADR-0019 the locks are taken in the same order whatever the order of the request, and the answer follows the request', async () => {
+    const lookups: string[] = [];
+    const counted = observed([], lookups);
+
+    const forward = await counted.generateBatch([p1(), account()]);
+    const turned = await counted.generateBatch([account(), p1()]);
+
+    expect(lookups).toEqual(['ACCOUNT', 'CUSTOMER', 'ACCOUNT', 'CUSTOMER']);
+    expect(turned[0]?.pseudonym).toBe(forward[1]?.pseudonym);
+    expect(turned[1]?.pseudonym).toBe(forward[0]?.pseudonym);
+  });
+
+  it('ADR-0019 a pair costs one BEGIN and one COMMIT, where two single calls cost two of each', async () => {
+    const statements: string[] = [];
+    const counted = observed(statements, []);
+
+    await counted.generateBatch([p1(), account()]);
+
+    expect(statements.filter((sql) => sql === 'BEGIN')).toHaveLength(1);
+    expect(statements.filter((sql) => sql === 'COMMIT')).toHaveLength(1);
+    expect(statements.filter((sql) => sql.startsWith('INSERT INTO audit_log'))).toHaveLength(2);
+  });
+
+  it('ADR-0019 a batch of three, of none, or of one subject type twice is refused before anything is read', async () => {
+    const statements: string[] = [];
+    const counted = observed(statements, []);
+    const other = p1({ subjectId: 'CUST-000102' });
+
+    expect(await reasonOf(counted.generateBatch([]))).toBe('VALIDATION_ERROR');
+    expect(await reasonOf(counted.generateBatch([p1(), account(), p1()]))).toBe('VALIDATION_ERROR');
+    expect(await reasonOf(counted.generateBatch([p1(), other]))).toBe('VALIDATION_ERROR');
+    expect(statements).toEqual([]);
+  });
+});

@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Kinerja v2 tahap B (feat/perf-v2-privacy-hot-path, ADR-0019 Accepted 2026-11-11)
+
+- Privacy Service: `POST /pseudonymize/batch` (1 sampai 2 elemen bentuk 1, hanya `API_GATEWAY`, satu transaksi, satu baris audit per elemen, semua atau tidak sama sekali; paling banyak satu elemen per `subject_type`, kunci advisory menurut urutan `subject_type`). `TokenService.generateBatch`; `generate` memakai langkah yang sama. Spec 4.1a, AZ-18b, PRD_ERRATA E-34.
+- Gateway: `PrivacyPort.pseudonymizeBatch` (adapter HTTP, fake, passthrough baseline); pembayaran meminta P1 dan P2 dalam satu panggilan (sebelumnya dua). Plugin Kong: `privacy.pseudonymize_batch`, `core.tokenize` menerima fungsi batch untuk rute transaksi, `run-vectors.lua` melaporkan `privacy_batches`.
+- Tes: `pseudonymize-batch.integration.spec.ts` (23 kasus: jalur sukses, pemanggil salah, elemen ditolak, bentuk, IdP mati, log), `token-service.integration.spec.ts` (urutan kunci dibuktikan mutasi, satu BEGIN/COMMIT), adapter, tokenizer, kontrak, E2E (fixture exchange pertama kini panggilan pertama ke `/pseudonymize`).
+- Dampak ke kinerja belum diukur.
+
 ### Kinerja v2 tahap A (feat/perf-v2-privacy-hot-path, PERF-01)
 
 - `expireStale` dan `findActive` di `TokenService` digabung menjadi satu statement `expireAndFindActive` (satu round trip per operasi token). Perilaku, otorisasi, dan audit tidak berubah. Tes PERF-01 menghitung statement per operasi (merah dulu, lalu hijau). Dampak ke kinerja belum diukur; gerbang penuh dijalankan sekali setelah tahap B dan C.

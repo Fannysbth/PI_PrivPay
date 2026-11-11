@@ -85,14 +85,17 @@ local function refusal(conf, response)
   return "INTERNAL_ERROR"
 end
 
---- Asks Privacy for the pseudonym of one subject (POST /pseudonymize, form 1; idempotent, so it may be repeated).
--- request: { subject_type, subject_id, target_service, purpose, transaction_id? }; `refreshed` is internal.
--- Returns the pseudonym, or nil and a reason.
-function privacy.pseudonymize(conf, request, refreshed)
-  local body = cjson.encode({
+local function identity_body(request)
+  return {
     subject_type = request.subject_type, subject_id = request.subject_id,
     target_service = request.target_service, purpose = request.purpose, transaction_id = request.transaction_id,
-  })
+  }
+end
+
+-- The call both entry points share: the service token, the retries on a 5xx or a timeout, one refresh on a 401, and
+-- the rule that anything that is not a clear answer is unavailable. parse(parsed_body) returns the value to hand
+-- back, or nil when the answer is not what was asked for. Every endpoint called this way is idempotent (NFR-12).
+local function call(conf, path, body, parse, refreshed)
   for attempt = 0, conf.retries do
     local token = service_token(conf)
     if not token then
@@ -100,16 +103,16 @@ function privacy.pseudonymize(conf, request, refreshed)
     end
     local client = http.new()
     client:set_timeout(conf.timeout_ms)
-    local response = client:request_uri(conf.privacy_url .. "/pseudonymize", {
+    local response = client:request_uri(conf.privacy_url .. path, {
       method = "POST",
       headers = { ["Content-Type"] = "application/json", ["Authorization"] = "Bearer " .. token },
       body = body,
       ssl_verify = true,
     })
     if response and response.status == 200 then
-      local parsed = cjson.decode(response.body)
-      if type(parsed) == "table" and valid_pseudonym(parsed.pseudonym) then
-        return parsed.pseudonym
+      local value = parse(cjson.decode(response.body))
+      if value ~= nil then
+        return value
       end
       return nil, "SERVICE_UNAVAILABLE"
     end
@@ -120,7 +123,7 @@ function privacy.pseudonymize(conf, request, refreshed)
         return nil, "SERVICE_UNAVAILABLE"
       end
       kong.cache:invalidate_local(TOKEN_KEY)
-      return privacy.pseudonymize(conf, request, true)
+      return call(conf, path, body, parse, true)
     elseif response and response.status < 500 then
       return nil, refusal(conf, response)
     end
@@ -129,6 +132,45 @@ function privacy.pseudonymize(conf, request, refreshed)
     end
   end
   return nil, "SERVICE_UNAVAILABLE"
+end
+
+--- Asks Privacy for the pseudonym of one subject (POST /pseudonymize, form 1; idempotent, so it may be repeated).
+-- request: { subject_type, subject_id, target_service, purpose, transaction_id? }.
+-- Returns the pseudonym, or nil and a reason.
+function privacy.pseudonymize(conf, request)
+  return call(conf, "/pseudonymize", cjson.encode(identity_body(request)), function(parsed)
+    if type(parsed) == "table" and valid_pseudonym(parsed.pseudonym) then
+      return parsed.pseudonym
+    end
+    return nil
+  end)
+end
+
+--- ADR-0019: the pseudonyms of one or two subjects in one call (POST /pseudonymize/batch), in the order asked.
+-- All or nothing: Privacy issues all of them or none. An answer with another number of items than asked, or an item
+-- that is not a pseudonym, is a failure, never a value to forward. The body holds the list and nothing else: the
+-- caller is named by the service token, never by the body (D-16).
+-- Returns { pseudonym, ... }, or nil and a reason.
+function privacy.pseudonymize_batch(conf, requests)
+  local list = {}
+  for index, request in ipairs(requests) do
+    list[index] = identity_body(request)
+  end
+  local expected = #requests
+  return call(conf, "/pseudonymize/batch", cjson.encode({ requests = list }), function(parsed)
+    if type(parsed) ~= "table" or type(parsed.items) ~= "table" or #parsed.items ~= expected then
+      return nil
+    end
+    local tokens = {}
+    for index = 1, expected do
+      local item = parsed.items[index]
+      if type(item) ~= "table" or not valid_pseudonym(item.pseudonym) then
+        return nil
+      end
+      tokens[index] = item.pseudonym
+    end
+    return tokens
+  end)
 end
 
 return privacy

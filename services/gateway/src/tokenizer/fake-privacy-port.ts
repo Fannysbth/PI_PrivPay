@@ -6,7 +6,11 @@ import type { IdentityToStore, PrivacyPort, PseudonymizeRequest } from './privac
  * asked and answers with a pseudonym made from the order of the calls, or with the error `decide` returns.
  */
 export class FakePrivacyPort implements PrivacyPort {
+  /** Every request, whether it came alone or in a batch. */
   readonly calls: PseudonymizeRequest[] = [];
+  /** ADR-0019: how the requests came, so a test can tell one batch from two single calls. */
+  readonly singles: PseudonymizeRequest[] = [];
+  readonly batches: PseudonymizeRequest[][] = [];
   readonly stored: IdentityToStore[] = [];
   readonly revoked: string[] = [];
   private issued = 0;
@@ -29,9 +33,29 @@ export class FakePrivacyPort implements PrivacyPort {
   }
 
   pseudonymize(request: PseudonymizeRequest): Promise<string> {
+    this.singles.push(request);
+    return this.answer(request);
+  }
+
+  /** All or nothing, as Privacy is: every request is judged first, and only if none is refused is a token issued. */
+  pseudonymizeBatch(requests: readonly PseudonymizeRequest[]): Promise<string[]> {
+    this.batches.push([...requests]);
+    this.calls.push(...requests);
+    for (const request of requests) {
+      const failure = this.decide(request);
+      if (failure !== undefined) return Promise.reject(failure);
+    }
+    return Promise.all(requests.map((request) => this.issue(request)));
+  }
+
+  private answer(request: PseudonymizeRequest): Promise<string> {
     this.calls.push(request);
     const failure = this.decide(request);
     if (failure !== undefined) return Promise.reject(failure);
+    return this.issue(request);
+  }
+
+  private issue(request: PseudonymizeRequest): Promise<string> {
     const key = [
       request.subjectType,
       request.subjectId,

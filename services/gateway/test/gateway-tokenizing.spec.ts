@@ -26,8 +26,7 @@ beforeEach(async () => {
   gateway = await startGateway();
   issued = 0;
   pseudonyms = new Map();
-  gateway.network.respond(HOSTS['privacy-service'], (call: Recorded) => {
-    const ask = call.body as Record<string, string>;
+  const tokenFor = (ask: Record<string, string>): string => {
     const key = [
       ask['subject_type'],
       ask['subject_id'],
@@ -40,10 +39,20 @@ beforeEach(async () => {
       pseudonym = `PSEU-${issued.toString(16).toUpperCase().padStart(8, '0')}`;
       pseudonyms.set(key, pseudonym);
     }
-    return {
-      status: 200,
-      body: { pseudonym, expires_at: '2026-10-19T08:15:00.000Z', reused: false },
-    };
+    return pseudonym;
+  };
+  const answerOf = (pseudonym: string) => ({
+    pseudonym,
+    expires_at: '2026-10-19T08:15:00.000Z',
+    reused: false,
+  });
+  gateway.network.respond(HOSTS['privacy-service'], (call: Recorded) => {
+    // ADR-0019: a payment arrives as one batch; the single route stays for the settlement and the rest.
+    if (call.path === '/pseudonymize/batch') {
+      const { requests } = call.body as { requests: Record<string, string>[] };
+      return { status: 200, body: { items: requests.map((ask) => answerOf(tokenFor(ask))) } };
+    }
+    return { status: 200, body: answerOf(tokenFor(call.body as Record<string, string>)) };
   });
   gateway.network.respond(HOSTS['transaction-service'], (call: Recorded) => ({
     status: 201,
@@ -96,16 +105,17 @@ describe('M2-11 AZ-03 POST /transaction', () => {
     expect(outbound['idempotency_key']).toBe(KEY);
     expect(outbound['customer_token']).toMatch(/^PSEU-[0-9A-F]{8}$/);
     // The customer id comes from the token (CUST-000101 of the harness), the account from the body.
-    const subjects = privacyCalls().map(
-      (call) => (call.body as Record<string, string>)['subject_id'],
+    // ADR-0019: one call to Privacy for the pair, not two.
+    expect(privacyCalls()).toHaveLength(1);
+    const [toPrivacy] = privacyCalls();
+    expect(toPrivacy?.path).toBe('/pseudonymize/batch');
+    expect(toPrivacy?.headers['x-actor-token']).toBeUndefined();
+    const elements = (toPrivacy?.body as { requests: Record<string, string>[] }).requests;
+    expect(elements.map((element) => element['subject_id']).sort()).toEqual(
+      ['CUST-000101', person.rekening].sort(),
     );
-    expect(subjects.sort()).toEqual(['CUST-000101', person.rekening].sort());
-    for (const call of privacyCalls()) {
-      expect(call.path).toBe('/pseudonymize');
-      expect(call.headers['x-actor-token']).toBeUndefined();
-      expect((call.body as Record<string, string>)['transaction_id']).toBe(
-        outbound['transaction_id'],
-      );
+    for (const element of elements) {
+      expect(element['transaction_id']).toBe(outbound['transaction_id']);
     }
     // Nothing the client sent that is personal is on the wire to Transaction, and no customer JWT either.
     assertNoFindings(

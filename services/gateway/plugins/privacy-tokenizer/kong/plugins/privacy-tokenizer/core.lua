@@ -115,7 +115,7 @@ local function valid_notification(body)
     and body.channel == "SMS"
 end
 
-local function transaction(input, privacy)
+local function transaction(input, privacy_batch)
   if not valid_transaction(input.body) then
     return nil, "VALIDATION_ERROR"
   end
@@ -127,21 +127,24 @@ local function transaction(input, privacy)
     return nil, "INTERNAL_ERROR"
   end
   local body = input.body
-  -- Both are asked even when the first is refused, as the adapter does; the other token may already exist, which is
-  -- harmless because a retry reuses it, and nothing is forwarded (gateway spec 4).
-  local customer_token, customer_reason = privacy({
-    subject_type = "CUSTOMER", subject_id = input.claims.customer_id,
-    target_service = "TRANSACTION", purpose = "PAYMENT_PROCESSING", transaction_id = input.transaction_id,
+  -- P1 and P2 in one call (ADR-0019). All or nothing: if Privacy refuses or cannot answer for either, it issued
+  -- neither, and nothing is forwarded (gateway spec 4).
+  local tokens, reason = privacy_batch({
+    {
+      subject_type = "CUSTOMER", subject_id = input.claims.customer_id,
+      target_service = "TRANSACTION", purpose = "PAYMENT_PROCESSING", transaction_id = input.transaction_id,
+    },
+    {
+      subject_type = "ACCOUNT", subject_id = body.source_account,
+      target_service = "TRANSACTION", purpose = "PAYMENT_PROCESSING", transaction_id = input.transaction_id,
+    },
   })
-  local account_token, account_reason = privacy({
-    subject_type = "ACCOUNT", subject_id = body.source_account,
-    target_service = "TRANSACTION", purpose = "PAYMENT_PROCESSING", transaction_id = input.transaction_id,
-  })
-  if not customer_token then
-    return nil, customer_reason
+  if not tokens then
+    return nil, reason
   end
-  if not account_token then
-    return nil, account_reason
+  local customer_token, account_token = tokens[1], tokens[2]
+  if not customer_token or not account_token then
+    return nil, "INTERNAL_ERROR"
   end
   -- nik, nama and email are not read: in the proposed condition they do not leave (FR-03).
   return {
@@ -202,13 +205,15 @@ local ROUTES = { transaction = transaction, settlement = settlement, notificatio
 -- input: { route = "transaction"|"settlement"|"notification", claims = { customer_id = string }, body = table,
 --          idempotency_key = string, transaction_id = string }
 -- privacy: function(request) -> pseudonym | nil, reason
+-- privacy_batch: function(requests) -> { pseudonym, ... } in the order asked | nil, reason (all or nothing; ADR-0019)
 -- Returns the outbound table, or nil and a reason. "VALIDATION_ERROR" means nothing was asked of Privacy.
-function core.tokenize(input, privacy)
+function core.tokenize(input, privacy, privacy_batch)
   local run = ROUTES[input.route]
   if run == nil then
     return nil, "INTERNAL_ERROR"
   end
-  return run(input, privacy)
+  -- The payment asks for its pair in one call; the other routes ask one subject at a time.
+  return run(input, input.route == "transaction" and privacy_batch or privacy)
 end
 
 return core

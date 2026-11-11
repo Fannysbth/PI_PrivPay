@@ -5,6 +5,7 @@ import type { IdentityToStore, PrivacyPort, PseudonymizeRequest } from './privac
 
 const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 const answer = z.object({ pseudonym: z.string().regex(PSEUDONYM) });
+const batchAnswer = z.object({ items: z.array(answer).min(1).max(2) });
 
 export interface HttpPrivacyPortDeps {
   readonly http: HttpClient;
@@ -12,6 +13,14 @@ export interface HttpPrivacyPortDeps {
   /** The gateway's own service token for Privacy (`aud` privacy-service). */
   readonly serviceToken: Pick<TokenCache, 'get'>;
 }
+
+const identityBody = (request: PseudonymizeRequest) => ({
+  subject_type: request.subjectType,
+  subject_id: request.subjectId,
+  target_service: request.targetService,
+  purpose: request.purpose,
+  ...(request.transactionId === undefined ? {} : { transaction_id: request.transactionId }),
+});
 
 /**
  * The adapter of PrivacyPort that calls Privacy Service (gateway spec 4 step 3). `POST /pseudonymize` form 1 is
@@ -26,13 +35,7 @@ export class HttpPrivacyPort implements PrivacyPort {
       service: 'privacy-service',
       method: 'POST',
       path: '/pseudonymize',
-      body: {
-        subject_type: request.subjectType,
-        subject_id: request.subjectId,
-        target_service: request.targetService,
-        purpose: request.purpose,
-        ...(request.transactionId === undefined ? {} : { transaction_id: request.transactionId }),
-      },
+      body: identityBody(request),
       idempotent: true,
       authorization: `Bearer ${await this.deps.serviceToken.get()}`,
     });
@@ -43,6 +46,30 @@ export class HttpPrivacyPort implements PrivacyPort {
     const parsed = answer.safeParse(response.body);
     if (!parsed.success) throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
     return parsed.data.pseudonym;
+  }
+
+  /**
+   * ADR-0019. Idempotent like the single call (the same pair gives the same tokens back), so the shared client may
+   * retry it. An answer with another number of items than asked is a fault, never a value to forward.
+   */
+  async pseudonymizeBatch(requests: readonly PseudonymizeRequest[]): Promise<string[]> {
+    const response = await this.deps.http.request({
+      service: 'privacy-service',
+      method: 'POST',
+      path: '/pseudonymize/batch',
+      body: { requests: requests.map(identityBody) },
+      idempotent: true,
+      authorization: `Bearer ${await this.deps.serviceToken.get()}`,
+    });
+    if (response.status >= 500) throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_5xx');
+    if (response.status < 200 || response.status > 299) {
+      throw this.deps.masker.fromDownstream(response.status, response.body);
+    }
+    const parsed = batchAnswer.safeParse(response.body);
+    if (!parsed.success || parsed.data.items.length !== requests.length) {
+      throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
+    }
+    return parsed.data.items.map((item) => item.pseudonym);
   }
 
   async storeIdentity(identity: IdentityToStore): Promise<void> {
