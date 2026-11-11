@@ -10,9 +10,9 @@
 | Mutasi | pengurutan `subject_type` dihapus: tes urutan kunci gagal; dikembalikan: 41 tes hijau. Tes konkurensi lewat HTTP tidak gagal saat dimutasi, diganti tes deterministik |
 | Gerbang (2026-11-11) | lint dan typecheck bersih; `pnpm test` 96 suite / 1663 lulus; `test:integration` 70 suite / 1243 lulus (bebas 5,65 GB, Docker mati); `test:edge` Lua 11 lulus; `secret-scan:tree` bersih. `test:security` 24 lulus; `audit --prod` bersih; `gitleaks --all` 493 commit bersih (kode keluar 0 semua) |
 | Skill | tdd (manual, tes merah dulu), mutasi, `/code-review medium` (9 temuan: 4 diperbaiki, 3 ditolak dengan alasan, 1 dicatat, 1 menunggu Fanny, lihat `docs/LOG_KERJA.md`); `/simplify` dan `/security-review` BELUM dijalankan |
-| Perintah untuk Fanny | setujui T = 5 detik dan dua ADR tahap C (cache token; klaim gagal-tertutup "setelah jendela T"); sediakan memori bebas minimal 3,5 GB dengan Docker menyala untuk Newman dan payload scan |
+| Perintah untuk Fanny | setujui T = 5 detik dan dua ADR tahap C (cache token; klaim gagal-tertutup "setelah jendela T"); putuskan N-65 (`transaction_id` sama untuk kedua elemen batch) |
 
-Belum teruji: Newman kedua mode dan payload scan lewat Kong dengan rute batch (butuh Docker dan tumpukan), dampak kinerja A dan B (butuh k6 di laptop kedua), tahap C seluruhnya. Catatan: tiga temuan `gitleaks --no-git` adalah kunci TLS dev di `secrets/docker/` (di-gitignore).
+Sudah teruji dengan Docker (memori bebas 3,61 sampai 4,6 GB sesudah Docker menyala): Newman proposed 133 asersi dan baseline 119 asersi (0 gagal), payload scan dan fail-closed (4 tes) lulus. Belum teruji: selisih jumlah request Newman proposed (56 vs 156 di catatan lama, belum dijelaskan), `docker:edge-check`, dampak kinerja A dan B (butuh k6 di laptop kedua), tahap C seluruhnya. Catatan: tiga temuan `gitleaks --no-git` adalah kunci TLS dev di `secrets/docker/` (di-gitignore).
 
 # HANDOFF (2026-11-03): M7-E di `feat/m7e-upload-handoff`: serah-terima ringkasan k6 otomatis (unggahan), jendela sumber daya dari `k6.endedAt`, gerbang memori 3,5 GB; BUKAN pengukuran resmi
 

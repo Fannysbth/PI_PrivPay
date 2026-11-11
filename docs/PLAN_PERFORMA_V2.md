@@ -31,7 +31,7 @@ Penyebab: sekitar 5,3 panggilan sinkron ber-TLS ke Privacy Service per pembayara
 
 - Apa: Gateway (adapter dan plugin Kong) meminta token nasabah dan rekening dalam satu panggilan. Panggilan sinkron per pembayaran turun dari sekitar 5,3 menjadi sekitar 4,3 (perkiraan, belum diukur).
 - Aturan keamanan (ADR-0019, Proposed): tiap elemen tetap lewat Policy Engine dan menulis tepat satu baris audit; satu elemen ditolak berarti seluruh batch ditolak (all-or-nothing); pemanggil hanya `API_GATEWAY`; `requesting_service` dari JWT; 1 sampai 2 elemen; skema menolak field tak dikenal; Privacy mati tetap 503 tanpa fallback.
-- Status (2026-11-11): langkah 1 sampai 6 SELESAI, commit `b52d31a`, ADR-0019 Accepted (dengan penyempitan satu elemen per `subject_type`). Langkah 7 (Newman kedua mode) dan payload scan BELUM diuji (butuh Docker dan memori bebas >= 3,5 GB). Langkah 8: gerbang sebagian, `/code-review` belum.
+- Status (2026-11-11): langkah 1 sampai 6 SELESAI, commit `b52d31a`, ADR-0019 Accepted (dengan penyempitan satu elemen per `subject_type`). Langkah 7 (Newman kedua mode) SELESAI 2026-11-11: proposed 133 asersi, baseline 119 asersi, 0 gagal; payload scan dan fail-closed lulus. Langkah 8: gerbang hijau, `/code-review medium` selesai (perbaikan di `b39d189`).
 - Langkah: (1) Fanny menyatakan ADR-0019 Accepted; (2) spec privacy bagian 4 dan PRD_ERRATA; (3) tes dulu (TK untuk rute baru: pemanggil salah, elemen ditolak, ukuran, Privacy mati, dua elemen = dua baris audit); (4) rute di Privacy; (5) klien TS di Gateway; (6) plugin Lua dan vektor kontrak; (7) Newman kedua mode; (8) gerbang, `/code-review`.
 - Butuh Docker (Lua, luacheck, Newman, payload scan) dan memori bebas >= 3,5 GB saat Docker menyala.
 - Dampak ke naskah: satu kalimat di Metodologi.
