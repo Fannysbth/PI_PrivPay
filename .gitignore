@@ -72,3 +72,12 @@ __pycache__/
 # Local prompt notes
 /PROMPT_AWAL.md
 /PROMPT_TAMBAHAN.md
+
+# Local artifacts (never pushed to GitHub, per Fanny 2026-11-11)
+/artifacts/
+
+# Thesis drafts and local measurement data (never pushed to GitHub, per Fanny 2026-11-11)
+/docs/penulisan/
+/docs/hasil.zip
+/docs/hasil/kinerja/resmi/
+/docs/hasil/kinerja/resmii/

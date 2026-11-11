@@ -32,11 +32,16 @@ export const TOKEN_SQL = {
   // Spec privacy 7.2 step 2: the lock that keeps parallel requests for one combination in line (ADR-0010). A row that
   // does not exist yet cannot be locked with FOR UPDATE, so the lock is on the key of the combination.
   lock: 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-  // Step 3: without this, an INSERT after the TTL breaks uq_mapping_active (T-06, FR-33).
-  expireStale: `UPDATE pseudonym_mapping SET status = 'expired'
-     WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active' AND expires_at < $4`,
-  findActive: `SELECT id, pseudonym, expires_at, key_version FROM pseudonym_mapping
-     WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active'`,
+  // Steps 3 and 4 in one round trip (PERF-01, NFR-02). The UPDATE marks the rows past their TTL expired, which an INSERT
+  // after the TTL needs to keep uq_mapping_active free (T-06, FR-33); the SELECT in the same statement reads the
+  // snapshot from before that UPDATE, so it asks for `expires_at >= $4` itself and never returns a row the UPDATE has
+  // just expired. The data-modifying CTE runs to completion even though nothing reads it.
+  expireAndFindActive: `WITH expired AS (
+       UPDATE pseudonym_mapping SET status = 'expired'
+        WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active' AND expires_at < $4
+       RETURNING id)
+     SELECT id, pseudonym, expires_at, key_version FROM pseudonym_mapping
+      WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active' AND expires_at >= $4`,
   // Step 6: a taken pseudonym value is not an error, it is retried from a new nonce (ADR-0010, E-19).
   insert: `INSERT INTO pseudonym_mapping
        (id, subject_type, subject_id_enc, subject_lookup, pseudonym, service_id, purpose, transaction_id,
@@ -548,9 +553,12 @@ export class TokenService {
     const lookup = this.deps.index.lookup(subjectType, subjectId);
     await tx.query(TOKEN_SQL.lock, [`${lookup.toString('hex')}|${targetService}|${purpose}`]);
     const now = this.deps.clock.now();
-    await tx.query(TOKEN_SQL.expireStale, [lookup, targetService, purpose, now]);
-
-    const found = await tx.query<ActiveRow>(TOKEN_SQL.findActive, [lookup, targetService, purpose]);
+    const found = await tx.query<ActiveRow>(TOKEN_SQL.expireAndFindActive, [
+      lookup,
+      targetService,
+      purpose,
+      now,
+    ]);
     const active = found.rows[0];
     if (active !== undefined) {
       return {

@@ -4,6 +4,11 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Kinerja v2 tahap A (feat/perf-v2-privacy-hot-path, PERF-01)
+
+- `expireStale` dan `findActive` di `TokenService` digabung menjadi satu statement `expireAndFindActive` (satu round trip per operasi token). Perilaku, otorisasi, dan audit tidak berubah. Tes PERF-01 menghitung statement per operasi (merah dulu, lalu hijau). Dampak ke kinerja belum diukur; gerbang penuh dijalankan sekali setelah tahap B dan C.
+- `.gitignore`: `artifacts/`, `docs/penulisan/`, `docs/hasil.zip`, `docs/hasil/kinerja/resmi/` dan `resmii/` tidak pernah di-push.
+
 ### M6 penutup (feat/m6)
 
 - Pengukuran resmi pada commit `b5a4f2f` dengan pohon bersih: `docs/hasil/` (E(s) kedua mode, penautan, fail-closed usulan). `docs/security/review-M6.md`; checklist S-50, S-70, S-71 dicentang, S-72 sebagian. `dev:up` ikut menetapkan `BATCH_HTTP_TIMEOUT_MS` (`910d6a1`) agar lingkungan Compose dan lokal tetap sama (tes DK-01 menangkapnya). Gerbang penuh satu putaran hijau (HANDOFF).

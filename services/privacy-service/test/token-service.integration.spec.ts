@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import { DomainError, FakeClock, loadConfig, migrate, pgConfigSchema } from '@privpay/common';
 import { createTestDb, type TestDb } from '@privpay/common/testing';
-import type { PoolClient } from 'pg';
+import type { Pool, PoolClient } from 'pg';
 import { AuditReader, AuditWriter, AuditedOperation } from '../src/audit';
 import {
   BlindIndex,
@@ -84,6 +84,34 @@ const p1 = (over: Partial<GenerateRequest> = {}): GenerateRequest => ({
   ...over,
 });
 
+/** Records the text of every statement a pool's clients run, so a test can count the round trips of one operation. */
+function recording(pool: Pool, statements: string[]): Pool {
+  const bound = (target: object, name: string | symbol): unknown => {
+    const value: unknown = Reflect.get(target, name, target);
+    return typeof value === 'function'
+      ? (value as (...a: unknown[]) => unknown).bind(target)
+      : value;
+  };
+  return new Proxy(pool, {
+    get(target, name) {
+      if (name !== 'connect') return bound(target, name);
+      return async (): Promise<PoolClient> => {
+        const client = await target.connect();
+        return new Proxy(client, {
+          get(inner, member) {
+            if (member !== 'query') return bound(inner, member);
+            return (...args: unknown[]): unknown => {
+              const first = args[0];
+              statements.push(typeof first === 'string' ? first : '');
+              return (inner.query as (...a: unknown[]) => unknown)(...args);
+            };
+          },
+        });
+      };
+    },
+  });
+}
+
 const count = async (table: string): Promise<number> => {
   // The table name is a constant of this test.
   const { rows } = await db.owner.query<{ n: string }>(`SELECT count(*) AS n FROM ${table}`);
@@ -104,6 +132,58 @@ async function reasonOf(work: Promise<unknown>): Promise<string> {
   }
   return 'no error';
 }
+
+describe('PERF-01 round trips of one token operation (NFR-02, NFR-04)', () => {
+  it('PERF-01 reusing an active token takes five statements: BEGIN, lock, expire-and-find, one audit row, COMMIT', async () => {
+    const statements: string[] = [];
+    const counted = new TokenService({
+      operation: new AuditedOperation(recording(db.app, statements), new AuditWriter()),
+      policy: new PolicyEngine(TTL),
+      index,
+      cipher,
+      mint,
+      clock,
+      graceSeconds: 30,
+      keyVersion: 1,
+    });
+    const first = await counted.generate(p1());
+    statements.length = 0;
+
+    const again = await counted.generate(p1());
+
+    expect(again.reused).toBe(true);
+    expect(again.pseudonym).toBe(first.pseudonym);
+    expect(statements).toHaveLength(5);
+    // A statement that stands alone for the expiry is the sixth round trip this test exists to keep away.
+    expect(statements.filter((sql) => sql.includes("SET status = 'expired'"))).toHaveLength(1);
+    expect(statements.some((sql) => sql.startsWith('INSERT INTO audit_log'))).toBe(true);
+  });
+
+  it('PERF-01 an expired token is marked and a new one issued in the same statement count budget plus the insert', async () => {
+    const statements: string[] = [];
+    const counted = new TokenService({
+      operation: new AuditedOperation(recording(db.app, statements), new AuditWriter()),
+      policy: new PolicyEngine(TTL),
+      index,
+      cipher,
+      mint,
+      clock,
+      graceSeconds: 30,
+      keyVersion: 1,
+    });
+    const first = await counted.generate(p1());
+    clock.advance(901);
+    statements.length = 0;
+
+    const second = await counted.generate(p1());
+
+    expect(second.reused).toBe(false);
+    expect(second.pseudonym).not.toBe(first.pseudonym);
+    expect(statements).toHaveLength(6);
+    const rows = await mappings();
+    expect(rows.map((row) => row['status']).sort()).toEqual(['active', 'expired']);
+  });
+});
 
 describe('M2-05 FR-04 generate from identity (spec privacy 7.2, 7.3)', () => {
   it('M2-05 FR-04 issues a PSEU token with the TTL of the purpose, stores the subject only encrypted, writes one audit row', async () => {
@@ -523,14 +603,13 @@ describe('M2-05 NFR-04 the queries of buat_token use the indexes at 20,000 rows'
       (await db.app.query(`EXPLAIN ${sql}`, values)).rows
         .map((r: { 'QUERY PLAN': string }) => r['QUERY PLAN'])
         .join('\n');
-    const find = await plan(TOKEN_SQL.findActive, [lookup, 'TRANSACTION', 'PAYMENT_PROCESSING']);
-    const expire = await plan(TOKEN_SQL.expireStale, [
+    const both = await plan(TOKEN_SQL.expireAndFindActive, [
       lookup,
       'TRANSACTION',
       'PAYMENT_PROCESSING',
       new Date(START),
     ]);
-    expect(find).not.toMatch(/Seq Scan/);
-    expect(expire).not.toMatch(/Seq Scan/);
+    // Both halves of the statement (the UPDATE and the SELECT) read through an index.
+    expect(both).not.toMatch(/Seq Scan/);
   });
 });
