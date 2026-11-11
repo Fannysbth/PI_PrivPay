@@ -24,7 +24,7 @@ Penyebab: sekitar 5,3 panggilan sinkron ber-TLS ke Privacy Service per pembayara
 
 - Apa: `expireStale` dan `findActive` digabung menjadi `expireAndFindActive` (satu statement, satu round trip). Perilaku, otorisasi, dan audit tidak berubah.
 - Status (2026-11-11): SELESAI di kode dan di-commit `07b185c` di cabang `feat/perf-v2-privacy-hot-path`. Tes `PERF-01` merah dulu, lalu hijau. Integrasi penuh 70 suite / 1243 tes lulus.
-- Sisa: `/code-review`, gerbang yang tersisa (lihat `docs/LOG_KERJA.md`), pengukuran.
+- Sisa: `/code-review`, gerbang yang tersisa (lihat `docs/log/2026-11-11.md`), pengukuran.
 - Dampak ke naskah: tidak ada.
 
 ## Tahap B: `POST /pseudonymize/batch` untuk P1 dan P2
@@ -40,7 +40,7 @@ Penyebab: sekitar 5,3 panggilan sinkron ber-TLS ke Privacy Service per pembayara
 
 Fanny menyetujui arah C (2026-11-11) karena tetap pseudonimisasi dinamis, tetap Privacy-by-Design, dan penyamaran tetap terjadi di Gateway. Parameter dan ADR-nya ditetapkan setelah ada angka A+B.
 
-Pembaruan 2026-11-11: Fanny meminta T memakai nilai normal industri. Usulan Claude T = 5 detik (dasar di `docs/OPEN_QUESTIONS.md` N-63 dan `docs/LOG_KERJA.md`); belum disetujui. Tahap C belum dikerjakan; menunggu persetujuan dua ADR.
+Pembaruan 2026-11-11: Fanny meminta T memakai nilai normal industri. Usulan Claude T = 5 detik (dasar di `docs/OPEN_QUESTIONS.md` N-63 dan `docs/log/2026-11-11.md`); belum disetujui. Tahap C belum dikerjakan; menunggu persetujuan dua ADR.
 
 - Apa: Gateway menyimpan token P1/P2 yang baru diterima; Transaction menyimpan hasil exchange X2 (dan X1) per token sumber; Notification menyimpan hasil resolve-domain per token P4. Pembayaran berikutnya dari nasabah yang sama tidak perlu ke Privacy.
 - Pengaman wajib:

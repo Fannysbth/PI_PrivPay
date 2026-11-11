@@ -3,7 +3,7 @@
 Dokumen rujukan tunggal tentang sistem PrivPay: apa tujuannya, bagaimana arsitekturnya, apa yang sudah dibangun, bagaimana menjalankan dan mengujinya, dan di mana keputusan serta catatan perubahan berada. Dokumen ini **diperbarui bersama setiap perubahan** (aturan di bagian 14). Bila dokumen ini bertabrakan dengan sumber kebenaran, yang menang adalah urutan di `CLAUDE.md`: ADR yang Accepted, PRD v2.4, lalu `docs/spec/` dan `docs/tickets/`.
 
 - Terakhir diperbarui: 2026-11-11 (kinerja v2 tahap A dan B).
-- Pelengkap: [panduan/](panduan/README.md) (penjelasan untuk pembela skripsi; ditulis saat M5, beberapa bagian usang), [LOG_KERJA.md](LOG_KERJA.md) (rencana, perubahan, masalah per tanggal), [HANDOFF.md](HANDOFF.md) (serah-terima per tiket), [CHANGELOG.md](../CHANGELOG.md), [adr/](adr), [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
+- Pelengkap: [panduan/](panduan/README.md) (penjelasan untuk pembela skripsi; ditulis saat M5, beberapa bagian usang), [log/](log/README.md) (rencana, perubahan, masalah, satu berkas per tanggal), [HANDOFF.md](HANDOFF.md) (serah-terima per tiket), [CHANGELOG.md](../CHANGELOG.md), [adr/](adr), [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 - Nilai pada semua contoh fiktif. Klaim yang belum diperiksa langsung atau belum dijalankan ditandai **belum diverifikasi**.
 
 ---
@@ -185,7 +185,7 @@ Aturan memori: gerbang penuh dengan Docker mati dan memori bebas minimal 5 GB; s
 - Integrasi memakai PostgreSQL asli dan peran sungguhan (`privacy_app`, `auditor_role`); database tes `privpay_<layanan>_test_<sufiks>` lewat `createTestDb`.
 - Tes konkurensi memaksa tumpang tindih tanpa `sleep` dan dibuktikan dengan mutasi.
 - Dua lapis keamanan (TK-xx di layanan dan di Gateway), vektor kontrak Gateway di `tests/security/gateway-contract` yang dipakai TypeScript dan Lua.
-- Jumlah tes terakhir (2026-11-11): unit 96 suite / 1663 tes lulus; integrasi penuh 70 suite / 1243 tes lulus (memori bebas 5,65 GB, Docker mati); setelah perbaikan review: unit 96 suite / 1664 tes, integrasi terarah 12 suite / 233 tes; `test:security` 24 lulus; `audit --prod` dan `gitleaks --all` bersih. Hasil gerbang lain dicatat di [LOG_KERJA.md](LOG_KERJA.md).
+- Jumlah tes terakhir (2026-11-11): unit 96 suite / 1663 tes lulus; integrasi penuh 70 suite / 1243 tes lulus (memori bebas 5,65 GB, Docker mati); setelah perbaikan review: unit 96 suite / 1664 tes, integrasi terarah 12 suite / 233 tes; `test:security` 24 lulus; `audit --prod` dan `gitleaks --all` bersih. Hasil gerbang lain dicatat di [log/2026-11-11.md](log/2026-11-11.md).
 - Angka latensi/throughput lingkungan lokal tidak masuk laporan.
 
 ## 12. Kinerja dan perbaikan v2
@@ -210,7 +210,7 @@ Rencana dan harga keamanan tahap C: [PLAN_PERFORMA_V2.md](PLAN_PERFORMA_V2.md). 
 
 Aturan (permintaan Fanny, 2026-11-11): **setiap perencanaan, perubahan, dan masalah dicatat.** Pada setiap tugas:
 
-1. Tambahkan entri bertanggal di [LOG_KERJA.md](LOG_KERJA.md): rencana, perubahan (dengan hash commit), masalah dan penyelesaiannya, keputusan.
+1. Tulis di log kerja per tanggal, [log/](log/README.md): berkas `log/YYYY-MM-DD.md` untuk hari ini (buat bila belum ada, tambah baris di indeksnya): rencana, perubahan (dengan hash commit), masalah dan penyelesaiannya, keputusan.
 2. Perbarui dokumen yang terpengaruh: bagian terkait di dokumen ini, `CHANGELOG.md`, `HANDOFF.md`, `docs/spec/`, ADR, `OPEN_QUESTIONS.md`, bagian Perintah di `CLAUDE.md` (dengan persetujuan Fanny), dan panduan bila perilaku yang dijelaskannya berubah.
 3. Perbarui baris "Terakhir diperbarui" dan tabel riwayat di bawah.
 
@@ -220,6 +220,7 @@ Aturan yang sama ada di skill `privpay-working-style` (bagian Penutup tugas).
 
 | Tanggal | Perubahan |
 | --- | --- |
+| 2026-11-11 | Log kerja dipecah per tanggal (`docs/log/`); rujukan diperbarui |
 | 2026-11-11 | Hasil Newman, payload scan, fail-closed, dan status tahap B diperbarui |
 | 2026-11-11 | Hasil gerbang (security, audit, gitleaks) dan `/code-review` tahap B ditambahkan |
 | 2026-11-11 | Dokumen dibuat. Memuat keadaan sampai kinerja v2 tahap B: rute `POST /pseudonymize/batch`, tahap A, rencana C |

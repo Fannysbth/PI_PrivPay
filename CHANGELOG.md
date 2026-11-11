@@ -10,7 +10,7 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 - Gateway: `PrivacyPort.pseudonymizeBatch` (adapter HTTP, fake, passthrough baseline); pembayaran meminta P1 dan P2 dalam satu panggilan (sebelumnya dua). Plugin Kong: `privacy.pseudonymize_batch`, `core.tokenize` menerima fungsi batch untuk rute transaksi, `run-vectors.lua` melaporkan `privacy_batches`.
 - Tes: `pseudonymize-batch.integration.spec.ts` (23 kasus: jalur sukses, pemanggil salah, elemen ditolak, bentuk, IdP mati, log), `token-service.integration.spec.ts` (urutan kunci dibuktikan mutasi, satu BEGIN/COMMIT), adapter, tokenizer, kontrak, E2E (fixture exchange pertama kini panggilan pertama ke `/pseudonymize`).
 - Dampak ke kinerja belum diukur.
-- Dokumentasi: `docs/DOKUMENTASI_SISTEM.md` (dokumentasi sistem lengkap, dokumen hidup), `docs/LOG_KERJA.md` (rencana, perubahan, masalah, keputusan per tanggal), HANDOFF, DESIGN_DECISIONS D-20/D-21, OPEN_QUESTIONS N-62..N-64, ADR-0019 butir 2a (penyempitan disetujui Fanny).
+- Dokumentasi: `docs/DOKUMENTASI_SISTEM.md` (dokumentasi sistem lengkap, dokumen hidup), `docs/log/` (log kerja: rencana, perubahan, masalah, keputusan; satu berkas per tanggal), HANDOFF, DESIGN_DECISIONS D-20/D-21, OPEN_QUESTIONS N-62..N-64, ADR-0019 butir 2a (penyempitan disetujui Fanny).
 
 ### Kinerja v2 tahap A (feat/perf-v2-privacy-hot-path, PERF-01)
 
