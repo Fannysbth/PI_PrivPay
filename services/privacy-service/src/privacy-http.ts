@@ -14,6 +14,7 @@ import type { DePseudonymizeService, DisclosureService } from './disclosure';
 import type { IdentityVault } from './identity';
 import type { RevocationService } from './revocation';
 import {
+  MAX_BATCH,
   TRANSACTION_STATUSES,
   type TokenResult,
   type TokenService,
@@ -49,7 +50,7 @@ const fromTransaction = z.strictObject({
 // The three forms have different required fields, so a body that mixes them matches none (spec privacy 4.1).
 const pseudonymize = z.union([identity, exchange, fromTransaction]);
 // ADR-0019: the pair of one payment. Only the identity form; the rest (types, formats) is checked again by TokenService.
-const pseudonymizeBatch = z.strictObject({ requests: z.array(identity).min(1).max(2) });
+const pseudonymizeBatch = z.strictObject({ requests: z.array(identity).min(1).max(MAX_BATCH) });
 const reIssue = z.strictObject({ pseudonym: text, transaction_id: text });
 const resolveDomain = z.strictObject({ notif_token: text });
 const noBody = z.strictObject({});

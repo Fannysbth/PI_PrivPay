@@ -5,7 +5,7 @@ import type { IdentityToStore, PrivacyPort, PseudonymizeRequest } from './privac
 
 const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 const answer = z.object({ pseudonym: z.string().regex(PSEUDONYM) });
-const batchAnswer = z.object({ items: z.array(answer).min(1).max(2) });
+const batchAnswer = z.object({ items: z.array(answer).min(1) });
 
 export interface HttpPrivacyPortDeps {
   readonly http: HttpClient;

@@ -1,5 +1,5 @@
 export { effectiveStatus, type EffectiveStatus, type StoredStatus } from './status';
-export { TOKEN_SQL, TokenService, type TokenServiceDeps } from './token-service';
+export { MAX_BATCH, TOKEN_SQL, TokenService, type TokenServiceDeps } from './token-service';
 export {
   TERMINAL_STATUSES,
   TRANSACTION_STATUSES,

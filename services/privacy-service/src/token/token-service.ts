@@ -85,8 +85,8 @@ export const TOKEN_SQL = {
      WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4 AND pseudonym = $6`,
 } as const;
 
-/** ADR-0019: a batch is the pair of one payment, P1 and P2. */
-const MAX_BATCH = 2;
+/** ADR-0019: a batch is the pair of one payment, P1 and P2. One place for the limit; the HTTP schema uses it too. */
+export const MAX_BATCH = 2;
 
 /** Spec privacy 7.2 step 6: the limit chosen by the spec (K-12). */
 const MAX_PSEUDONYM_ATTEMPTS = 20;
@@ -189,7 +189,7 @@ export class TokenService {
     }
     const order = requests
       .map((request, index) => ({ request, index }))
-      .sort((a, b) => (a.request.subjectType < b.request.subjectType ? -1 : 1));
+      .sort((a, b) => a.request.subjectType.localeCompare(b.request.subjectType));
     return this.deps.operation.run<readonly TokenResult[]>(async (tx) => {
       const results: TokenResult[] = [];
       const entries: SuccessEntry[] = [];

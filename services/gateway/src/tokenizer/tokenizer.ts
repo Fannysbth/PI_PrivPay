@@ -113,7 +113,8 @@ export class Tokenizer {
       { subjectType: 'ACCOUNT', subjectId: parsed.data.source_account, ...context },
     ]);
     if (customerSubjectRef === undefined || accountSubjectRef === undefined) {
-      throw new DomainError('INTERNAL_ERROR', 'privacy_answer');
+      // Fewer tokens than asked is not a clear answer: fail closed (invariant 8), as HttpPrivacyPort does.
+      throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
     }
     const { merchant_id, amount, geohash, nik, nama } = parsed.data;
     const clientIdentity = this.deps.forwardClientIdentity === true;

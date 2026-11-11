@@ -212,8 +212,15 @@ function core.tokenize(input, privacy, privacy_batch)
   if run == nil then
     return nil, "INTERNAL_ERROR"
   end
-  -- The payment asks for its pair in one call; the other routes ask one subject at a time.
-  return run(input, input.route == "transaction" and privacy_batch or privacy)
+  -- The payment asks for its pair in one call; the other routes ask one subject at a time. A caller that forgot
+  -- the batch function fails closed with a reason instead of raising inside the access phase.
+  if input.route == "transaction" then
+    if type(privacy_batch) ~= "function" then
+      return nil, "INTERNAL_ERROR"
+    end
+    return run(input, privacy_batch)
+  end
+  return run(input, privacy)
 end
 
 return core
