@@ -83,9 +83,12 @@ function send(
   body: string | Buffer,
   method = 'PUT',
   host = '127.0.0.1',
+  token?: string,
 ): Promise<number> {
   return new Promise((resolve, reject) => {
-    const req = request({ host, port, path, method }, (res) => {
+    // The token travels in a header, never in the path (CLAUDE.md: no secret in a URL).
+    const headers = token === undefined ? {} : { authorization: `Bearer ${token}` };
+    const req = request({ host, port, path, method, headers }, (res) => {
       res.resume();
       resolve(res.statusCode ?? 0); // the status is what counts; a close after it is not an error
     });
@@ -99,17 +102,23 @@ function send(
 describe('M7-E upload listener', () => {
   it('M7-E accepts exactly one valid PUT, writes the file and closes the listener', async () => {
     const { l, out } = await start();
-    expect(await send(l.port, `/upload/${l.token}`, JSON.stringify(GOOD))).toBe(200);
+    expect(await send(l.port, '/upload', JSON.stringify(GOOD), 'PUT', '127.0.0.1', l.token)).toBe(
+      200,
+    );
     expect(JSON.parse(readFileSync(out, 'utf8'))).toEqual(GOOD);
     expect((await l.done).status).toBe('received');
   });
 
   it('M7-E refuses a second upload after the first one succeeded', async () => {
     const { l, out } = await start();
-    expect(await send(l.port, `/upload/${l.token}`, JSON.stringify(GOOD))).toBe(200);
+    expect(await send(l.port, '/upload', JSON.stringify(GOOD), 'PUT', '127.0.0.1', l.token)).toBe(
+      200,
+    );
     await l.done;
     const other = { ...GOOD, endedAt: '2026-11-03T13:00:00.000Z' };
-    await expect(send(l.port, `/upload/${l.token}`, JSON.stringify(other))).rejects.toMatchObject({
+    await expect(
+      send(l.port, '/upload', JSON.stringify(other), 'PUT', '127.0.0.1', l.token),
+    ).rejects.toMatchObject({
       code: 'ECONNREFUSED',
     });
     expect((JSON.parse(readFileSync(out, 'utf8')) as typeof GOOD).endedAt).toBe(GOOD.endedAt);
@@ -118,23 +127,34 @@ describe('M7-E upload listener', () => {
   it('M7-E rejects a wrong token and keeps waiting for the right one', async () => {
     const { l, out } = await start();
     const wrong = `${l.token.slice(0, -1)}${l.token.endsWith('0') ? '1' : '0'}`;
-    expect(await send(l.port, `/upload/${wrong}`, JSON.stringify(GOOD))).toBe(404);
-    expect(await send(l.port, '/upload/', JSON.stringify(GOOD))).toBe(404);
-    expect(await send(l.port, `/other/${l.token}`, JSON.stringify(GOOD))).toBe(404);
+    const body = JSON.stringify(GOOD);
+    // A wrong or missing token is 401; the token is only read from the Authorization header.
+    expect(await send(l.port, '/upload', body, 'PUT', '127.0.0.1', wrong)).toBe(401);
+    expect(await send(l.port, '/upload', body)).toBe(401);
+    // Another path is 404 whatever the token; a token in the path is not a credential any more.
+    expect(await send(l.port, '/other', body, 'PUT', '127.0.0.1', l.token)).toBe(404);
+    expect(await send(l.port, `/upload/${l.token}`, body)).toBe(404);
+    expect(await send(l.port, `/upload/${l.token}`, body, 'PUT', '127.0.0.1', l.token)).toBe(404);
     expect(existsSync(out)).toBe(false);
-    expect(await send(l.port, `/upload/${l.token}`, JSON.stringify(GOOD))).toBe(200);
+    expect(await send(l.port, '/upload', JSON.stringify(GOOD), 'PUT', '127.0.0.1', l.token)).toBe(
+      200,
+    );
   });
 
   it('M7-E rejects a peer address other than --peer-ip', async () => {
     const { l, out } = await start({ peerIp: '127.0.0.2' });
-    expect(await send(l.port, `/upload/${l.token}`, JSON.stringify(GOOD))).toBe(403);
+    expect(await send(l.port, '/upload', JSON.stringify(GOOD), 'PUT', '127.0.0.1', l.token)).toBe(
+      403,
+    );
     expect(existsSync(out)).toBe(false);
   });
 
   it('M7-E rejects a method other than PUT', async () => {
     const { l, out } = await start();
     for (const m of ['POST', 'GET', 'DELETE'])
-      expect(await send(l.port, `/upload/${l.token}`, m === 'GET' ? '' : '{}', m)).toBe(405);
+      expect(await send(l.port, '/upload', m === 'GET' ? '' : '{}', m, '127.0.0.1', l.token)).toBe(
+        405,
+      );
     expect(existsSync(out)).toBe(false);
   });
 
@@ -142,14 +162,16 @@ describe('M7-E upload listener', () => {
     const { l, out } = await start();
     expect(upload.MAX_BYTES).toBe(1024 * 1024);
     const big = Buffer.alloc(upload.MAX_BYTES + 1, 0x20);
-    expect(await send(l.port, `/upload/${l.token}`, big)).toBe(413);
+    expect(await send(l.port, '/upload', big, 'PUT', '127.0.0.1', l.token)).toBe(413);
     expect(existsSync(out)).toBe(false);
-    expect(await send(l.port, `/upload/${l.token}`, JSON.stringify(GOOD))).toBe(200);
+    expect(await send(l.port, '/upload', JSON.stringify(GOOD), 'PUT', '127.0.0.1', l.token)).toBe(
+      200,
+    );
   });
 
   it('M7-E rejects a body that is not valid JSON', async () => {
     const { l, out } = await start();
-    expect(await send(l.port, `/upload/${l.token}`, '{not json')).toBe(400);
+    expect(await send(l.port, '/upload', '{not json', 'PUT', '127.0.0.1', l.token)).toBe(400);
     expect(existsSync(out)).toBe(false);
   });
 
@@ -164,7 +186,9 @@ describe('M7-E upload listener', () => {
       { ...GOOD, metrics: [] },
       { mode: 'proposed', endedAt: GOOD.endedAt },
     ])
-      expect(await send(l.port, `/upload/${l.token}`, JSON.stringify(bad))).toBe(422);
+      expect(await send(l.port, '/upload', JSON.stringify(bad), 'PUT', '127.0.0.1', l.token)).toBe(
+        422,
+      );
     expect(existsSync(out)).toBe(false);
     expect(upload.validateSummary(GOOD, 'proposed')).toBeUndefined();
     expect(upload.validateSummary(GOOD, 'baseline')).toBeDefined();
@@ -178,10 +202,28 @@ describe('M7-E upload listener', () => {
       'k6-summary.json',
     );
     const broken = await start({ outFile: inside });
-    expect(await send(broken.l.port, `/upload/${broken.l.token}`, JSON.stringify(GOOD))).toBe(500);
+    expect(
+      await send(
+        broken.l.port,
+        '/upload',
+        JSON.stringify(GOOD),
+        'PUT',
+        '127.0.0.1',
+        broken.l.token,
+      ),
+    ).toBe(500);
     mkdirSync(join(inside, '..'));
     dirs.push(join(inside, '..'));
-    expect(await send(broken.l.port, `/upload/${broken.l.token}`, JSON.stringify(GOOD))).toBe(200);
+    expect(
+      await send(
+        broken.l.port,
+        '/upload',
+        JSON.stringify(GOOD),
+        'PUT',
+        '127.0.0.1',
+        broken.l.token,
+      ),
+    ).toBe(200);
     expect(existsSync(inside)).toBe(true);
     expect(existsSync(out)).toBe(false);
   });
@@ -202,7 +244,9 @@ describe('M7-E upload listener', () => {
     expect(ms).toBe(1234);
     fire?.();
     expect((await l.done).status).toBe('timeout');
-    await expect(send(l.port, `/upload/${l.token}`, JSON.stringify(GOOD))).rejects.toMatchObject({
+    await expect(
+      send(l.port, '/upload', JSON.stringify(GOOD), 'PUT', '127.0.0.1', l.token),
+    ).rejects.toMatchObject({
       code: 'ECONNREFUSED',
     });
   });
@@ -211,7 +255,7 @@ describe('M7-E upload listener', () => {
     const { l } = await start();
     expect(l.address).toBe('127.0.0.1');
     await expect(
-      send(l.port, `/upload/${l.token}`, JSON.stringify(GOOD), 'PUT', '127.0.0.2'),
+      send(l.port, '/upload', JSON.stringify(GOOD), 'PUT', '127.0.0.2', l.token),
     ).rejects.toMatchObject({ code: 'ECONNREFUSED' });
   });
 
@@ -289,7 +333,10 @@ describe('M7-E command for the second laptop', () => {
     expect(cmd.startsWith('docker run')).toBe(false); // the stale summary is removed first
     expect(cmd).toContain('docker run --rm');
     expect(cmd).toContain('Invoke-RestMethod -Method Put -InFile C:\\k6test\\out\\k6-summary.json');
-    expect(cmd).toContain(`http://192.168.1.20:4444/upload/${'a'.repeat(48)}`);
+    expect(cmd).toContain('-Uri http://192.168.1.20:4444/upload');
+    // The token is a header, not part of the URL (CLAUDE.md: no secret in a URL).
+    expect(cmd).toContain(`-Headers @{Authorization='Bearer ${'a'.repeat(48)}'}`);
+    expect(cmd).not.toContain(`/upload/${'a'.repeat(48)}`);
     expect(cmd.indexOf('Remove-Item')).toBeLessThan(cmd.indexOf('docker run'));
     expect(cmd.indexOf('docker run')).toBeLessThan(cmd.indexOf('Invoke-RestMethod'));
   });
