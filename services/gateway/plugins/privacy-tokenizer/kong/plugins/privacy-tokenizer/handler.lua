@@ -119,6 +119,9 @@ function PrivacyTokenizer.access(_, conf)
   }, function(request)
     asked = asked + 1
     return privacy.pseudonymize(conf, request)
+  end, function(requests)
+    asked = asked + #requests
+    return privacy.pseudonymize_batch(conf, requests)
   end)
 
   if not outbound then

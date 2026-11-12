@@ -12,6 +12,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import {
+  BoundedTtlCache,
   createHttpClient,
   createServicePool,
   createIdpTokenCache,
@@ -20,6 +21,7 @@ import {
   JwksKeys,
   privacyBaseUrl,
   subjectRefShape,
+  tokenCacheSettings,
   type HttpClient,
   type TokenCache,
 } from '@privpay/common';
@@ -30,6 +32,7 @@ import { baselineContactRepository, baselinePrivacyClient } from './baseline';
 import { proposedContactRepository } from './proposed';
 import { loadNotificationConfig } from './config';
 import {
+  CachedPrivacyClient,
   HttpPrivacyClient,
   HttpSmsGateway,
   NotificationService,
@@ -148,7 +151,11 @@ export function notificationModules(
           overrides.privacy ??
           (config.PRIVACY_MODE === 'baseline'
             ? baselinePrivacyClient(config.PRIVACY_MODE)
-            : new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') })),
+            : // ADR-0020: the domain token is kept for T seconds at most (T = 0 keeps nothing).
+              new CachedPrivacyClient(
+                new HttpPrivacyClient({ http, serviceToken: tokenFor('privacy-service') }),
+                new BoundedTtlCache<string>({ clock, ...tokenCacheSettings(config) }),
+              )),
         sms: overrides.sms ?? new HttpSmsGateway({ http, serviceToken: tokenFor('sms-simulator') }),
         clock,
       }),

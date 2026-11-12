@@ -49,7 +49,7 @@ Rute di luar tabel dijawab 422 `VALIDATION_ERROR` bagi pemanggil yang sudah terb
 
 | Port | Adapter | Mode |
 | --- | --- | --- |
-| `PrivacyPort` ([`tokenizer/privacy-port.ts`](../../services/gateway/src/tokenizer/privacy-port.ts)): `pseudonymize`, `storeIdentity`, `revokeCustomer` | `HttpPrivacyPort` (memanggil Privacy; gagal tertutup bila 5xx atau jawaban bukan token) | proposed |
+| `PrivacyPort` ([`tokenizer/privacy-port.ts`](../../services/gateway/src/tokenizer/privacy-port.ts)): `pseudonymize`, `pseudonymizeBatch` (P1+P2 satu panggilan, ADR-0019), `storeIdentity`, `revokeCustomer` | `HttpPrivacyPort` (memanggil Privacy; gagal tertutup bila 5xx atau jawaban bukan token) | proposed |
 | | `PassthroughPrivacyPort` ([`baseline/passthrough-privacy-port.ts`](../../services/gateway/src/baseline/passthrough-privacy-port.ts)): mengembalikan `customer_id`/rekening apa adanya setelah memeriksa bentuknya; `storeIdentity` dan `revokeCustomer` tidak melakukan apa pun | baseline |
 | | `FakePrivacyPort` (hanya untuk tes) | tes |
 
@@ -96,6 +96,7 @@ Tes: `services/gateway/test/` (unit dan kontrak), `test/gateway-baseline.spec.ts
 | Endpoint | Pemanggil sah | Berkas logika |
 | --- | --- | --- |
 | `POST /pseudonymize` (tiga bentuk: identitas, pertukaran, dari transaksi) | Gateway; Transaction; Reconciliation | `token/token-service.ts`: `generate`, `exchange`, `generateFromTransaction` |
+| `POST /pseudonymize/batch` (1 sampai 2 elemen bentuk 1; ADR-0019) | Gateway | `TokenService.generateBatch` |
 | `POST /resolve-domain` | Notification | `TokenService.resolveDomain` |
 | `POST /re-issue` | Transaction | `TokenService.reIssue` |
 | `PATCH /transaction-status` | Transaction | `token/transaction-status.ts` |

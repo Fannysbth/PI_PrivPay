@@ -32,5 +32,6 @@ WORKDIR /app
 COPY --from=build --chown=root:root /out /app/${SERVICE_DIR}
 RUN test -n "$SERVICE_DIR" && ln -s "/app/${SERVICE_DIR}" /app/service \
     && mkdir -p /state && chown node:node /state
-USER node
+# Numeric id of the node user (hadolint DL3066); still non-root.
+USER 1000:1000
 CMD ["node", "/app/service/dist/main.js"]

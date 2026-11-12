@@ -15,13 +15,13 @@ interface Step {
   name?: string;
   uses?: string;
   run?: string;
-  if?: string;
+  if?: string | boolean;
   env?: Record<string, string>;
   with?: Record<string, unknown>;
 }
 interface Job {
   needs?: string | string[];
-  if?: string;
+  if?: string | boolean;
   permissions?: Record<string, string>;
   container?: { image: string };
   env?: Record<string, string>;
@@ -205,10 +205,48 @@ describe('M0-07 integration runs against PostgreSQL 16 with a throwaway password
 });
 
 describe('M0-07 what stays switched off until Docker (ADR-0004)', () => {
-  it('M0-07 the compose-based e2e job only runs when a compose file exists and not on pull requests', () => {
-    const condition = workflow.jobs['e2e']?.if ?? '';
-    expect(condition).toContain("hashFiles('deploy/docker-compose.yml', 'docker-compose.yml')");
-    expect(condition).toContain("github.event_name != 'pull_request'");
+  // GitHub rejects hashFiles() in a job-level `if:` ("Unrecognized function"): the whole workflow then fails in 0 seconds
+  // as a workflow file issue (seen on run 42533543365). File checks belong in a step, not in the job condition.
+  it('M0-07 no job-level condition calls hashFiles (the workflow would be rejected as a whole)', () => {
+    const offenders = Object.entries(workflow.jobs)
+      .filter(([, job]) => String(job.if ?? '').includes('hashFiles'))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
+  });
+
+  it('M0-07 the compose-based e2e job is switched off explicitly until it uses the real compose flow', () => {
+    expect(workflow.jobs['e2e']?.if).toBe(false);
+  });
+
+  it('M0-07 the Kong plugin lint job runs on every push, its files exist', () => {
+    expect(workflow.jobs['lua']?.if).toBeUndefined();
+  });
+
+  // Run 43245389360: luacheck from the repository root ignored the plugin's .luacheckrc and reported 20 undefined
+  // variables (kong, ngx). The local Docker test runs from the plugin directory, so CI must do the same.
+  it('M0-07 the luacheck job uses the plugin .luacheckrc (run from the plugin directory)', () => {
+    const run = (workflow.jobs['lua']?.steps ?? []).map((s) => s.run ?? '').join('\n');
+    expect(run).toMatch(/cd services\/gateway\/plugins\/privacy-tokenizer\n\s*luacheck \./);
+  });
+
+  // Semgrep p/secrets and p/nodejs supply-chain rules (run 43245389360): pnpm install hardening and Dependabot cooldown.
+  it('M0-07 pnpm refuses fresh, exotic or downgraded-trust packages (minimumReleaseAge, blockExoticSubdeps, trustPolicy)', () => {
+    const ws = parse(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(ws['minimumReleaseAge']).toBe(10080);
+    expect(ws['blockExoticSubdeps']).toBe(true);
+    expect(ws['trustPolicy']).toBe('no-downgrade');
+  });
+
+  it('M0-07 every Dependabot ecosystem has a cooldown', () => {
+    const dependabot = parse(readFileSync(join(root, '.github', 'dependabot.yml'), 'utf8')) as {
+      updates: { cooldown?: { 'default-days'?: number } }[];
+    };
+    for (const u of dependabot.updates) {
+      expect(u.cooldown?.['default-days']).toBeGreaterThanOrEqual(7);
+    }
   });
 
   it('M0-07 Dependabot keeps the pinned actions up to date', () => {

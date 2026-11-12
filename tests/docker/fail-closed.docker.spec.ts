@@ -66,4 +66,59 @@ if (MODE === 'proposed') {
       expect(recovered.status).toBe(201);
     }, 150_000);
   });
+
+  // ADR-0020 / ADR-0021: Transaction and Notification keep answers of Privacy for T seconds. A warm cache there must not open a
+  // way around the Gateway: a new payment still needs the batch call to Privacy, so with Privacy off it ends at Kong with 503.
+  describe('ADR-0021 a warm cache downstream does not open a bypass', () => {
+    // Another canary than the first test, always (a fixed distance inside the same half of the index range).
+    const warm = buildCanary(((runIndex(1) - 50_000 + 25_000) % 50_000) + 50_000);
+    const warmUser = `uji.hangat.${warm.nik.slice(-6)}`;
+    const warmRequestId = randomUUID();
+
+    it('ADR-0021 TK-16 after a payment warmed the caches, a new payment with Privacy off is still 503 at Kong, then recovers', async () => {
+      const registered = await call(
+        { port: KONG_PORT, path: '/register', tls: true },
+        {
+          nik: warm.nik,
+          nama: warm.nama,
+          hp: warm.hp,
+          email: warm.email,
+          rekening: warm.rekening,
+          username: warmUser,
+        },
+      );
+      expect(registered.status).toBe(201);
+      const token = await login(warmUser);
+      const payFor = async (key: string, requestId?: string) =>
+        edge(
+          '/transaction',
+          {
+            authorization: `Bearer ${token}`,
+            'idempotency-key': key,
+            ...(requestId ? { 'x-request-id': requestId } : {}),
+          },
+          {
+            source_account: warm.rekening,
+            merchant_id: 'MRC-001',
+            amount: 12000,
+            geohash: 'qqgu4',
+          },
+        );
+      // The first payment fills the caches of Transaction (exchange) and Notification (domain token) for this person.
+      expect((await payFor(randomUUID())).status).toBe(201);
+      try {
+        docker(['stop', PRIVACY]);
+        const refused = await payFor(randomUUID(), warmRequestId);
+        expect(refused.status).toBe(503);
+        expect(refused.body).toMatchObject({
+          error: { code: 'SERVICE_UNAVAILABLE', request_id: warmRequestId },
+        });
+        expect(logs('gateway')).not.toContain(warmRequestId);
+      } finally {
+        docker(['start', PRIVACY]);
+        waitHealthy(PRIVACY);
+      }
+      expect((await payFor(randomUUID())).status).toBe(201);
+    }, 180_000);
+  });
 }

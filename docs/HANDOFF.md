@@ -1,3 +1,42 @@
+# HANDOFF (2026-11-12, lanjutan): tahap C di `feat/perf-v2-privacy-hot-path`: cache Transaction dan Notification selesai; Gateway TIDAK di-cache (N-68 dijawab Fanny: Opsi 1); BELUM diukur
+
+| Butir | Bukti |
+| --- | --- |
+| Cache | `BoundedTtlCache` + `TOKEN_CACHE_TTL_SECONDS` (5, 0 = mati, maks 300) dan `TOKEN_CACHE_MAX_ENTRIES` (1000); exchange X1/X2 di Transaction, resolve-domain di Notification; kegagalan dan EXPIRED tidak disimpan |
+| N-68 | Cache P1/P2 di Gateway akan melewati `transaction_link` (K-28): Reconciliation gagal untuk transaksi itu. DIJAWAB Fanny: Opsi 1, Gateway tetap satu batch per pembayaran tanpa cache (D-26; ID D-20/D-21 milik kinerja v2 diganti D-25/D-26 karena bentrok) |
+| Gerbang | lint 0, typecheck 0, unit 99/1704, integrasi 70/1245, security 24 (Docker mati, bebas 6,3 GB). Docker (proposed, kode tahap C): Newman 156 request / 133 asersi / 0 gagal; payload scan 3 lulus. BELUM: fail-closed (dingin dan hangat), `docker:edge-check`, baseline. Memori turun ke 0,49 sampai 0,64 GB saat tumpukan menyala; payload scan terlanjur dijalankan di 0,49 GB (pelanggaran aturan, dicatat di log) |
+| Review | `/code-review medium`: 8 temuan, 2 diperbaiki (`expires_at`, `dev:up`), 6 ditolak beralasan (lihat log). `/security-review` BELUM |
+
+# HANDOFF (2026-11-12): sisa gerbang tahap B dan utang teknis di `feat/perf-v2-privacy-hot-path`; gerbang penuh dan pengukuran A+B TERTAHAN memori; BUKAN pengukuran
+
+| Butir | Bukti |
+| --- | --- |
+| Keputusan Fanny | T = 5 detik (30 detik varian), dari env `TOKEN_CACHE_TTL_SECONDS`; ADR-0020 dan ADR-0021 Accepted (kode tahap C belum); N-65 wajib; `resmii/` diabaikan |
+| N-65 `ea99e68` | `generateBatch` menolak 422 bila `transaction_id` beda; 2 tes merah dulu, lalu `pseudonymize-batch` + `token-service` integrasi 66 lulus |
+| CI `fe8e193` (N-67) | Penyebab 0 detik: `hashFiles()` di `if:` tingkat job (`lua`, `e2e`). Diperbaiki; `ci-workflow.spec.ts` lulus. Terbukti di GitHub (PR #13); job merah lain diperbaiki, menunggu run ulang |
+| Token unggahan `0343161` (N-66) | Header `Authorization: Bearer`, jalur tetap `/upload`; `summary-upload.spec.ts` 27 lulus (8 merah dulu). Alur dua laptop sungguhan belum diuji |
+| `CLAUDE.md` | "Status perintah" ditulis ulang setelah semua nama perintah dicek ada di `package.json`; `pnpm audit --audit-level high` keluar 0 (1 low, 2 moderate, dev). Berkas ini tidak dilacak git (`.git/info/exclude`) |
+| Tinjauan keamanan manual (diff tahap A+B) | Tidak ada temuan yang mengubah kode. Dicatat: CTE `expireAndFindActive` aman (SELECT memakai `expires_at >= $4` karena melihat snapshot sebelum UPDATE); batch menolak kunci dua kali dengan urutan `subject_type`; hanya elemen pertama yang ditolak menulis baris DENIED; hasil batch dipetakan menurut urutan permintaan dan jumlah item dicek di Gateway |
+| Gerbang ringan | lint 0, typecheck 0, `secret-scan:tree` 0 (`--no-git` mentah 3 temuan, semuanya kunci TLS dev di `secrets/` yang di-gitignore), `gitleaks --all` 501 commit bersih (0), `audit --prod` bersih (0) |
+
+**Tertahan (aturan memori, bebas 4,23 sampai 4,42 GB, syarat 5 GB dengan Docker mati; VS Code sendiri ±3,6 GB):** gerbang penuh (`pnpm test`, `test:integration`, `test:security`), `test:edge`, `docker:edge-check`, penelusuran selisih Newman 56 vs 156, pengukuran A+B. Semuanya BELUM lulus/dijalankan. `/security-review` dan `/simplify` sebagai skill tidak dijalankan (lihat log hari ini).
+
+# HANDOFF (2026-11-11): kinerja v2 tahap A dan B di `feat/perf-v2-privacy-hot-path` (commit `07b185c`, `b52d31a`); tahap C belum; BUKAN pengukuran
+
+| Butir | Bukti |
+| --- | --- |
+| Tahap A | `TokenService`: `expireStale` + `findActive` menjadi satu statement `expireAndFindActive` (PERF-01, 2 tes hitung statement). Perilaku, otorisasi, audit tidak berubah |
+| Tahap B | `POST /pseudonymize/batch` (ADR-0019 Accepted): 1 sampai 2 elemen bentuk 1, hanya `API_GATEWAY`, satu transaksi, satu baris audit per elemen, semua atau tidak sama sekali. Penyempitan disetujui Fanny: satu elemen per `subject_type`, kunci advisory menurut urutan `subject_type` (cegah deadlock) |
+| Gateway | `PrivacyPort.pseudonymizeBatch` (HTTP, fake, passthrough baseline); `Tokenizer` meminta P1+P2 dalam satu panggilan. Plugin Kong: `privacy.pseudonymize_batch`, `core.tokenize(input, privacy, privacy_batch)`, `run-vectors.lua` melaporkan `privacy_batches` |
+| Dokumen | spec privacy 4.1a, AZ-18b, PRD_ERRATA E-34, CHANGELOG, `docs/DOKUMENTASI_SISTEM.md` (baru), `docs/log/` (baru), ADR-0019 butir 2a |
+| Tes | `pseudonymize-batch.integration.spec.ts` (23 kasus), `token-service.integration.spec.ts` (urutan kunci, satu BEGIN/COMMIT, ukuran batch), adapter, tokenizer, kontrak, E2E TF-04 (fixture exchange pertama kini panggilan pertama ke `/pseudonymize`) |
+| Mutasi | pengurutan `subject_type` dihapus: tes urutan kunci gagal; dikembalikan: 41 tes hijau. Tes konkurensi lewat HTTP tidak gagal saat dimutasi, diganti tes deterministik |
+| Gerbang (2026-11-11) | lint dan typecheck bersih; `pnpm test` 96 suite / 1663 lulus; `test:integration` 70 suite / 1243 lulus (bebas 5,65 GB, Docker mati); `test:edge` Lua 11 lulus; `secret-scan:tree` bersih. `test:security` 24 lulus; `audit --prod` bersih; `gitleaks --all` 493 commit bersih (kode keluar 0 semua) |
+| Skill | tdd (manual, tes merah dulu), mutasi, `/code-review medium` (9 temuan: 4 diperbaiki, 3 ditolak dengan alasan, 1 dicatat, 1 menunggu Fanny, lihat `docs/log/`); `/simplify` dan `/security-review` BELUM dijalankan |
+| Perintah untuk Fanny | setujui T = 5 detik dan dua ADR tahap C (cache token; klaim gagal-tertutup "setelah jendela T"); putuskan N-65 (`transaction_id` sama untuk kedua elemen batch) |
+
+Sudah teruji dengan Docker (memori bebas 3,61 sampai 4,6 GB sesudah Docker menyala): Newman proposed 133 asersi dan baseline 119 asersi (0 gagal), payload scan dan fail-closed (4 tes) lulus. Belum teruji: selisih jumlah request Newman proposed (56 vs 156 di catatan lama, belum dijelaskan), `docker:edge-check`, dampak kinerja A dan B (butuh k6 di laptop kedua), tahap C seluruhnya. Catatan: tiga temuan `gitleaks --no-git` adalah kunci TLS dev di `secrets/docker/` (di-gitignore).
+
 # HANDOFF (2026-11-03): M7-E di `feat/m7e-upload-handoff`: serah-terima ringkasan k6 otomatis (unggahan), jendela sumber daya dari `k6.endedAt`, gerbang memori 3,5 GB; BUKAN pengukuran resmi
 
 | Butir | Bukti |

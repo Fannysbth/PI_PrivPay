@@ -42,19 +42,29 @@ describe('M2-11 gateway contract vectors', () => {
   it.each(files)('M2-11 %s', async (file) => {
     const vector = load(file);
     const calls: PseudonymizeRequest[] = [];
+    const answer = (request: PseudonymizeRequest): Promise<string> => {
+      const key = `${request.subjectType}:${request.subjectId}`;
+      const failure = vector.privacy.errors[key];
+      if (failure !== undefined) {
+        if (!isReason(failure)) throw new Error('the vector names an unknown reason');
+        return Promise.reject(new DomainError(failure));
+      }
+      const pseudonym = vector.privacy.pseudonyms[key];
+      return pseudonym === undefined
+        ? Promise.reject(new DomainError('INTERNAL_ERROR', 'vector_without_answer'))
+        : Promise.resolve(pseudonym);
+    };
     const privacy: PrivacyPort = {
       pseudonymize: (request) => {
         calls.push(request);
-        const key = `${request.subjectType}:${request.subjectId}`;
-        const failure = vector.privacy.errors[key];
-        if (failure !== undefined) {
-          if (!isReason(failure)) throw new Error('the vector names an unknown reason');
-          return Promise.reject(new DomainError(failure));
-        }
-        const pseudonym = vector.privacy.pseudonyms[key];
-        return pseudonym === undefined
-          ? Promise.reject(new DomainError('INTERNAL_ERROR', 'vector_without_answer'))
-          : Promise.resolve(pseudonym);
+        return answer(request);
+      },
+      // ADR-0019: both requests are recorded, in order; the first refusal refuses the batch (all or nothing).
+      pseudonymizeBatch: async (requests) => {
+        calls.push(...requests);
+        const tokens: string[] = [];
+        for (const request of requests) tokens.push(await answer(request));
+        return tokens;
       },
       // The vectors are of the two tokenizing routes; the registration is tested with the real IdP and Privacy.
       storeIdentity: () => Promise.resolve(),

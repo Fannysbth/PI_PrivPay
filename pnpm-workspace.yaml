@@ -11,3 +11,13 @@ allowBuilds:
 # Remove once platform-express 11.x ships multer >=2.5.0.
 overrides:
   multer: 2.5.0
+# Supply-chain hardening (Semgrep p/nodejs, CI run 43245389360). A version must be 7 days old before pnpm resolves it
+# (minutes), a dependency may not come from git or a tarball URL, and a package whose trust evidence got weaker than an
+# earlier release is refused. A lockfile install (--frozen-lockfile) resolves nothing, so existing pins are unaffected.
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
+# semver@6.3.1 is the last release of the 6.x line (Nov 2022, long before any 7.x with provenance), pulled in only by
+# dev tooling; pnpm flags the older line as a trust downgrade against later majors. Excluded by exact version only.
+trustPolicyExclude:
+  - semver@6.3.1

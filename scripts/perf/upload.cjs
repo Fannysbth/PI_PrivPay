@@ -14,6 +14,7 @@ const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000;
 const MIN_FREE_BYTES = 3.5 * GB;
 const MEMORY_WAIT_MS = 5 * 60 * 1000;
 const DEFAULT_PORT = 4444;
+const UPLOAD_PATH = '/upload';
 const DEFAULT_B_DIR = 'C:\\k6test';
 
 /** Why a parsed summary is not what the runner expects (undefined = fine). The messages go to B, so they never echo the content. */
@@ -45,7 +46,6 @@ async function startUploadListener(o) {
   const timer = o.timer ?? { set: (fn, ms) => setTimeout(fn, ms), clear: (h) => clearTimeout(h) };
   const now = o.now ?? (() => new Date());
   const token = crypto.randomBytes(24).toString('hex');
-  const expectedPath = `/upload/${token}`;
   let used = false;
   let finish;
   const done = new Promise((resolve) => { finish = resolve; });
@@ -71,8 +71,10 @@ async function startUploadListener(o) {
     // Order matters: cheap checks that need no body come first, so an unauthorized sender is never read.
     if (normalizeAddress(req.socket.remoteAddress) !== o.peerIp) return reply(res, 403, 'forbidden');
     if (req.method !== 'PUT') { req.resume(); return reply(res, 405, 'method not allowed'); }
-    const given = (req.url ?? '').split('?')[0];
-    if (!sameSecret(given, expectedPath)) { req.resume(); return reply(res, 404, 'not found'); }
+    // The token is a bearer credential in a header, never part of the URL (CLAUDE.md: no secret in a URL or query). The path is fixed.
+    if ((req.url ?? '').split('?')[0] !== UPLOAD_PATH) { req.resume(); return reply(res, 404, 'not found'); }
+    const match = /^Bearer ([0-9a-f]{48})$/.exec(String(req.headers.authorization ?? ''));
+    if (match === null || !sameSecret(match[1], token)) { req.resume(); return reply(res, 401, 'unauthorized'); }
     if (used) { req.resume(); return reply(res, 409, 'already received'); }
     const declared = Number(req.headers['content-length'] ?? 0);
     if (declared > MAX_BYTES) { req.resume(); return reply(res, 413, 'body too large'); }
@@ -151,7 +153,7 @@ function remoteCommand(o) {
   return [
     `Remove-Item ${out} -ErrorAction SilentlyContinue`,
     `docker ${o.k6Args.join(' ')}`,
-    `Invoke-RestMethod -Method Put -InFile ${out} -ContentType application/json -TimeoutSec 60 -Uri http://${o.ip}:${String(o.port)}/upload/${o.token}`,
+    `Invoke-RestMethod -Method Put -InFile ${out} -ContentType application/json -TimeoutSec 60 -Headers @{Authorization='Bearer ${o.token}'} -Uri http://${o.ip}:${String(o.port)}${UPLOAD_PATH}`,
   ].join('; ');
 }
 

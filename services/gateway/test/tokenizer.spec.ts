@@ -83,6 +83,27 @@ describe('M2-11 Tokenizer: POST /transaction', () => {
     });
   });
 
+  it('ADR-0019 a payment asks Privacy once, for P1 and P2 together, and the tokens go to the right fields', async () => {
+    const result = await transaction();
+    expect(privacy.batches).toHaveLength(1);
+    expect(privacy.singles).toHaveLength(0);
+    expect(privacy.batches[0]?.map((request) => request.subjectType)).toEqual([
+      'CUSTOMER',
+      'ACCOUNT',
+    ]);
+    if (result.route !== 'transaction') throw new Error('route');
+    expect(result.outbound.customer_token).not.toBe(result.outbound.account_token);
+    expect(result.outbound.customer_token).toMatch(/^PSEU-/);
+    expect(result.outbound.account_token).toMatch(/^PSEU-/);
+  });
+
+  it('ADR-0019 TK-16 a port that answers with fewer tokens than asked is SERVICE_UNAVAILABLE, never a payment', async () => {
+    privacy = new FakePrivacyPort();
+    privacy.pseudonymizeBatch = () => Promise.resolve(['PSEU-0000000A']);
+    tokenizer = new Tokenizer({ privacy, newTransactionId: () => 'TX-1' });
+    await expect(transaction()).rejects.toMatchObject({ reason: 'SERVICE_UNAVAILABLE' });
+  });
+
   it('M2-11 FR-38 NFR-11 TK-16 Privacy unavailable: SERVICE_UNAVAILABLE and nothing is returned to forward', async () => {
     privacy = new FakePrivacyPort(() => new DomainError('SERVICE_UNAVAILABLE', 'timeout'));
     tokenizer = new Tokenizer({ privacy, newTransactionId: () => 'TX-1' });

@@ -28,6 +28,7 @@ interface Result {
   outbound?: unknown;
   error?: string;
   privacy_calls: number;
+  privacy_batches: number;
 }
 
 const fill = (text: string, values: Readonly<Record<string, string>>): string =>
@@ -85,6 +86,10 @@ describe('DK-02b the Lua plugin core passes the contract vectors', () => {
       const vector = vectors[index] as Vector;
       const result = results[index] as Result;
       expect(result.privacy_calls).toBe(vector.expect.privacy_calls);
+      // ADR-0019: a payment asks for P1 and P2 in one batch; no other route uses one.
+      expect(result.privacy_batches).toBe(
+        vector.route === 'transaction' && vector.expect.privacy_calls > 0 ? 1 : 0,
+      );
       if (vector.expect.error !== undefined) {
         expect(result.error).toBe(vector.expect.error);
         expect(result.outbound).toBeUndefined();

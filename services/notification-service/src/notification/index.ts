@@ -1,4 +1,5 @@
 export { HttpPrivacyClient, HttpSmsGateway, type HttpAdapterDeps } from './adapters';
+export { CachedPrivacyClient } from './cached-privacy-client';
 export {
   ContactRepository,
   type ClientAttributes,

@@ -4,6 +4,38 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Perbaikan job CI merah (feat/perf-v2-privacy-hot-path, PR #13, 2026-11-12)
+
+- CI: luacheck dijalankan dari direktori plugin supaya `.luacheckrc` terbaca; Dockerfile `USER 1000:1000` (hadolint DL3066); `pnpm-workspace.yaml` `minimumReleaseAge`, `blockExoticSubdeps`, `trustPolicy: no-downgrade` (+ pengecualian `semver@6.3.1`); Dependabot `cooldown` 7 hari (Semgrep). Tes merah dulu di `tests/repo/`. Bukti hijau di GitHub menunggu run berikutnya.
+
+### Kinerja v2 tahap C: cache token terbatas (feat/perf-v2-privacy-hot-path, ADR-0020/0021, 2026-11-12)
+
+- `@privpay/common`: `BoundedTtlCache` (umur entri = min(T, sisa umur token), jumlah entri dibatasi, jam disuntik, hanya di memori) dan konfigurasi `TOKEN_CACHE_TTL_SECONDS` (bawaan 5, 0 = mati, maksimum 300) dan `TOKEN_CACHE_MAX_ENTRIES` (bawaan 1000), divalidasi saat start.
+- Transaction: jawaban exchange X1/X2 disimpan per (token sumber, tujuan, purpose), bukan per `transaction_id`; kegagalan dan EXPIRED tidak disimpan (jalur re-issue TF-04 tetap jalan); jawaban tanpa `expires_at` dipakai tetapi tidak disimpan. Notification: jawaban resolve-domain disimpan per token P4 (hanya T yang membatasi).
+- Gateway (P1/P2) sengaja tidak di-cache: lihat N-68. Env diteruskan lewat `mode.proposed.yml`, `.env.example`, `dev:up`.
+- Tes (merah dulu): `ttl-cache.spec.ts` 14, `exchange-cache.spec.ts` 11, `domain-cache.spec.ts` 6, `config.spec.ts` +7. Belum diukur dampaknya.
+
+### Sisa gerbang tahap B dan utang teknis (feat/perf-v2-privacy-hot-path, 2026-11-12)
+
+- N-65 (`ea99e68`): `POST /pseudonymize/batch` menolak 422 bila `transaction_id` kedua elemen tidak sama (atau satu ada satu tidak). Dua tes merah dulu. ADR-0019 butir 2b, spec privacy 4.1a.
+- ADR-0020 (cache token terbatas, T dari env `TOKEN_CACHE_TTL_SECONDS`, bawaan 5 detik, varian 30) dan ADR-0021 (gagal-tertutup menjadi "tertutup setelah jendela T") ditulis, Accepted oleh Fanny. Kode tahap C belum dikerjakan.
+- N-67 (`fe8e193`): `hashFiles()` dihapus dari `if:` tingkat job (`lua`, `e2e`) yang membuat workflow CI gagal 0 detik; `e2e` `if: false` eksplisit. Belum terbukti di GitHub (belum di-push).
+- N-66 (`0343161`): token unggahan M7-E pindah dari jalur URL ke header `Authorization: Bearer`; jalur tetap `/upload`; 401 untuk token salah atau hilang.
+- Bagian "Status perintah" di `CLAUDE.md` (berkas lokal, tidak dilacak git) ditulis ulang dan diverifikasi.
+
+### Kinerja v2 tahap B (feat/perf-v2-privacy-hot-path, ADR-0019 Accepted 2026-11-11)
+
+- Privacy Service: `POST /pseudonymize/batch` (1 sampai 2 elemen bentuk 1, hanya `API_GATEWAY`, satu transaksi, satu baris audit per elemen, semua atau tidak sama sekali; paling banyak satu elemen per `subject_type`, kunci advisory menurut urutan `subject_type`). `TokenService.generateBatch`; `generate` memakai langkah yang sama. Spec 4.1a, AZ-18b, PRD_ERRATA E-34.
+- Gateway: `PrivacyPort.pseudonymizeBatch` (adapter HTTP, fake, passthrough baseline); pembayaran meminta P1 dan P2 dalam satu panggilan (sebelumnya dua). Plugin Kong: `privacy.pseudonymize_batch`, `core.tokenize` menerima fungsi batch untuk rute transaksi, `run-vectors.lua` melaporkan `privacy_batches`.
+- Tes: `pseudonymize-batch.integration.spec.ts` (23 kasus: jalur sukses, pemanggil salah, elemen ditolak, bentuk, IdP mati, log), `token-service.integration.spec.ts` (urutan kunci dibuktikan mutasi, satu BEGIN/COMMIT), adapter, tokenizer, kontrak, E2E (fixture exchange pertama kini panggilan pertama ke `/pseudonymize`).
+- Dampak ke kinerja belum diukur.
+- Dokumentasi: `docs/DOKUMENTASI_SISTEM.md` (dokumentasi sistem lengkap, dokumen hidup), `docs/log/` (log kerja: rencana, perubahan, masalah, keputusan; satu berkas per tanggal), HANDOFF, DESIGN_DECISIONS D-25/D-26 (sebelumnya salah bernomor D-20/D-21, bentrok dengan D-20/D-21 lama), OPEN_QUESTIONS N-62..N-64, ADR-0019 butir 2a (penyempitan disetujui Fanny).
+
+### Kinerja v2 tahap A (feat/perf-v2-privacy-hot-path, PERF-01)
+
+- `expireStale` dan `findActive` di `TokenService` digabung menjadi satu statement `expireAndFindActive` (satu round trip per operasi token). Perilaku, otorisasi, dan audit tidak berubah. Tes PERF-01 menghitung statement per operasi (merah dulu, lalu hijau). Dampak ke kinerja belum diukur; gerbang penuh dijalankan sekali setelah tahap B dan C.
+- `.gitignore`: `artifacts/`, `docs/penulisan/`, `docs/hasil.zip`, `docs/hasil/kinerja/resmi/` dan `resmii/` tidak pernah di-push.
+
 ### M6 penutup (feat/m6)
 
 - Pengukuran resmi pada commit `b5a4f2f` dengan pohon bersih: `docs/hasil/` (E(s) kedua mode, penautan, fail-closed usulan). `docs/security/review-M6.md`; checklist S-50, S-70, S-71 dicentang, S-72 sebagian. `dev:up` ikut menetapkan `BATCH_HTTP_TIMEOUT_MS` (`910d6a1`) agar lingkungan Compose dan lokal tetap sama (tes DK-01 menangkapnya). Gerbang penuh satu putaran hijau (HANDOFF).

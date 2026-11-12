@@ -54,6 +54,8 @@ function buildPlan(mode, options) {
   const proposed = mode === 'proposed';
   // N-47: PRIVACY_SERVICE_URL is required in proposed and forbidden in baseline.
   const privacyUrl = proposed ? { PRIVACY_SERVICE_URL: url('privacy') } : {};
+  // ADR-0020: window T of the token cache in Transaction and Notification; only proposed has a Privacy to keep answers of.
+  const cacheWindow = proposed ? { TOKEN_CACHE_TTL_SECONDS: process.env.TOKEN_CACHE_TTL_SECONDS || '5' } : {};
   const ownDb = (name) =>
     !proposed && BASELINE_DB_SERVICES.includes(name) ? { PG_DATABASE_SUFFIX: BASELINE_DB_SUFFIX } : {};
   const processes = [
@@ -100,6 +102,7 @@ function buildPlan(mode, options) {
         TX_PENDING_TIMEOUT_SECONDS: '300',
         TX_SWEEP_INTERVAL_SECONDS: '30',
         ...privacyUrl,
+        ...cacheWindow,
         FRAUD_SERVICE_URL: url('fraud'),
         NOTIFICATION_SERVICE_URL: url('notification'),
         TRANSACTION_CLIENT_SECRET_FILE: secret('transaction_client_secret'),
@@ -122,6 +125,7 @@ function buildPlan(mode, options) {
       entry: 'services/notification-service/dist/main.js',
       env: {
         ...privacyUrl,
+        ...cacheWindow,
         SMS_SIMULATOR_URL: url('sms'),
         NOTIFICATION_CLIENT_SECRET_FILE: secret('notification_client_secret'),
       },

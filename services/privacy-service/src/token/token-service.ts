@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { DomainError, type Clock } from '@privpay/common';
-import type { AuditedOperation, OperationTx } from '../audit';
+import type { AuditedOperation, OperationTx, SuccessEntry } from '../audit';
 import { mappingBinding, type BlindIndex, type FieldCipher, type TokenMint } from '../crypto';
 import type { PolicyEngine } from '../policy';
 import { effectiveStatus, type StoredStatus } from './status';
@@ -32,11 +32,16 @@ export const TOKEN_SQL = {
   // Spec privacy 7.2 step 2: the lock that keeps parallel requests for one combination in line (ADR-0010). A row that
   // does not exist yet cannot be locked with FOR UPDATE, so the lock is on the key of the combination.
   lock: 'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
-  // Step 3: without this, an INSERT after the TTL breaks uq_mapping_active (T-06, FR-33).
-  expireStale: `UPDATE pseudonym_mapping SET status = 'expired'
-     WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active' AND expires_at < $4`,
-  findActive: `SELECT id, pseudonym, expires_at, key_version FROM pseudonym_mapping
-     WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active'`,
+  // Steps 3 and 4 in one round trip (PERF-01, NFR-02). The UPDATE marks the rows past their TTL expired, which an INSERT
+  // after the TTL needs to keep uq_mapping_active free (T-06, FR-33); the SELECT in the same statement reads the
+  // snapshot from before that UPDATE, so it asks for `expires_at >= $4` itself and never returns a row the UPDATE has
+  // just expired. The data-modifying CTE runs to completion even though nothing reads it.
+  expireAndFindActive: `WITH expired AS (
+       UPDATE pseudonym_mapping SET status = 'expired'
+        WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active' AND expires_at < $4
+       RETURNING id)
+     SELECT id, pseudonym, expires_at, key_version FROM pseudonym_mapping
+      WHERE subject_lookup = $1 AND service_id = $2 AND purpose = $3 AND status = 'active' AND expires_at >= $4`,
   // Step 6: a taken pseudonym value is not an error, it is retried from a new nonce (ADR-0010, E-19).
   insert: `INSERT INTO pseudonym_mapping
        (id, subject_type, subject_id_enc, subject_lookup, pseudonym, service_id, purpose, transaction_id,
@@ -79,6 +84,9 @@ export const TOKEN_SQL = {
   moveLink: `UPDATE transaction_link SET pseudonym = $5
      WHERE transaction_id = $1 AND subject_type = $2 AND service_id = $3 AND purpose = $4 AND pseudonym = $6`,
 } as const;
+
+/** ADR-0019: a batch is the pair of one payment, P1 and P2. One place for the limit; the HTTP schema uses it too. */
+export const MAX_BATCH = 2;
 
 /** Spec privacy 7.2 step 6: the limit chosen by the spec (K-12). */
 const MAX_PSEUDONYM_ATTEMPTS = 20;
@@ -158,36 +166,82 @@ export class TokenService {
   /** Form 1, from identity (the Gateway only, Tabel 3): spec 7.3. */
   async generate(request: GenerateRequest): Promise<TokenResult> {
     assertGenerate(request);
-    const base = baseOf('GENERATE_TOKEN', request);
     return this.deps.operation.run<TokenResult>(async (tx) => {
-      // Spec 7.3 STEP 0. A refusal is a decision and is audited (spec 9.4): the type of the error says so.
-      const context = decide(base, {}, () =>
-        this.deps.policy.evaluate({
-          operation: 'GENERATE_FROM_IDENTITY',
-          requestingService: request.requestingService,
-          context: {
-            serviceId: request.targetService,
-            purpose: request.purpose,
-            subjectType: request.subjectType,
-          },
-        }),
-      );
-      const issued = await this.issue(tx, {
-        subjectType: request.subjectType,
-        subjectId: request.subjectId,
-        targetService: request.targetService,
-        purpose: request.purpose,
-        transactionId: request.transactionId,
-        ttlSeconds: context.ttlSeconds,
-      });
-      await this.link(tx, base, {}, issued, {
-        transactionId: request.transactionId,
-        subjectType: request.subjectType,
-        serviceId: request.targetService,
-        purpose: request.purpose,
-      });
-      return { result: resultOf(issued), audit: successEntry(base, issued) };
+      const { result, entry } = await this.generateIn(tx, request);
+      return { result, audit: entry };
     });
+  }
+
+  /**
+   * ADR-0019: the P1 and P2 tokens of one payment in one transaction. Every element goes through the same steps as
+   * `generate` (policy STEP 0, lock, issue, link) and leaves its own SUCCESS row; a refusal of any element rolls the
+   * whole batch back and leaves one DENIED row for that element, so no token is issued without its pair. At most one
+   * element per subject type, and the work is done in the order of the subject type, not of the request: two batches
+   * that name the same pair in opposite order would otherwise take the advisory locks in opposite order (deadlock).
+   * All elements carry the same transaction_id (N-65). The results follow the order of the request.
+   */
+  async generateBatch(requests: readonly GenerateRequest[]): Promise<readonly TokenResult[]> {
+    if (requests.length < 1 || requests.length > MAX_BATCH)
+      throw new DomainError('VALIDATION_ERROR');
+    for (const request of requests) assertGenerate(request);
+    if (new Set(requests.map((request) => request.subjectType)).size !== requests.length) {
+      throw new DomainError('VALIDATION_ERROR');
+    }
+    // N-65: the pair belongs to one payment; elements of different transactions (or one with and one without) are
+    // refused before anything is read or written.
+    if (new Set(requests.map((request) => request.transactionId)).size !== 1) {
+      throw new DomainError('VALIDATION_ERROR');
+    }
+    const order = requests
+      .map((request, index) => ({ request, index }))
+      .sort((a, b) => a.request.subjectType.localeCompare(b.request.subjectType));
+    return this.deps.operation.run<readonly TokenResult[]>(async (tx) => {
+      const results: TokenResult[] = [];
+      const entries: SuccessEntry[] = [];
+      for (const { request, index } of order) {
+        const { result, entry } = await this.generateIn(tx, request);
+        results[index] = result;
+        entries.push(entry);
+      }
+      const [first, ...rest] = entries;
+      if (first === undefined) throw new DomainError('INTERNAL_ERROR', 'batch_empty');
+      return { result: results, audit: [first, ...rest] };
+    });
+  }
+
+  /** Spec 7.3 for one identity, inside the transaction the caller opened. */
+  private async generateIn(
+    tx: OperationTx,
+    request: GenerateRequest,
+  ): Promise<{ result: TokenResult; entry: SuccessEntry }> {
+    const base = baseOf('GENERATE_TOKEN', request);
+    // Spec 7.3 STEP 0. A refusal is a decision and is audited (spec 9.4): the type of the error says so.
+    const context = decide(base, {}, () =>
+      this.deps.policy.evaluate({
+        operation: 'GENERATE_FROM_IDENTITY',
+        requestingService: request.requestingService,
+        context: {
+          serviceId: request.targetService,
+          purpose: request.purpose,
+          subjectType: request.subjectType,
+        },
+      }),
+    );
+    const issued = await this.issue(tx, {
+      subjectType: request.subjectType,
+      subjectId: request.subjectId,
+      targetService: request.targetService,
+      purpose: request.purpose,
+      transactionId: request.transactionId,
+      ttlSeconds: context.ttlSeconds,
+    });
+    await this.link(tx, base, {}, issued, {
+      transactionId: request.transactionId,
+      subjectType: request.subjectType,
+      serviceId: request.targetService,
+      purpose: request.purpose,
+    });
+    return { result: resultOf(issued), entry: successEntry(base, issued) };
   }
 
   /** Form 2, exchange (TRANSACTION only; Tabel 2): spec 7.5, PRD 7.2. */
@@ -548,9 +602,12 @@ export class TokenService {
     const lookup = this.deps.index.lookup(subjectType, subjectId);
     await tx.query(TOKEN_SQL.lock, [`${lookup.toString('hex')}|${targetService}|${purpose}`]);
     const now = this.deps.clock.now();
-    await tx.query(TOKEN_SQL.expireStale, [lookup, targetService, purpose, now]);
-
-    const found = await tx.query<ActiveRow>(TOKEN_SQL.findActive, [lookup, targetService, purpose]);
+    const found = await tx.query<ActiveRow>(TOKEN_SQL.expireAndFindActive, [
+      lookup,
+      targetService,
+      purpose,
+      now,
+    ]);
     const active = found.rows[0];
     if (active !== undefined) {
       return {

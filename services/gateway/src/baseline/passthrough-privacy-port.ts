@@ -19,6 +19,11 @@ export class PassthroughPrivacyPort implements PrivacyPort {
     return Promise.resolve(request.subjectId);
   }
 
+  /** ADR-0019: the same pass-through for each element; one that is malformed fails the lot, as in proposed. */
+  async pseudonymizeBatch(requests: readonly PseudonymizeRequest[]): Promise<string[]> {
+    return Promise.all(requests.map((request) => this.pseudonymize(request)));
+  }
+
   storeIdentity(): Promise<void> {
     return Promise.resolve();
   }

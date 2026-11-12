@@ -14,6 +14,7 @@ file:close()
 local results = {}
 for index, vector in ipairs(vectors) do
   local calls = 0
+  local batches = 0
   local function privacy(request)
     calls = calls + 1
     local key = request.subject_type .. ":" .. request.subject_id
@@ -28,14 +29,34 @@ for index, vector in ipairs(vectors) do
     return pseudonym
   end
 
+  -- ADR-0019: the pair of a payment in one call. Every request counts as asked (as before), and the first refusal
+  -- refuses the lot (all or nothing); the order of the answers is the order of the requests.
+  local function privacy_batch(requests)
+    batches = batches + 1
+    local tokens, failed, failure = {}, false, nil
+    for position, request in ipairs(requests) do
+      local pseudonym, why = privacy(request)
+      if pseudonym == nil and not failed then
+        failed, failure = true, why
+      end
+      tokens[position] = pseudonym
+    end
+    if failed then
+      return nil, failure
+    end
+    return tokens
+  end
+
   local outbound, reason = core.tokenize({
     route = vector.route,
     claims = vector.claims,
     body = vector.body,
     idempotency_key = vector.idempotency_key,
     transaction_id = vector.transaction_id or "TX-1",
-  }, privacy)
-  results[index] = { name = vector.name, outbound = outbound, error = reason, privacy_calls = calls }
+  }, privacy, privacy_batch)
+  results[index] = {
+    name = vector.name, outbound = outbound, error = reason, privacy_calls = calls, privacy_batches = batches,
+  }
 end
 
 io.write(cjson.encode(results))

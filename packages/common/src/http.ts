@@ -23,7 +23,7 @@ export interface HttpRequest {
   /** A form-urlencoded body instead of JSON (the token endpoint of Keycloak). Not together with `body`. */
   readonly form?: Readonly<Record<string, string>>;
   /**
-   * Only idempotent requests are retried (NFR-12). Idempotent: POST /pseudonymize, POST /resolve-domain,
+   * Only idempotent requests are retried (NFR-12). Idempotent: POST /pseudonymize, POST /pseudonymize/batch, POST /resolve-domain,
    * POST /re-issue, PATCH /transaction-status, POST /notification/register, and every GET.
    * Not idempotent: POST /notification/send, POST /fraud/assess, POST /de-pseudonymize, and POST /identity
    * until it is made idempotent (platform-dan-ci.md section 6).

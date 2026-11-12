@@ -74,10 +74,10 @@ describe('DK-01 the Dockerfile (NFR-22, TK-18, S-06)', () => {
     expect(dockerfile).not.toMatch(/:latest/);
   });
 
-  it('DK-01 is multi-stage and the runtime stage runs as the non-root node user', () => {
+  it('DK-01 is multi-stage and the runtime stage runs as the non-root node user (numeric 1000:1000, hadolint DL3066)', () => {
     expect(dockerfile.match(/^FROM /gm)?.length).toBeGreaterThanOrEqual(2);
     const runtime = dockerfile.slice(dockerfile.lastIndexOf('FROM '));
-    expect(runtime).toMatch(/^USER node$/m);
+    expect(runtime).toMatch(/^USER 1000:1000$/m);
     expect(runtime).not.toMatch(/^COPY \. /m);
   });
 

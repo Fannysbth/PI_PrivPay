@@ -49,3 +49,11 @@ Status FINAL berarti tidak diubah tanpa ADR yang disetujui user (Fanny). Sumber:
 ## E. Keterbatasan yang tidak boleh disembunyikan
 
 Lihat `docs/PRD_RINGKAS.md` bagian 13. Jangan "memperbaiki" keterbatasan ini secara diam-diam di kode; kalau mau, jadikan ADR.
+
+## Tambahan 2026-11-11: kinerja v2
+
+| # | Keputusan | Alasan | Dampak bila diubah |
+| --- | --- | --- | --- |
+| D-25 | **Gateway meminta P1 dan P2 dalam satu panggilan `POST /pseudonymize/batch`** (ADR-0019, Accepted oleh Fanny 2026-11-11): 1 sampai 2 elemen, semua atau tidak sama sekali, satu baris audit per elemen, hanya `API_GATEWAY`, paling banyak satu elemen per `subject_type`. | Biaya kinerja v1 didominasi jumlah panggilan sinkron ber-TLS ke Privacy; keamanan (Policy Engine, audit, gagal tertutup) tidak turun. | Kembali ke dua panggilan; ubah adapter, plugin Lua, vektor kontrak |
+| D-26 | **Cache token terbatas (tahap C), ADR-0020 dan ADR-0021 Accepted (Fanny, 2026-11-12); Gateway TIDAK di-cache (N-68, "Opsi 1").** Dua tempat saja: Transaction (exchange X1/X2, kunci token sumber + tujuan + purpose) dan Notification (resolve-domain P4 ke P5, kunci token P4). T = 5 detik dari env `TOKEN_CACHE_TTL_SECONDS` (30 detik varian sensitivitas, 0 = mati, maksimum 300); entri dibatasi jumlahnya (`TOKEN_CACHE_MAX_ENTRIES`), umur entri = min(T, sisa umur token), hanya di memori, kegagalan dan EXPIRED tidak disimpan. Harga: gagal tertutup menjadi "tertutup setelah jendela T" untuk token yang tersimpan, pencabutan tertunda paling lama T, pemakaian dari cache tidak menulis baris audit di Privacy. | Mengurangi panggilan ke Privacy per pembayaran (perkiraan 4,3 ke sekitar 2, belum diukur) tanpa melewatkan `transaction_link` (K-28) dan audit penerbitan P1/P2; tetap pseudonimisasi dinamis dan penyamaran di Gateway di setiap pembayaran. | Mengubah klaim invarian 8 (ADR-0021) dan cakupan ADR-0020; cache Gateway hanya mungkin lewat ADR baru yang juga mengubah ADR-0013. |
+

@@ -6,6 +6,7 @@ Semua klaim tentang perilaku kode dilacak ke berkas nyata (path ditulis dari aka
 
 | Berkas                                                           | Isi                                                                                  |
 | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| [../DOKUMENTASI_SISTEM.md](../DOKUMENTASI_SISTEM.md) | **Dokumentasi sistem lengkap dan terkini** (dokumen hidup); mulai dari sini bila ada selisih dengan bab di bawah |
 | [00-peta-besar.md](00-peta-besar.md)                             | Gambaran sistem, diagram, tanggung jawab layanan, apa yang hanya ada di satu mode    |
 | [01-menjalankan-sistem.md](01-menjalankan-sistem.md)             | Jalur lokal tanpa Docker (sudah dijalankan sungguhan); jalur Docker Compose ada di [`docs/postman/README.md`](../postman/README.md) |
 | [02-layanan.md](02-layanan.md)                                   | Tiap layanan dan `packages/common`: tugas, endpoint, tabel, port/adapter, urutan baca |

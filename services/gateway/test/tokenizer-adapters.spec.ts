@@ -119,3 +119,74 @@ describe('M2-11 HttpPrivacyPort', () => {
     }
   });
 });
+
+describe('ADR-0019 HttpPrivacyPort.pseudonymizeBatch', () => {
+  const pair = [ask, { ...ask, subjectType: 'ACCOUNT', subjectId: '90000000001' }] as const;
+  const answers = {
+    items: [
+      { pseudonym: 'PSEU-0A1B2C3D', expires_at: 'x', reused: false },
+      { pseudonym: 'PSEU-4E5F6071', expires_at: 'x', reused: false },
+    ],
+  };
+
+  it('ADR-0019 posts both elements in one idempotent call and returns the tokens in the order asked', async () => {
+    const http = client({ status: 200, body: answers });
+    expect(await port(http).pseudonymizeBatch(pair)).toEqual(['PSEU-0A1B2C3D', 'PSEU-4E5F6071']);
+    expect(http.sent).toMatchObject({
+      service: 'privacy-service',
+      method: 'POST',
+      path: '/pseudonymize/batch',
+      idempotent: true,
+      authorization: 'Bearer fake-gateway-service-token',
+      body: {
+        requests: [
+          { subject_type: 'CUSTOMER', subject_id: 'CUST-900001', transaction_id: 'TX-1' },
+          { subject_type: 'ACCOUNT', subject_id: '90000000001', transaction_id: 'TX-1' },
+        ],
+      },
+    });
+    // Nothing but the list: the caller is named by the token, never by the body (D-16).
+    expect(Object.keys(http.sent?.body as object)).toEqual(['requests']);
+  });
+
+  it.each([500, 502, 504])(
+    'ADR-0019 TK-16 a %i from Privacy is SERVICE_UNAVAILABLE',
+    async (status) => {
+      await expect(port(client({ status })).pseudonymizeBatch(pair)).rejects.toMatchObject({
+        reason: 'SERVICE_UNAVAILABLE',
+      });
+    },
+  );
+
+  it('ADR-0019 TK-16 an unreachable Privacy (the client gave up) is SERVICE_UNAVAILABLE', async () => {
+    const down = new DomainError('SERVICE_UNAVAILABLE', 'timeout');
+    await expect(port(client(down)).pseudonymizeBatch(pair)).rejects.toBe(down);
+  });
+
+  it('ADR-0019 a refusal keeps its reason, and no token of the batch is used', async () => {
+    const http = client({ status: 403, body: { error: { reason: 'POLICY_NOT_ALLOWED' } } });
+    await expect(port(http).pseudonymizeBatch(pair)).rejects.toMatchObject({
+      reason: 'POLICY_NOT_ALLOWED',
+    });
+  });
+
+  it('ADR-0019 an answer with the wrong number of items, or one that is not a pseudonym, is a fault', async () => {
+    const [first] = answers.items;
+    const bodies = [
+      undefined,
+      {},
+      { items: [] },
+      { items: [first] },
+      { items: [...answers.items, first] },
+      { items: [first, { pseudonym: 'CUST-900001' }] },
+      { items: [first, { pseudonym: 5 }] },
+    ];
+    for (const body of bodies) {
+      await expect(
+        port(client({ status: 200, body })).pseudonymizeBatch(pair),
+      ).rejects.toMatchObject({
+        reason: 'SERVICE_UNAVAILABLE',
+      });
+    }
+  });
+});

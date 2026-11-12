@@ -53,6 +53,12 @@ class PrivacyController {
     return this.privacy.pseudonymize(req.headers, body);
   }
 
+  @Post('pseudonymize/batch')
+  @HttpCode(200)
+  pseudonymizeBatch(@Req() req: Request, @Body() body: unknown) {
+    return this.privacy.pseudonymizeBatch(req.headers, body);
+  }
+
   @Post('re-issue')
   @HttpCode(200)
   reIssue(@Req() req: Request, @Body() body: unknown) {

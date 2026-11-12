@@ -106,20 +106,16 @@ export class Tokenizer {
       throw new DomainError('INTERNAL_ERROR', 'transaction_id');
     const { privacy } = this.deps;
     const context = { targetService: 'TRANSACTION', purpose: 'PAYMENT_PROCESSING', transactionId };
-    // If one is refused or unavailable the whole request fails (gateway spec 4). The other token may already exist;
-    // that is harmless, because a retry reuses it (privacy spec 7.2) and nothing is forwarded.
-    const [customerSubjectRef, accountSubjectRef] = await Promise.all([
-      privacy.pseudonymize({
-        subjectType: 'CUSTOMER',
-        subjectId: input.claims.customerId,
-        ...context,
-      }),
-      privacy.pseudonymize({
-        subjectType: 'ACCOUNT',
-        subjectId: parsed.data.source_account,
-        ...context,
-      }),
+    // ADR-0019: P1 and P2 in one call. If Privacy refuses or cannot answer for either, the whole request fails
+    // (gateway spec 4) and Privacy has issued neither (all or nothing); nothing is forwarded.
+    const [customerSubjectRef, accountSubjectRef] = await privacy.pseudonymizeBatch([
+      { subjectType: 'CUSTOMER', subjectId: input.claims.customerId, ...context },
+      { subjectType: 'ACCOUNT', subjectId: parsed.data.source_account, ...context },
     ]);
+    if (customerSubjectRef === undefined || accountSubjectRef === undefined) {
+      // Fewer tokens than asked is not a clear answer: fail closed (invariant 8), as HttpPrivacyPort does.
+      throw new DomainError('SERVICE_UNAVAILABLE', 'privacy_answer');
+    }
     const { merchant_id, amount, geohash, nik, nama } = parsed.data;
     const clientIdentity = this.deps.forwardClientIdentity === true;
     return {

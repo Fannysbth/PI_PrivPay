@@ -6,6 +6,7 @@ import {
   pgConfigSchema,
   privacyUrlMatchesMode,
   readSecret,
+  tokenCacheConfigShape,
   type EnvSource,
 } from '@privpay/common';
 import { z } from 'zod';
@@ -27,6 +28,8 @@ export const notificationConfigSchema = z
     // ADR-0006: only proposed has a Privacy to call; baseline with an address, or proposed without one, does not start.
     PRIVACY_SERVICE_URL: serviceUrl.optional(),
     SMS_SIMULATOR_URL: serviceUrl,
+    // ADR-0020: window T (5 seconds, 30 as the sensitivity variant, 0 = off) and the size of the domain-token cache.
+    ...tokenCacheConfigShape,
   })
   .superRefine(privacyUrlMatchesMode);
 export type NotificationConfig = z.output<typeof notificationConfigSchema>;
