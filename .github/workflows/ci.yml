@@ -178,7 +178,6 @@ jobs:
   lua:
     name: luacheck (Kong plugin)
     runs-on: ubuntu-latest
-    if: hashFiles('services/gateway/plugins/**/*.lua') != ''
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -210,10 +209,12 @@ jobs:
           exit-code: '1'
 
   e2e:
-    # Switched off until Docker is part of the project (ADR-0004, DK-01): without a compose file the condition is false.
+    # Switched off explicitly: this job still uses the pre-Docker layout (root compose file, `docker compose up`). The real flow
+    # is `pnpm docker:secrets`, `pnpm docker:compose <mode> up` and `pnpm docker:newman <mode>`, run locally (CLAUDE.md).
+    # hashFiles() is not allowed in a job-level `if:` and made the whole workflow fail in 0 seconds.
     name: end-to-end (compose + Newman + PII scan), both modes
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' && hashFiles('deploy/docker-compose.yml', 'docker-compose.yml') != ''
+    if: false
     needs: [quality, integration]
     strategy:
       fail-fast: false

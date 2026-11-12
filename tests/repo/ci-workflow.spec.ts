@@ -15,13 +15,13 @@ interface Step {
   name?: string;
   uses?: string;
   run?: string;
-  if?: string;
+  if?: string | boolean;
   env?: Record<string, string>;
   with?: Record<string, unknown>;
 }
 interface Job {
   needs?: string | string[];
-  if?: string;
+  if?: string | boolean;
   permissions?: Record<string, string>;
   container?: { image: string };
   env?: Record<string, string>;
@@ -205,10 +205,21 @@ describe('M0-07 integration runs against PostgreSQL 16 with a throwaway password
 });
 
 describe('M0-07 what stays switched off until Docker (ADR-0004)', () => {
-  it('M0-07 the compose-based e2e job only runs when a compose file exists and not on pull requests', () => {
-    const condition = workflow.jobs['e2e']?.if ?? '';
-    expect(condition).toContain("hashFiles('deploy/docker-compose.yml', 'docker-compose.yml')");
-    expect(condition).toContain("github.event_name != 'pull_request'");
+  // GitHub rejects hashFiles() in a job-level `if:` ("Unrecognized function"): the whole workflow then fails in 0 seconds
+  // as a workflow file issue (seen on run 42533543365). File checks belong in a step, not in the job condition.
+  it('M0-07 no job-level condition calls hashFiles (the workflow would be rejected as a whole)', () => {
+    const offenders = Object.entries(workflow.jobs)
+      .filter(([, job]) => String(job.if ?? '').includes('hashFiles'))
+      .map(([name]) => name);
+    expect(offenders).toEqual([]);
+  });
+
+  it('M0-07 the compose-based e2e job is switched off explicitly until it uses the real compose flow', () => {
+    expect(workflow.jobs['e2e']?.if).toBe(false);
+  });
+
+  it('M0-07 the Kong plugin lint job runs on every push, its files exist', () => {
+    expect(workflow.jobs['lua']?.if).toBeUndefined();
   });
 
   it('M0-07 Dependabot keeps the pinned actions up to date', () => {
