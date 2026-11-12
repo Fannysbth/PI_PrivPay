@@ -14,7 +14,8 @@ const pseudonymAnswer = z.object({ pseudonym: z.string().regex(PSEUDONYM) });
 // ADR-0020: the answer of an exchange also says when the new token ends; without it the answer is used but not kept.
 const exchangeAnswer = z.object({
   pseudonym: z.string().regex(PSEUDONYM),
-  expires_at: z.iso.datetime({ offset: true }).optional(),
+  // Lenient on purpose: a missing or unreadable date only means the answer is not kept; it must not fail the exchange.
+  expires_at: z.string().optional(),
 });
 const fraudAnswer = z.object({
   risk_score: z.number().min(0).max(999.99),
@@ -81,9 +82,9 @@ export class HttpPrivacyClient implements PrivacyStatusClient {
     if (response.status !== 200 || !parsed.success) throw unavailable('privacy_exchange');
     return {
       pseudonym: parsed.data.pseudonym,
-      ...(parsed.data.expires_at === undefined
+      ...(endOf(parsed.data.expires_at) === undefined
         ? {}
-        : { expiresAt: new Date(parsed.data.expires_at) }),
+        : { expiresAt: endOf(parsed.data.expires_at) }),
     };
   }
 
@@ -116,6 +117,12 @@ export class HttpPrivacyClient implements PrivacyStatusClient {
     if (FINAL_PATCH_ANSWERS.has(response.status)) throw new PrivacyRejectedError();
     if (response.status !== 200) throw unavailable('privacy_patch');
   }
+}
+
+function endOf(value: string | undefined): Date | undefined {
+  if (value === undefined) return undefined;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? undefined : date;
 }
 
 function reasonOf(body: unknown): string | undefined {

@@ -55,7 +55,7 @@ function buildPlan(mode, options) {
   // N-47: PRIVACY_SERVICE_URL is required in proposed and forbidden in baseline.
   const privacyUrl = proposed ? { PRIVACY_SERVICE_URL: url('privacy') } : {};
   // ADR-0020: window T of the token cache in Transaction and Notification; only proposed has a Privacy to keep answers of.
-  const cacheWindow = proposed ? { TOKEN_CACHE_TTL_SECONDS: process.env.TOKEN_CACHE_TTL_SECONDS ?? '5' } : {};
+  const cacheWindow = proposed ? { TOKEN_CACHE_TTL_SECONDS: process.env.TOKEN_CACHE_TTL_SECONDS || '5' } : {};
   const ownDb = (name) =>
     !proposed && BASELINE_DB_SERVICES.includes(name) ? { PG_DATABASE_SUFFIX: BASELINE_DB_SUFFIX } : {};
   const processes = [

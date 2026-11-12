@@ -192,4 +192,14 @@ describe('ADR-0020 the exchange of Transaction is kept for T seconds', () => {
     await t.subjects.forFraud(row());
     expect(t.calls()).toBe(2);
   });
+
+  it('ADR-0020 an expires_at that is not a date is ignored, not a fault: the exchange still works, nothing is stored', async () => {
+    const t = setup();
+    t.respond(() =>
+      json(200, { pseudonym: 'PSEU-0000000E', expires_at: 'tomorrow', reused: false }),
+    );
+    expect(await t.subjects.forFraud(row())).toBe('PSEU-0000000E');
+    expect(await t.subjects.forFraud(row())).toBe('PSEU-0000000E');
+    expect(t.calls()).toBe(2);
+  });
 });

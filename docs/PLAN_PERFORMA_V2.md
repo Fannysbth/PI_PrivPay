@@ -42,7 +42,8 @@ Fanny menyetujui arah C (2026-11-11) karena tetap pseudonimisasi dinamis, tetap 
 
 Pembaruan 2026-11-11: Fanny meminta T memakai nilai normal industri. Usulan Claude T = 5 detik (dasar di `docs/OPEN_QUESTIONS.md` N-63 dan `docs/log/2026-11-11.md`); belum disetujui. Tahap C belum dikerjakan; menunggu persetujuan dua ADR.
 
-- Apa: Gateway menyimpan token P1/P2 yang baru diterima; Transaction menyimpan hasil exchange X2 (dan X1) per token sumber; Notification menyimpan hasil resolve-domain per token P4. Pembayaran berikutnya dari nasabah yang sama tidak perlu ke Privacy.
+- Pembaruan 2026-11-12 (N-68, pilihan Fanny "Opsi 1"): Gateway TIDAK di-cache, karena melewati Privacy berarti tidak menulis `transaction_link` (K-28) dan audit penerbitan P1/P2. Yang di-cache hanya Transaction dan Notification (ADR-0020). Butir yang menyebut Gateway di bawah ini tidak berlaku.
+- Apa (rencana awal): Gateway menyimpan token P1/P2 yang baru diterima; Transaction menyimpan hasil exchange X2 (dan X1) per token sumber; Notification menyimpan hasil resolve-domain per token P4. Pembayaran berikutnya dari nasabah yang sama tidak perlu ke Privacy.
 - Pengaman wajib:
   1. Umur entri <= min(sisa masa berlaku token, T detik). T ditetapkan lewat env dan dibahas dengan dosen (usulan awal 30 sampai 60 detik).
   2. Gateway menyimpan hanya digest berkunci acak per proses sebagai kunci, tidak pernah ID mentah. Kunci itu bukan `K_token`, `K_index`, atau `K_field`.
