@@ -1,6 +1,6 @@
 # ADR-0020: Cache token terbatas di Gateway, Transaction, dan Notification (kinerja v2 tahap C)
 
-- Status: Accepted (disetujui Fanny, 2026-11-12). Implementasi belum dikerjakan.
+- Status: Accepted (disetujui Fanny, 2026-11-12). Diimplementasikan 2026-11-12 untuk Transaction (X1/X2) dan Notification (P4 ke P5). Bagian Gateway (P1/P2) TIDAK dikerjakan: bertabrakan dengan ADR-0013 (K-28), menunggu keputusan Fanny di N-68.
 - Tanggal: 2026-11-12
 - Pengambil keputusan: Fanny
 - Terkait: NFR-02, NFR-11, NFR-12, D-09, D-21, TK-16, ADR-0014, ADR-0019, ADR-0021, N-63, PLAN_PERFORMA_V2 (tahap C)
@@ -17,7 +17,7 @@ Setelah tahap A (satu statement per operasi) dan tahap B (batch P1+P2), pembayar
 
 ## Keputusan
 
-Gateway menyimpan token P1/P2 yang baru diterima; Transaction menyimpan hasil exchange X2 (dan X1) per token sumber; Notification menyimpan hasil resolve-domain per token P4. Aturan:
+Gateway menyimpan token P1/P2 yang baru diterima (DITAHAN, N-68: pembayaran baru tidak akan punya `transaction_link` di Privacy, sehingga Reconciliation tidak menemukan sumbernya); Transaction menyimpan hasil exchange X2 (dan X1) per token sumber; Notification menyimpan hasil resolve-domain per token P4. Aturan:
 
 1. **Jendela T dari env, bukan literal.** `TOKEN_CACHE_TTL_SECONDS`, bawaan **5**; varian sensitivitas 30. Divalidasi saat start (bilangan bulat, batas atas 300; `0` mematikan cache). Umur efektif entri = min(T, sisa masa berlaku token). Fanny mengganti nilainya dari env tanpa mengubah kode. Dasar nilai bawaan: N-63.
 2. **Kunci Gateway:** digest berkunci (HMAC-SHA256, `node:crypto`) dengan kunci acak per proses yang dibuat saat start dan tidak pernah ditulis; ID mentah tidak pernah menjadi kunci. Kunci ini bukan `K_token`, `K_index`, atau `K_field`.

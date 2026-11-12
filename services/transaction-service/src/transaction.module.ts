@@ -15,6 +15,7 @@ import {
   type OnModuleDestroy,
 } from '@nestjs/common';
 import {
+  BoundedTtlCache,
   createHttpClient,
   createLogger,
   createServicePool,
@@ -28,12 +29,15 @@ import {
   RealDelay,
   schedulerProviders,
   subjectRefShape,
+  tokenCacheSettings,
+  type Clock,
   type Delay,
   type HttpClient,
   type IdpChoice,
   type PrivacyMode,
   type Timers,
   type TokenCache,
+  type TokenCacheSettings,
 } from '@privpay/common';
 import type { ModuleContext, ServiceModules } from '@privpay/common/nest';
 import type { Request, Response } from 'express';
@@ -170,7 +174,8 @@ export function transactionModules(
         ? baselineTransactionRepository(mode, app)
         : proposedTransactionRepository(app);
     const neighbours =
-      overrides.neighbours ?? httpNeighbours(http, env, clock, mode, idpOf(config));
+      overrides.neighbours ??
+      httpNeighbours(http, env, clock, mode, idpOf(config), tokenCacheSettings(config));
     const transactions = new TransactionHttp({
       clock,
       issuer: config.IDP_ISSUER,
@@ -236,6 +241,7 @@ function httpNeighbours(
   clock: Parameters<typeof createTokenCache>[0]['clock'],
   mode: PrivacyMode,
   idp: IdpChoice,
+  cacheSettings: TokenCacheSettings,
 ) {
   const clientSecret = readSecret(env, 'TRANSACTION_CLIENT_SECRET');
   const tokenFor = (audience: string): TokenCache =>
@@ -249,7 +255,7 @@ function httpNeighbours(
   const toward =
     mode === 'baseline'
       ? { subjects: baselineSubjectReferences(mode), privacy: baselinePrivacyStatus(mode) }
-      : proposedNeighbours(http, tokenFor('privacy-service'));
+      : proposedNeighbours(http, tokenFor('privacy-service'), clock, cacheSettings);
   return {
     ...toward,
     fraud: new HttpFraudClient({ http, serviceToken: tokenFor('fraud-service') }),
@@ -261,7 +267,14 @@ function httpNeighbours(
 }
 
 /** The proposed side: Privacy over HTTP, which also exchanges and issues the tokens again. */
-function proposedNeighbours(http: HttpClient, serviceToken: TokenCache) {
+function proposedNeighbours(
+  http: HttpClient,
+  serviceToken: TokenCache,
+  clock: Clock,
+  cacheSettings: TokenCacheSettings,
+) {
   const privacy = new HttpPrivacyClient({ http, serviceToken });
-  return { subjects: new ProposedSubjectReferences(privacy), privacy };
+  // ADR-0020: the answer of an exchange is kept for T seconds at most (T = 0 keeps nothing).
+  const cache = new BoundedTtlCache<string>({ clock, ...cacheSettings });
+  return { subjects: new ProposedSubjectReferences(privacy, { cache, clock }), privacy };
 }

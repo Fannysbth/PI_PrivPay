@@ -6,6 +6,7 @@ import {
   pgConfigSchema,
   privacyUrlMatchesMode,
   schedulerConfigShape,
+  tokenCacheConfigShape,
   type EnvSource,
 } from '@privpay/common';
 import { z } from 'zod';
@@ -25,6 +26,8 @@ export const transactionConfigSchema = z
     ...httpConfigSchema.shape,
     ...idpConfigShape,
     ...schedulerConfigShape,
+    // ADR-0020: window T (5 seconds, 30 as the sensitivity variant, 0 = off) and the size of the exchange cache.
+    ...tokenCacheConfigShape,
     // PRD 17: an amount under it is completed without asking Fraud; at or over it, Fraud decides.
     FRAUD_AMOUNT_THRESHOLD: z.coerce.number().int().min(1),
     // PRD 17: a PENDING row older than this is failed by the sweeper (spec transaction 5, step 6).

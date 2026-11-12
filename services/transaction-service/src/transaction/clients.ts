@@ -11,6 +11,11 @@ import {
 
 const PSEUDONYM = /^PSEU-[0-9A-F]{8}$/;
 const pseudonymAnswer = z.object({ pseudonym: z.string().regex(PSEUDONYM) });
+// ADR-0020: the answer of an exchange also says when the new token ends; without it the answer is used but not kept.
+const exchangeAnswer = z.object({
+  pseudonym: z.string().regex(PSEUDONYM),
+  expires_at: z.iso.datetime({ offset: true }).optional(),
+});
 const fraudAnswer = z.object({
   risk_score: z.number().min(0).max(999.99),
   decision: z.enum(['ALLOW', 'HOLD_FOR_VERIFICATION', 'BLOCK']),
@@ -33,17 +38,29 @@ const FINAL_PATCH_ANSWERS: ReadonlySet<number> = new Set([409]);
 
 const unavailable = (cause: string): DomainError => new DomainError('SERVICE_UNAVAILABLE', cause);
 
+export interface ExchangeRequest {
+  readonly sourcePseudonym: string;
+  readonly targetService: 'FRAUD' | 'NOTIFICATION';
+  readonly purpose: 'FRAUD_DETECTION' | 'NOTIFICATION';
+  readonly transactionId: string;
+}
+
+export interface ExchangeResult {
+  readonly pseudonym: string;
+  readonly expiresAt?: Date;
+}
+
 /** The calls to Privacy. `exchange` and `re-issue` and `PATCH` are idempotent, so the shared client may retry them. */
 export class HttpPrivacyClient implements PrivacyStatusClient {
   constructor(private readonly deps: ClientDeps) {}
 
   /** X1 and X2 (PRD 7.2): the pseudonym of another service for the same person. `EXPIRED` has its own error (TF-04). */
-  async exchange(request: {
-    readonly sourcePseudonym: string;
-    readonly targetService: 'FRAUD' | 'NOTIFICATION';
-    readonly purpose: 'FRAUD_DETECTION' | 'NOTIFICATION';
-    readonly transactionId: string;
-  }): Promise<string> {
+  async exchange(request: ExchangeRequest): Promise<string> {
+    return (await this.exchangeWithExpiry(request)).pseudonym;
+  }
+
+  /** The same call, and when the new token ends (ADR-0020: a cached answer must not outlive its token). */
+  async exchangeWithExpiry(request: ExchangeRequest): Promise<ExchangeResult> {
     const response = await this.deps.http.request({
       service: 'privacy-service',
       method: 'POST',
@@ -60,9 +77,14 @@ export class HttpPrivacyClient implements PrivacyStatusClient {
     if (response.status === 410 && reasonOf(response.body) === 'EXPIRED') {
       throw new TokenExpiredError();
     }
-    const parsed = pseudonymAnswer.safeParse(response.body);
+    const parsed = exchangeAnswer.safeParse(response.body);
     if (response.status !== 200 || !parsed.success) throw unavailable('privacy_exchange');
-    return parsed.data.pseudonym;
+    return {
+      pseudonym: parsed.data.pseudonym,
+      ...(parsed.data.expires_at === undefined
+        ? {}
+        : { expiresAt: new Date(parsed.data.expires_at) }),
+    };
   }
 
   async reIssue(pseudonym: string, transactionId: string): Promise<string> {

@@ -1,3 +1,11 @@
+# HANDOFF (2026-11-12, lanjutan): tahap C di `feat/perf-v2-privacy-hot-path`: cache Transaction dan Notification selesai; Gateway DITAHAN (N-68); BELUM diukur
+
+| Butir | Bukti |
+| --- | --- |
+| Cache | `BoundedTtlCache` + `TOKEN_CACHE_TTL_SECONDS` (5, 0 = mati, maks 300) dan `TOKEN_CACHE_MAX_ENTRIES` (1000); exchange X1/X2 di Transaction, resolve-domain di Notification; kegagalan dan EXPIRED tidak disimpan |
+| N-68 | Cache P1/P2 di Gateway akan melewati `transaction_link` (K-28): Reconciliation gagal untuk transaksi itu. Butuh keputusan Fanny: usulan Gateway tetap satu batch per pembayaran |
+| Gerbang | lint 0, typecheck 0, unit 99/1704, integrasi 70/1245, security 24 (Docker mati, bebas 6,3 GB). `test:edge`, `docker:edge-check`, Newman, payload scan dengan cache BELUM dijalankan (Docker) |
+
 # HANDOFF (2026-11-12): sisa gerbang tahap B dan utang teknis di `feat/perf-v2-privacy-hot-path`; gerbang penuh dan pengukuran A+B TERTAHAN memori; BUKAN pengukuran
 
 | Butir | Bukti |

@@ -4,6 +4,13 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Kinerja v2 tahap C: cache token terbatas (feat/perf-v2-privacy-hot-path, ADR-0020/0021, 2026-11-12)
+
+- `@privpay/common`: `BoundedTtlCache` (umur entri = min(T, sisa umur token), jumlah entri dibatasi, jam disuntik, hanya di memori) dan konfigurasi `TOKEN_CACHE_TTL_SECONDS` (bawaan 5, 0 = mati, maksimum 300) dan `TOKEN_CACHE_MAX_ENTRIES` (bawaan 1000), divalidasi saat start.
+- Transaction: jawaban exchange X1/X2 disimpan per (token sumber, tujuan, purpose), bukan per `transaction_id`; kegagalan dan EXPIRED tidak disimpan (jalur re-issue TF-04 tetap jalan); jawaban tanpa `expires_at` dipakai tetapi tidak disimpan. Notification: jawaban resolve-domain disimpan per token P4 (hanya T yang membatasi).
+- Gateway (P1/P2) sengaja tidak di-cache: lihat N-68. Env diteruskan lewat `mode.proposed.yml`, `.env.example`, `dev:up`.
+- Tes (merah dulu): `ttl-cache.spec.ts` 14, `exchange-cache.spec.ts` 11, `domain-cache.spec.ts` 6, `config.spec.ts` +7. Belum diukur dampaknya.
+
 ### Sisa gerbang tahap B dan utang teknis (feat/perf-v2-privacy-hot-path, 2026-11-12)
 
 - N-65 (`ea99e68`): `POST /pseudonymize/batch` menolak 422 bila `transaction_id` kedua elemen tidak sama (atau satu ada satu tidak). Dua tes merah dulu. ADR-0019 butir 2b, spec privacy 4.1a.

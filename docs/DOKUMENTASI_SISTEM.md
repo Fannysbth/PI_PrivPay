@@ -2,7 +2,7 @@
 
 Dokumen rujukan tunggal tentang sistem PrivPay: apa tujuannya, bagaimana arsitekturnya, apa yang sudah dibangun, bagaimana menjalankan dan mengujinya, dan di mana keputusan serta catatan perubahan berada. Dokumen ini **diperbarui bersama setiap perubahan** (aturan di bagian 14). Bila dokumen ini bertabrakan dengan sumber kebenaran, yang menang adalah urutan di `CLAUDE.md`: ADR yang Accepted, PRD v2.4, lalu `docs/spec/` dan `docs/tickets/`.
 
-- Terakhir diperbarui: 2026-11-12 (N-65, ADR-0020/0021, perbaikan CI, token unggahan).
+- Terakhir diperbarui: 2026-11-12 (N-65, ADR-0020/0021, perbaikan CI, token unggahan, tahap C Transaction dan Notification).
 - Pelengkap: [panduan/](panduan/README.md) (penjelasan untuk pembela skripsi; ditulis saat M5, beberapa bagian usang), [log/](log/README.md) (rencana, perubahan, masalah, satu berkas per tanggal), [HANDOFF.md](HANDOFF.md) (serah-terima per tiket), [CHANGELOG.md](../CHANGELOG.md), [adr/](adr), [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 - Nilai pada semua contoh fiktif. Klaim yang belum diperiksa langsung atau belum dijalankan ditandai **belum diverifikasi**.
 
@@ -196,7 +196,7 @@ Hasil v1 (resmi 2026-11-05, 100 pengguna, tanpa jeda): baseline p95 627,6 ms dan
 | --- | --- | --- |
 | A | `expireAndFindActive`: satu statement ganti dua | Kode dan tes selesai, commit `07b185c`. Belum diukur |
 | B | `POST /pseudonymize/batch` untuk P1+P2 (ADR-0019 Accepted) | Kode, tes, dokumen selesai, commit `b52d31a`; `/code-review medium` selesai (perbaikan di commit berikutnya). Newman kedua mode, payload scan, dan fail-closed lulus (Docker); belum diukur |
-| C | Cache token terbatas (Gateway, Transaction, Notification) | ADR-0020 dan ADR-0021 Accepted (2026-11-12); T = 5 detik dari env `TOKEN_CACHE_TTL_SECONDS` (30 detik varian sensitivitas). Kode belum dikerjakan; menunggu angka A+B |
+| C | Cache token terbatas | ADR-0020 dan ADR-0021 Accepted (2026-11-12). Kode selesai untuk Transaction (X1/X2) dan Notification (P4 ke P5); T = 5 detik dari env `TOKEN_CACHE_TTL_SECONDS` (30 detik varian sensitivitas, 0 = mati). Gateway (P1/P2) ditahan: bertabrakan dengan K-28 (N-68, menunggu Fanny). Belum diukur |
 
 Rencana dan harga keamanan tahap C: [PLAN_PERFORMA_V2.md](PLAN_PERFORMA_V2.md). Pengukuran resmi: [hasil/kinerja/](hasil/kinerja) (RENCANA-RUN-RESMI, RUNBOOK-dua-mesin). Berkas `resmi/` dan `resmii/` tidak pernah di-push.
 
@@ -220,6 +220,7 @@ Aturan yang sama ada di skill `privpay-working-style` (bagian Penutup tugas).
 
 | Tanggal | Perubahan |
 | --- | --- |
+| 2026-11-12 | Tahap C: cache exchange (Transaction) dan resolve-domain (Notification), env `TOKEN_CACHE_*`, N-68 |
 | 2026-11-12 | N-65, ADR-0020/0021, perbaikan CI (N-67), token unggahan di header (N-66), status perintah CLAUDE.md |
 | 2026-11-11 | Log kerja dipecah per tanggal (`docs/log/`); rujukan diperbarui |
 | 2026-11-11 | Hasil Newman, payload scan, fail-closed, dan status tahap B diperbarui |

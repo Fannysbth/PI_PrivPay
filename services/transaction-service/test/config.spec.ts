@@ -37,3 +37,31 @@ describe('M4-10 the schedule of the transaction jobs comes from the environment'
     });
   });
 });
+
+describe('ADR-0020 the window T of the token cache comes from the environment', () => {
+  it('ADR-0020 T is 5 seconds and the size bounded when nothing is set', () => {
+    expect(loadTransactionConfig(env())).toMatchObject({
+      TOKEN_CACHE_TTL_SECONDS: 5,
+      TOKEN_CACHE_MAX_ENTRIES: 1000,
+    });
+  });
+
+  it('ADR-0020 T can be changed (30 is the sensitivity variant, 0 switches the cache off)', () => {
+    expect(loadTransactionConfig({ ...env(), TOKEN_CACHE_TTL_SECONDS: '30' })).toMatchObject({
+      TOKEN_CACHE_TTL_SECONDS: 30,
+    });
+    expect(loadTransactionConfig({ ...env(), TOKEN_CACHE_TTL_SECONDS: '0' })).toMatchObject({
+      TOKEN_CACHE_TTL_SECONDS: 0,
+    });
+  });
+
+  it.each([
+    ['TOKEN_CACHE_TTL_SECONDS', '-1'],
+    ['TOKEN_CACHE_TTL_SECONDS', '301'],
+    ['TOKEN_CACHE_TTL_SECONDS', '1.5'],
+    ['TOKEN_CACHE_TTL_SECONDS', 'long'],
+    ['TOKEN_CACHE_MAX_ENTRIES', '0'],
+  ])('ADR-0020 %s as %j stops the start, by name', (name, value) => {
+    expect(() => loadTransactionConfig({ ...env(), [name]: value })).toThrow(name);
+  });
+});

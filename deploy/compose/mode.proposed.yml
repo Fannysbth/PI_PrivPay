@@ -171,6 +171,8 @@ services:
     environment:
       PRIVACY_MODE: proposed
       PRIVACY_SERVICE_URL: https://privacy-service:4001
+      # ADR-0020: window T of the token cache in seconds (5 by default, 30 is the sensitivity variant, 0 switches it off).
+      TOKEN_CACHE_TTL_SECONDS: ${TOKEN_CACHE_TTL_SECONDS:-5}
       NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
     depends_on: { privacy-service: { condition: service_healthy } }
 
@@ -180,6 +182,8 @@ services:
     environment:
       PRIVACY_MODE: proposed
       PRIVACY_SERVICE_URL: https://privacy-service:4001
+      # ADR-0020: window T of the token cache in seconds (5 by default, 30 is the sensitivity variant, 0 switches it off).
+      TOKEN_CACHE_TTL_SECONDS: ${TOKEN_CACHE_TTL_SECONDS:-5}
       NODE_EXTRA_CA_CERTS: /run/secrets/tls_ca_crt
     depends_on: { privacy-service: { condition: service_healthy } }
 
