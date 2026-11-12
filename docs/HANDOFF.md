@@ -1,3 +1,17 @@
+# HANDOFF (2026-11-12): sisa gerbang tahap B dan utang teknis di `feat/perf-v2-privacy-hot-path`; gerbang penuh dan pengukuran A+B TERTAHAN memori; BUKAN pengukuran
+
+| Butir | Bukti |
+| --- | --- |
+| Keputusan Fanny | T = 5 detik (30 detik varian), dari env `TOKEN_CACHE_TTL_SECONDS`; ADR-0020 dan ADR-0021 Accepted (kode tahap C belum); N-65 wajib; `resmii/` diabaikan |
+| N-65 `ea99e68` | `generateBatch` menolak 422 bila `transaction_id` beda; 2 tes merah dulu, lalu `pseudonymize-batch` + `token-service` integrasi 66 lulus |
+| CI `fe8e193` (N-67) | Penyebab 0 detik: `hashFiles()` di `if:` tingkat job (`lua`, `e2e`). Diperbaiki; `ci-workflow.spec.ts` 21 lulus (3 merah dulu). BELUM terbukti di GitHub |
+| Token unggahan `0343161` (N-66) | Header `Authorization: Bearer`, jalur tetap `/upload`; `summary-upload.spec.ts` 27 lulus (8 merah dulu). Alur dua laptop sungguhan belum diuji |
+| `CLAUDE.md` | "Status perintah" ditulis ulang setelah semua nama perintah dicek ada di `package.json`; `pnpm audit --audit-level high` keluar 0 (1 low, 2 moderate, dev). Berkas ini tidak dilacak git (`.git/info/exclude`) |
+| Tinjauan keamanan manual (diff tahap A+B) | Tidak ada temuan yang mengubah kode. Dicatat: CTE `expireAndFindActive` aman (SELECT memakai `expires_at >= $4` karena melihat snapshot sebelum UPDATE); batch menolak kunci dua kali dengan urutan `subject_type`; hanya elemen pertama yang ditolak menulis baris DENIED; hasil batch dipetakan menurut urutan permintaan dan jumlah item dicek di Gateway |
+| Gerbang ringan | lint 0, typecheck 0, `secret-scan:tree` 0 (`--no-git` mentah 3 temuan, semuanya kunci TLS dev di `secrets/` yang di-gitignore), `gitleaks --all` 501 commit bersih (0), `audit --prod` bersih (0) |
+
+**Tertahan (aturan memori, bebas 4,23 sampai 4,42 GB, syarat 5 GB dengan Docker mati; VS Code sendiri ±3,6 GB):** gerbang penuh (`pnpm test`, `test:integration`, `test:security`), `test:edge`, `docker:edge-check`, penelusuran selisih Newman 56 vs 156, pengukuran A+B. Semuanya BELUM lulus/dijalankan. `/security-review` dan `/simplify` sebagai skill tidak dijalankan (lihat log hari ini).
+
 # HANDOFF (2026-11-11): kinerja v2 tahap A dan B di `feat/perf-v2-privacy-hot-path` (commit `07b185c`, `b52d31a`); tahap C belum; BUKAN pengukuran
 
 | Butir | Bukti |

@@ -2,7 +2,7 @@
 
 Dokumen rujukan tunggal tentang sistem PrivPay: apa tujuannya, bagaimana arsitekturnya, apa yang sudah dibangun, bagaimana menjalankan dan mengujinya, dan di mana keputusan serta catatan perubahan berada. Dokumen ini **diperbarui bersama setiap perubahan** (aturan di bagian 14). Bila dokumen ini bertabrakan dengan sumber kebenaran, yang menang adalah urutan di `CLAUDE.md`: ADR yang Accepted, PRD v2.4, lalu `docs/spec/` dan `docs/tickets/`.
 
-- Terakhir diperbarui: 2026-11-11 (kinerja v2 tahap A dan B).
+- Terakhir diperbarui: 2026-11-12 (N-65, ADR-0020/0021, perbaikan CI, token unggahan).
 - Pelengkap: [panduan/](panduan/README.md) (penjelasan untuk pembela skripsi; ditulis saat M5, beberapa bagian usang), [log/](log/README.md) (rencana, perubahan, masalah, satu berkas per tanggal), [HANDOFF.md](HANDOFF.md) (serah-terima per tiket), [CHANGELOG.md](../CHANGELOG.md), [adr/](adr), [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md).
 - Nilai pada semua contoh fiktif. Klaim yang belum diperiksa langsung atau belum dijalankan ditandai **belum diverifikasi**.
 
@@ -125,7 +125,7 @@ Aturan umum: JSON UTF-8, ISO 8601 UTC, `Authorization: Bearer <JWT>`, validasi z
 
 ### 5.1 `POST /pseudonymize/batch` (baru, ADR-0019)
 
-- Body `{requests: [...]}` dengan 1–2 elemen bentuk 1; paling banyak satu elemen per `subject_type`. Respons `{items: [{pseudonym, expires_at, reused}]}` sesuai urutan permintaan, tanpa `subject_id`.
+- Body `{requests: [...]}` dengan 1–2 elemen bentuk 1; paling banyak satu elemen per `subject_type`; semua elemen memuat `transaction_id` yang sama (422 bila beda, N-65). Respons `{items: [{pseudonym, expires_at, reused}]}` sesuai urutan permintaan, tanpa `subject_id`.
 - Satu transaksi basis data; tiap elemen melewati Policy Engine dan menulis tepat satu baris audit `GENERATE_TOKEN`.
 - **Semua atau tidak sama sekali:** satu elemen ditolak berarti seluruh batch di-rollback, dengan satu baris `DENIED` dan tanpa pemetaan baru.
 - Kunci diambil menurut urutan `subject_type` (bukan urutan permintaan) agar tidak deadlock; hasil tetap mengikuti urutan permintaan.
@@ -196,15 +196,15 @@ Hasil v1 (resmi 2026-11-05, 100 pengguna, tanpa jeda): baseline p95 627,6 ms dan
 | --- | --- | --- |
 | A | `expireAndFindActive`: satu statement ganti dua | Kode dan tes selesai, commit `07b185c`. Belum diukur |
 | B | `POST /pseudonymize/batch` untuk P1+P2 (ADR-0019 Accepted) | Kode, tes, dokumen selesai, commit `b52d31a`; `/code-review medium` selesai (perbaikan di commit berikutnya). Newman kedua mode, payload scan, dan fail-closed lulus (Docker); belum diukur |
-| C | Cache token terbatas (Gateway, Transaction, Notification) | Belum dikerjakan. Usulan T = 5 detik; menunggu persetujuan dua ADR (cache; klaim gagal-tertutup "setelah jendela T") |
+| C | Cache token terbatas (Gateway, Transaction, Notification) | ADR-0020 dan ADR-0021 Accepted (2026-11-12); T = 5 detik dari env `TOKEN_CACHE_TTL_SECONDS` (30 detik varian sensitivitas). Kode belum dikerjakan; menunggu angka A+B |
 
 Rencana dan harga keamanan tahap C: [PLAN_PERFORMA_V2.md](PLAN_PERFORMA_V2.md). Pengukuran resmi: [hasil/kinerja/](hasil/kinerja) (RENCANA-RUN-RESMI, RUNBOOK-dua-mesin). Berkas `resmi/` dan `resmii/` tidak pernah di-push.
 
 ## 13. Keputusan, batasan, dan hal terbuka
 
-- Keputusan arsitektur: [adr/](adr) (0001–0019). Ringkasan keputusan desain: [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md). Erata PRD: [PRD_ERRATA.md](PRD_ERRATA.md) (E-34 baru: rute batch).
+- Keputusan arsitektur: [adr/](adr) (0001–0021). Ringkasan keputusan desain: [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md). Erata PRD: [PRD_ERRATA.md](PRD_ERRATA.md) (E-34 baru: rute batch).
 - Pertanyaan terbuka: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Batasan dan pertanyaan untuk dosen: [panduan/08-batasan-dan-pertanyaan-dosen.md](panduan/08-batasan-dan-pertanyaan-dosen.md).
-- Terbuka per 2026-11-11: CI GitHub gagal 0 detik (dugaan `hashFiles()` di `if:` job `lua` dan `containers`; belum dikonfirmasi) dan 10 PR Dependabot jangan di-merge sebelum CI diperbaiki; 71 commit lokal di depan `origin/main`; folder `docs/hasil/kinerja/resmii/` perlu keputusan; bagian "Status perintah" di `CLAUDE.md` usang; verifikasi referensi naskah (OPEN_QUESTIONS bagian D).
+- Terbuka per 2026-11-12: CI GitHub gagal 0 detik sudah ditemukan penyebabnya (`hashFiles()` di `if:` tingkat job pada `lua` dan `e2e`, N-67) dan diperbaiki di berkas, tetapi belum terbukti di GitHub (butuh push, persetujuan Fanny); 10 PR Dependabot jangan di-merge sebelum CI terbukti hijau; commit lokal di depan `origin/main` belum di-push; verifikasi referensi naskah (OPEN_QUESTIONS bagian D); sisa gerbang tahap B dan pengukuran A+B tertahan aturan memori (lihat HANDOFF).
 
 ## 14. Cara menjaga dokumen ini tetap hidup
 
@@ -220,6 +220,7 @@ Aturan yang sama ada di skill `privpay-working-style` (bagian Penutup tugas).
 
 | Tanggal | Perubahan |
 | --- | --- |
+| 2026-11-12 | N-65, ADR-0020/0021, perbaikan CI (N-67), token unggahan di header (N-66), status perintah CLAUDE.md |
 | 2026-11-11 | Log kerja dipecah per tanggal (`docs/log/`); rujukan diperbarui |
 | 2026-11-11 | Hasil Newman, payload scan, fail-closed, dan status tahap B diperbarui |
 | 2026-11-11 | Hasil gerbang (security, audit, gitleaks) dan `/code-review` tahap B ditambahkan |

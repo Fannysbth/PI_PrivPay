@@ -13,4 +13,5 @@ Catatan **rencana, perubahan, masalah, dan keputusan**, dipecah per tanggal supa
 
 | Tanggal | Topik | Berkas |
 | --- | --- | --- |
+| 2026-11-12 | Keputusan T, ADR-0020/0021, N-65, gerbang tahap B, pengukuran A+B, utang teknis | [2026-11-12.md](2026-11-12.md) |
 | 2026-11-11 | Kinerja v2 tahap A dan B, ADR-0019, dokumentasi hidup, gerbang dan review | [2026-11-11.md](2026-11-11.md) |

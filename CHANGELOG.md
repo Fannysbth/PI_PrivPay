@@ -4,6 +4,14 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Sisa gerbang tahap B dan utang teknis (feat/perf-v2-privacy-hot-path, 2026-11-12)
+
+- N-65 (`ea99e68`): `POST /pseudonymize/batch` menolak 422 bila `transaction_id` kedua elemen tidak sama (atau satu ada satu tidak). Dua tes merah dulu. ADR-0019 butir 2b, spec privacy 4.1a.
+- ADR-0020 (cache token terbatas, T dari env `TOKEN_CACHE_TTL_SECONDS`, bawaan 5 detik, varian 30) dan ADR-0021 (gagal-tertutup menjadi "tertutup setelah jendela T") ditulis, Accepted oleh Fanny. Kode tahap C belum dikerjakan.
+- N-67 (`fe8e193`): `hashFiles()` dihapus dari `if:` tingkat job (`lua`, `e2e`) yang membuat workflow CI gagal 0 detik; `e2e` `if: false` eksplisit. Belum terbukti di GitHub (belum di-push).
+- N-66 (`0343161`): token unggahan M7-E pindah dari jalur URL ke header `Authorization: Bearer`; jalur tetap `/upload`; 401 untuk token salah atau hilang.
+- Bagian "Status perintah" di `CLAUDE.md` (berkas lokal, tidak dilacak git) ditulis ulang dan diverifikasi.
+
 ### Kinerja v2 tahap B (feat/perf-v2-privacy-hot-path, ADR-0019 Accepted 2026-11-11)
 
 - Privacy Service: `POST /pseudonymize/batch` (1 sampai 2 elemen bentuk 1, hanya `API_GATEWAY`, satu transaksi, satu baris audit per elemen, semua atau tidak sama sekali; paling banyak satu elemen per `subject_type`, kunci advisory menurut urutan `subject_type`). `TokenService.generateBatch`; `generate` memakai langkah yang sama. Spec 4.1a, AZ-18b, PRD_ERRATA E-34.
