@@ -23,6 +23,7 @@ Tambahkan `POST /pseudonymize/batch` pada Privacy Service dan pakai di Gateway (
 
 1. Isi batch: daftar 1 sampai 2 permintaan bentuk 1 (identitas), masing-masing divalidasi dengan skema yang sama dengan `/pseudonymize` (menolak field tak dikenal), batas ukuran badan yang sama. Pemanggil hanya `API_GATEWAY` (Tabel 3); `requesting_service` tetap dari klaim JWT (D-16).
 2. Tiap elemen tetap melewati Policy Engine STEP 0 dan menulis tepat satu baris audit (FR-13), di transaksi basis data yang sama. Satu elemen ditolak berarti seluruh batch ditolak (all-or-nothing), dengan satu baris DENIED atas elemen yang ditolak dan tanpa baris pemetaan; tidak ada hasil sebagian.
+2b. Penyempitan N-65 (usulan Claude dari `/code-review`, disetujui Fanny 2026-11-12): semua elemen memuat `transaction_id` yang sama; beda, atau satu ada satu tidak, ditolak 422 sebelum apa pun dibaca atau ditulis.
 2a. Penyempitan (usulan Claude, disetujui Fanny 2026-11-11): paling banyak satu elemen per `subject_type` (dua `CUSTOMER` atau dua `ACCOUNT` ditolak 422), dan kunci advisory diambil menurut urutan `subject_type`, bukan urutan permintaan, agar dua batch dengan urutan terbalik tidak saling menunggu (deadlock). Hasil tetap mengikuti urutan permintaan. Dibuktikan dengan tes yang gagal bila pengurutan dihapus.
 3. Respons tidak memuat `subject_id`; urutan hasil sama dengan urutan permintaan.
 4. Privacy Service mati tetap 503 pada seluruh batch, tanpa fallback ke data mentah (D-09, TK-16). Tidak ada cache.

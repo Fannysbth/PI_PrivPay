@@ -311,6 +311,15 @@ describe('ADR-0019 the shape of a batch', () => {
     ['a subject id of the wrong format', [element({ subject_id: 'not-a-customer' })]],
     ['a list that is not a list', CUSTOMER],
     ['two elements of the same subject type', [element(), element({ subject_id: 'CUST-000102' })]],
+    // N-65: the pair belongs to one payment, so both elements name the same transaction.
+    [
+      'N-65 two elements of different transactions',
+      [element(), accountElement({ transaction_id: 'TX-7002' })],
+    ],
+    [
+      'N-65 one element with a transaction and one without',
+      [element(), accountElement({ transaction_id: undefined })],
+    ],
   ];
   it.each(shapes)('ADR-0019 %s is 422 and writes nothing', async (_name, requests) => {
     const answer = await batch(service('api-gateway'), requests);

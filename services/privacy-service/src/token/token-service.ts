@@ -178,13 +178,18 @@ export class TokenService {
    * whole batch back and leaves one DENIED row for that element, so no token is issued without its pair. At most one
    * element per subject type, and the work is done in the order of the subject type, not of the request: two batches
    * that name the same pair in opposite order would otherwise take the advisory locks in opposite order (deadlock).
-   * The results follow the order of the request.
+   * All elements carry the same transaction_id (N-65). The results follow the order of the request.
    */
   async generateBatch(requests: readonly GenerateRequest[]): Promise<readonly TokenResult[]> {
     if (requests.length < 1 || requests.length > MAX_BATCH)
       throw new DomainError('VALIDATION_ERROR');
     for (const request of requests) assertGenerate(request);
     if (new Set(requests.map((request) => request.subjectType)).size !== requests.length) {
+      throw new DomainError('VALIDATION_ERROR');
+    }
+    // N-65: the pair belongs to one payment; elements of different transactions (or one with and one without) are
+    // refused before anything is read or written.
+    if (new Set(requests.map((request) => request.transactionId)).size !== 1) {
       throw new DomainError('VALIDATION_ERROR');
     }
     const order = requests
