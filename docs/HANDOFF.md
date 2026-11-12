@@ -13,7 +13,7 @@
 | --- | --- |
 | Keputusan Fanny | T = 5 detik (30 detik varian), dari env `TOKEN_CACHE_TTL_SECONDS`; ADR-0020 dan ADR-0021 Accepted (kode tahap C belum); N-65 wajib; `resmii/` diabaikan |
 | N-65 `ea99e68` | `generateBatch` menolak 422 bila `transaction_id` beda; 2 tes merah dulu, lalu `pseudonymize-batch` + `token-service` integrasi 66 lulus |
-| CI `fe8e193` (N-67) | Penyebab 0 detik: `hashFiles()` di `if:` tingkat job (`lua`, `e2e`). Diperbaiki; `ci-workflow.spec.ts` 21 lulus (3 merah dulu). BELUM terbukti di GitHub |
+| CI `fe8e193` (N-67) | Penyebab 0 detik: `hashFiles()` di `if:` tingkat job (`lua`, `e2e`). Diperbaiki; `ci-workflow.spec.ts` lulus. Terbukti di GitHub (PR #13); job merah lain diperbaiki, menunggu run ulang |
 | Token unggahan `0343161` (N-66) | Header `Authorization: Bearer`, jalur tetap `/upload`; `summary-upload.spec.ts` 27 lulus (8 merah dulu). Alur dua laptop sungguhan belum diuji |
 | `CLAUDE.md` | "Status perintah" ditulis ulang setelah semua nama perintah dicek ada di `package.json`; `pnpm audit --audit-level high` keluar 0 (1 low, 2 moderate, dev). Berkas ini tidak dilacak git (`.git/info/exclude`) |
 | Tinjauan keamanan manual (diff tahap A+B) | Tidak ada temuan yang mengubah kode. Dicatat: CTE `expireAndFindActive` aman (SELECT memakai `expires_at >= $4` karena melihat snapshot sebelum UPDATE); batch menolak kunci dua kali dengan urutan `subject_type`; hanya elemen pertama yang ditolak menulis baris DENIED; hasil batch dipetakan menurut urutan permintaan dan jumlah item dicek di Gateway |

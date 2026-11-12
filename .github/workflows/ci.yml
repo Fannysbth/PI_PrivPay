@@ -185,7 +185,9 @@ jobs:
       - run: |
           sudo apt-get update && sudo apt-get install -y luarocks
           sudo luarocks install luacheck
-          luacheck services/gateway/plugins
+          # From the plugin directory so luacheck finds its .luacheckrc (kong and ngx are read globals); same as DK-02b.
+          cd services/gateway/plugins/privacy-tokenizer
+          luacheck .
 
   containers:
     name: hadolint + Trivy

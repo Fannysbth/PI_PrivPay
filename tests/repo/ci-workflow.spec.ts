@@ -222,6 +222,33 @@ describe('M0-07 what stays switched off until Docker (ADR-0004)', () => {
     expect(workflow.jobs['lua']?.if).toBeUndefined();
   });
 
+  // Run 43245389360: luacheck from the repository root ignored the plugin's .luacheckrc and reported 20 undefined
+  // variables (kong, ngx). The local Docker test runs from the plugin directory, so CI must do the same.
+  it('M0-07 the luacheck job uses the plugin .luacheckrc (run from the plugin directory)', () => {
+    const run = (workflow.jobs['lua']?.steps ?? []).map((s) => s.run ?? '').join('\n');
+    expect(run).toMatch(/cd services\/gateway\/plugins\/privacy-tokenizer\n\s*luacheck \./);
+  });
+
+  // Semgrep p/secrets and p/nodejs supply-chain rules (run 43245389360): pnpm install hardening and Dependabot cooldown.
+  it('M0-07 pnpm refuses fresh, exotic or downgraded-trust packages (minimumReleaseAge, blockExoticSubdeps, trustPolicy)', () => {
+    const ws = parse(readFileSync(join(root, 'pnpm-workspace.yaml'), 'utf8')) as Record<
+      string,
+      unknown
+    >;
+    expect(ws['minimumReleaseAge']).toBe(10080);
+    expect(ws['blockExoticSubdeps']).toBe(true);
+    expect(ws['trustPolicy']).toBe('no-downgrade');
+  });
+
+  it('M0-07 every Dependabot ecosystem has a cooldown', () => {
+    const dependabot = parse(readFileSync(join(root, '.github', 'dependabot.yml'), 'utf8')) as {
+      updates: { cooldown?: { 'default-days'?: number } }[];
+    };
+    for (const u of dependabot.updates) {
+      expect(u.cooldown?.['default-days']).toBeGreaterThanOrEqual(7);
+    }
+  });
+
   it('M0-07 Dependabot keeps the pinned actions up to date', () => {
     const dependabot = parse(readFileSync(join(root, '.github', 'dependabot.yml'), 'utf8')) as {
       updates: { 'package-ecosystem': string }[];

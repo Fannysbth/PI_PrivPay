@@ -4,6 +4,10 @@ Perubahan per tiket (Conventional Commits). Format mengikuti Keep a Changelog; b
 
 ## [Belum dirilis]
 
+### Perbaikan job CI merah (feat/perf-v2-privacy-hot-path, PR #13, 2026-11-12)
+
+- CI: luacheck dijalankan dari direktori plugin supaya `.luacheckrc` terbaca; Dockerfile `USER 1000:1000` (hadolint DL3066); `pnpm-workspace.yaml` `minimumReleaseAge`, `blockExoticSubdeps`, `trustPolicy: no-downgrade` (+ pengecualian `semver@6.3.1`); Dependabot `cooldown` 7 hari (Semgrep). Tes merah dulu di `tests/repo/`. Bukti hijau di GitHub menunggu run berikutnya.
+
 ### Kinerja v2 tahap C: cache token terbatas (feat/perf-v2-privacy-hot-path, ADR-0020/0021, 2026-11-12)
 
 - `@privpay/common`: `BoundedTtlCache` (umur entri = min(T, sisa umur token), jumlah entri dibatasi, jam disuntik, hanya di memori) dan konfigurasi `TOKEN_CACHE_TTL_SECONDS` (bawaan 5, 0 = mati, maksimum 300) dan `TOKEN_CACHE_MAX_ENTRIES` (bawaan 1000), divalidasi saat start.
