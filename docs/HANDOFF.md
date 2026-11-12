@@ -4,7 +4,8 @@
 | --- | --- |
 | Cache | `BoundedTtlCache` + `TOKEN_CACHE_TTL_SECONDS` (5, 0 = mati, maks 300) dan `TOKEN_CACHE_MAX_ENTRIES` (1000); exchange X1/X2 di Transaction, resolve-domain di Notification; kegagalan dan EXPIRED tidak disimpan |
 | N-68 | Cache P1/P2 di Gateway akan melewati `transaction_link` (K-28): Reconciliation gagal untuk transaksi itu. DIJAWAB Fanny: Opsi 1, Gateway tetap satu batch per pembayaran tanpa cache (D-26; ID D-20/D-21 milik kinerja v2 diganti D-25/D-26 karena bentrok) |
-| Gerbang | lint 0, typecheck 0, unit 99/1704, integrasi 70/1245, security 24 (Docker mati, bebas 6,3 GB). `test:edge`, `docker:edge-check`, Newman, payload scan dengan cache BELUM dijalankan (Docker) |
+| Gerbang | lint 0, typecheck 0, unit 99/1704, integrasi 70/1245, security 24 (Docker mati, bebas 6,3 GB). Docker (proposed, kode tahap C): Newman 156 request / 133 asersi / 0 gagal; payload scan 3 lulus. BELUM: fail-closed (dingin dan hangat), `docker:edge-check`, baseline. Memori turun ke 0,49 sampai 0,64 GB saat tumpukan menyala; payload scan terlanjur dijalankan di 0,49 GB (pelanggaran aturan, dicatat di log) |
+| Review | `/code-review medium`: 8 temuan, 2 diperbaiki (`expires_at`, `dev:up`), 6 ditolak beralasan (lihat log). `/security-review` BELUM |
 
 # HANDOFF (2026-11-12): sisa gerbang tahap B dan utang teknis di `feat/perf-v2-privacy-hot-path`; gerbang penuh dan pengukuran A+B TERTAHAN memori; BUKAN pengukuran
 
