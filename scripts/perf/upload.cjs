@@ -53,8 +53,10 @@ async function startUploadListener(o) {
   server.requestTimeout = 30000; // a stalled sender cannot hold the listener (the default is 5 minutes)
   server.headersTimeout = 10000;
 
-  const reply = (res, status, text) => {
-    res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', Connection: 'close', 'Content-Length': Buffer.byteLength(text) });
+  // drain: the caller is still sending a body we refuse to keep. Closing the socket with unread request bytes makes the OS reset it and the
+  // sender can see ECONNRESET before the status (M7-E 413), so the body is drained (req.resume) and the socket is left to the listener shutdown.
+  const reply = (res, status, text, drain = false) => {
+    res.writeHead(status, { 'Content-Type': 'text/plain; charset=utf-8', ...(drain ? {} : { Connection: 'close' }), 'Content-Length': Buffer.byteLength(text) });
     res.end(text);
   };
   let handle;
@@ -77,14 +79,14 @@ async function startUploadListener(o) {
     if (match === null || !sameSecret(match[1], token)) { req.resume(); return reply(res, 401, 'unauthorized'); }
     if (used) { req.resume(); return reply(res, 409, 'already received'); }
     const declared = Number(req.headers['content-length'] ?? 0);
-    if (declared > MAX_BYTES) { req.resume(); return reply(res, 413, 'body too large'); }
+    if (declared > MAX_BYTES) { req.resume(); return reply(res, 413, 'body too large', true); }
     const chunks = [];
     let size = 0;
     let tooBig = false;
     req.on('data', (chunk) => {
       if (tooBig) return;
       size += chunk.length;
-      if (size > MAX_BYTES) { tooBig = true; chunks.length = 0; reply(res, 413, 'body too large'); return; }
+      if (size > MAX_BYTES) { tooBig = true; chunks.length = 0; reply(res, 413, 'body too large', true); return; }
       chunks.push(chunk);
     });
     req.on('end', () => {
