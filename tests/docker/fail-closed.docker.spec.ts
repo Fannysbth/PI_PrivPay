@@ -121,4 +121,13 @@ if (MODE === 'proposed') {
       expect((await payFor(randomUUID())).status).toBe(201);
     }, 180_000);
   });
+} else {
+  // The baseline condition has no Privacy Service: this is the premise that makes the suite proposed-only (an empty suite would fail Jest).
+  describe('DK-02b baseline has no Privacy Service to switch off', () => {
+    it('DK-02b the baseline stack runs no privacy-service container', () => {
+      const names = docker(['ps', '-a', '--format', '{{.Names}}']).split(/\s+/);
+      expect(names.some((n) => n.startsWith(PROJECT + '-'))).toBe(true);
+      expect(names.filter((n) => n === PRIVACY)).toEqual([]);
+    });
+  });
 }
