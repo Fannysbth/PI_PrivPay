@@ -54,8 +54,11 @@ const stage = (dir: string, name: string, text: string) => {
 };
 const commit = (dir: string, env: NodeJS.ProcessEnv = {}) =>
   git(dir, ['commit', '-q', '-m', 'test'], env);
+// A fixed-shape token (rule github-pat: "ghp_" + 36 alphanumerics, no entropy or stopword filter). The earlier generic-api-key shape was
+// skipped by gitleaks for about 1.6% of random values (16 of 1000), which made this test fail at random in CI.
+const ALNUM = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
 const syntheticSecret = (): string =>
-  `synthetic_api_key = "${randomBytes(30).toString('base64url')}"\n`;
+  `token = "ghp_${Array.from(randomBytes(36), (b) => ALNUM[b % ALNUM.length]).join('')}"\n`;
 
 function findGitleaks(): string | undefined {
   for (const dir of (process.env['PATH'] ?? '').split(delimiter)) {
