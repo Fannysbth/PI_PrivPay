@@ -204,7 +204,7 @@ Rencana dan harga keamanan tahap C: [PLAN_PERFORMA_V2.md](PLAN_PERFORMA_V2.md). 
 
 - Keputusan arsitektur: [adr/](adr) (0001–0021). Ringkasan keputusan desain: [DESIGN_DECISIONS.md](DESIGN_DECISIONS.md). Erata PRD: [PRD_ERRATA.md](PRD_ERRATA.md) (E-34 baru: rute batch).
 - Pertanyaan terbuka: [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md). Batasan dan pertanyaan untuk dosen: [panduan/08-batasan-dan-pertanyaan-dosen.md](panduan/08-batasan-dan-pertanyaan-dosen.md).
-- Terbuka per 2026-11-12: CI GitHub gagal 0 detik sudah ditemukan penyebabnya (`hashFiles()` di `if:` tingkat job pada `lua` dan `e2e`, N-67) dan diperbaiki; terbukti di GitHub lewat PR #13 (2026-11-12), job merah lain (luacheck, hadolint, Semgrep, dependency audit) diperbaiki di cabang yang sama dan menunggu run ulang; 10 PR Dependabot jangan di-merge sebelum CI terbukti hijau; commit lokal di depan `origin/main` belum di-push; verifikasi referensi naskah (OPEN_QUESTIONS bagian D); sisa gerbang tahap B dan pengukuran A+B tertahan aturan memori (lihat HANDOFF).
+- Terbuka per 2026-11-12: CI GitHub gagal 0 detik sudah ditemukan penyebabnya (`hashFiles()` di `if:` tingkat job pada `lua` dan `e2e`, N-67) dan diperbaiki; terbukti di GitHub lewat PR #13 (2026-11-12), job merah lain (luacheck, hadolint, Semgrep, dependency audit) diperbaiki dan hijau; CI hijau penuh sejak PR #13; PR Dependabot aksi GitHub sudah di-merge, NestJS 12 dan `@types/node` 26 sengaja tidak (lompatan mayor); verifikasi referensi naskah (OPEN_QUESTIONS bagian D); sisa gerbang tahap B dan pengukuran A+B tertahan aturan memori (lihat HANDOFF).
 
 ## 14. Cara menjaga dokumen ini tetap hidup
 
